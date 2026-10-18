@@ -70,7 +70,7 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       url: "/panel/calendar",
       icon: CalendarDaysIcon,
       role: ["admin"],
-      isDisabled: true,
+      isDisabled: false,
     },
     {
       title: "Delivery Schedules",
@@ -109,7 +109,7 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       url: "/panel/deliveries",
       icon: TruckIcon,
       role: ["admin", "staff"],
-      isDisabled: true,
+      isDisabled: false,
     },
     {
       title: "Schedule",
@@ -119,18 +119,11 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       isDisabled: true,
     },
     {
-      title: "Map",
+      title: "Fleet Map",
       url: "/panel/map",
       icon: MapIcon,
       role: ["admin", "staff"],
       isDisabled: false,
-    },
-    {
-      title: "Drivers",
-      url: "/panel/drivers",
-      icon: BadgeIcon,
-      role: ["admin", "staff"],
-      isDisabled: true,
     },
     {
       title: "Vehicles",

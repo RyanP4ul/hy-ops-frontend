@@ -54,7 +54,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency } from "@/utils/format";
+import { formatCurrency } from "@/utils/date-util";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 
@@ -101,7 +101,6 @@ export default function Form() {
     ) {
       form.reset({
         customer_id: orderDetailQuery.data?.customer_id ?? 0,
-        delivery_type: orderDetailQuery.data?.delivery_type ?? "INTERNAL",
         notes: orderDetailQuery.data?.notes ?? "",
         items: orderDetailQuery.data?.items ?? [],
       });
@@ -163,7 +162,6 @@ export default function Form() {
             JSON.stringify({
               id: result?.id ?? 0,
               customer_id: data.customer_id,
-              delivery_type: data.delivery_type,
               notes: data.notes,
             }),
           ],
@@ -196,158 +194,118 @@ export default function Form() {
           {step === 0 && (
             <>
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <Controller
-                    name="customer_id"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Combobox
-                        open={customerCB.open}
-                        onOpenChange={(open) => customerCB.setOpen(open)}
-                        value={field.value ? String(field.value) : ""}
-                        onValueChange={(value) => {
-                          const selectedCustomer =
-                            customerQuery.data?.rows?.find(
-                              (customer) => customer.id === Number(value),
-                            );
+                <Controller
+                  name="customer_id"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <Combobox
+                      open={customerCB.open}
+                      onOpenChange={(open) => customerCB.setOpen(open)}
+                      value={field.value ? String(field.value) : ""}
+                      onValueChange={(value) => {
+                        const selectedCustomer = customerQuery.data?.rows?.find(
+                          (customer) => customer.id === Number(value),
+                        );
 
-                          customerCB.setInputValue(
-                            selectedCustomer?.name ?? "",
-                          );
+                        customerCB.setInputValue(selectedCustomer?.name ?? "");
 
-                          setAddress(selectedCustomer?.address ?? "");
-                          setCompanyName(selectedCustomer?.company_name ?? "");
+                        setAddress(selectedCustomer?.address ?? "");
+                        setCompanyName(selectedCustomer?.company_name ?? "");
 
-                          console.log(
-                            `Selected Customer: ${JSON.stringify(selectedCustomer)}`,
-                          );
+                        console.log(
+                          `Selected Customer: ${JSON.stringify(selectedCustomer)}`,
+                        );
 
-                          console.log(`Value: ${value}, Type: ${typeof value}`);
+                        console.log(`Value: ${value}, Type: ${typeof value}`);
 
-                          field.onChange(value ? Number(value) : null);
-                        }}
-                      >
-                        <Field data-invalid={fieldState.invalid}>
-                          <FieldLabel htmlFor="customer-name">
-                            Customer<span className="text-destructive">*</span>
-                          </FieldLabel>
-
-                          <ComboboxInput
-                            placeholder="Select customer name..."
-                            value={customerCB.inputValue}
-                            disabled={ordersQuery.isFetching}
-                            aria-invalid={fieldState.invalid}
-                            readOnly
-                          />
-                          <ComboboxContent>
-                            <ComboboxList>
-                              {customerQuery.data?.rows?.map(
-                                (customer, index) => (
-                                  <ComboboxItem
-                                    key={index}
-                                    value={String(customer.id)}
-                                  >
-                                    <Item size="xs" className="p-0">
-                                      <ItemContent>
-                                        <ItemTitle className="whitespace-nowrap">
-                                          ({customer.id}) {customer.name}
-                                        </ItemTitle>
-                                        <ItemDescription>
-                                          Unknown
-                                        </ItemDescription>
-                                      </ItemContent>
-                                    </Item>
-                                  </ComboboxItem>
-                                ),
-                              )}
-
-                              {ordersQuery.isFetching && (
-                                <div className="px-2 py-1 text-xs text-muted-foreground">
-                                  Loading...
-                                </div>
-                              )}
-
-                              {!ordersQuery.isFetching &&
-                                ordersQuery.data?.rows?.length === 0 && (
-                                  <ComboboxEmpty>No found.</ComboboxEmpty>
-                                )}
-                            </ComboboxList>
-
-                            <div className="flex items-center justify-between border-t p-2">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={
-                                  customerCB.page <= 0 || ordersQuery.isFetching
-                                }
-                                onClick={() => customerCB.setPage((p) => p - 1)}
-                              >
-                                Previous
-                              </Button>
-
-                              <span className="text-muted-foreground text-xs">
-                                {customerCB.page + 1} / {customerCB.totalPages}
-                              </span>
-
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={
-                                  customerCB.page + 1 >=
-                                    customerCB.totalPages ||
-                                  ordersQuery.isFetching
-                                }
-                                onClick={() => {
-                                  customerCB.setPage((p) => p + 1);
-                                }}
-                              >
-                                Next
-                              </Button>
-                            </div>
-                          </ComboboxContent>
-
-                          {fieldState.invalid && (
-                            <FieldError errors={[fieldState.error]} />
-                          )}
-                        </Field>
-                      </Combobox>
-                    )}
-                  />
-
-                  <Controller
-                    name="delivery_type"
-                    control={form.control}
-                    render={({ field }) => (
-                      <Field>
-                        <FieldLabel htmlFor="delivery_type">
-                          Delivery Type{" "}
-                          <span className="text-destructive">*</span>
+                        field.onChange(value ? Number(value) : null);
+                      }}
+                    >
+                      <Field data-invalid={fieldState.invalid}>
+                        <FieldLabel htmlFor="customer-name">
+                          Customer<span className="text-destructive">*</span>
                         </FieldLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="LALAMOVE">Lalamove</SelectItem>
-                              <SelectItem value="PICKUP">
-                                Customer pickup
-                              </SelectItem>
-                              <SelectItem value="INTERNAL">
-                                Company delivery
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
+
+                        <ComboboxInput
+                          placeholder="Select customer name..."
+                          value={customerCB.inputValue}
+                          disabled={ordersQuery.isFetching}
+                          aria-invalid={fieldState.invalid}
+                          readOnly
+                        />
+                        <ComboboxContent>
+                          <ComboboxList>
+                            {customerQuery.data?.rows?.map(
+                              (customer, index) => (
+                                <ComboboxItem
+                                  key={index}
+                                  value={String(customer.id)}
+                                >
+                                  <Item size="xs" className="p-0">
+                                    <ItemContent>
+                                      <ItemTitle className="whitespace-nowrap">
+                                        ({customer.id}) {customer.name}
+                                      </ItemTitle>
+                                      <ItemDescription>Unknown</ItemDescription>
+                                    </ItemContent>
+                                  </Item>
+                                </ComboboxItem>
+                              ),
+                            )}
+
+                            {ordersQuery.isFetching && (
+                              <div className="px-2 py-1 text-xs text-muted-foreground">
+                                Loading...
+                              </div>
+                            )}
+
+                            {!ordersQuery.isFetching &&
+                              ordersQuery.data?.rows?.length === 0 && (
+                                <ComboboxEmpty>No found.</ComboboxEmpty>
+                              )}
+                          </ComboboxList>
+
+                          <div className="flex items-center justify-between border-t p-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={
+                                customerCB.page <= 0 || ordersQuery.isFetching
+                              }
+                              onClick={() => customerCB.setPage((p) => p - 1)}
+                            >
+                              Previous
+                            </Button>
+
+                            <span className="text-muted-foreground text-xs">
+                              {customerCB.page + 1} / {customerCB.totalPages}
+                            </span>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={
+                                customerCB.page + 1 >= customerCB.totalPages ||
+                                ordersQuery.isFetching
+                              }
+                              onClick={() => {
+                                customerCB.setPage((p) => p + 1);
+                              }}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </ComboboxContent>
+
+                        {fieldState.invalid && (
+                          <FieldError errors={[fieldState.error]} />
+                        )}
                       </Field>
-                    )}
-                  />
-                </div>
+                    </Combobox>
+                  )}
+                />
 
                 {address && companyName && (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -601,15 +559,6 @@ export default function Form() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => {
-                                  // form.setValue("items", [
-                                  //   ...form.getValues("items"),
-                                  // ]);
-
-                                  console.log(`id: ${item.inventory_id}`);
-                                  console.log(
-                                    JSON.stringify(form.getValues("items")),
-                                  );
-
                                   setSub({
                                     id: item.inventory_id,
                                     is_open: true,

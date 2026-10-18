@@ -87,7 +87,6 @@ export default function OrderDialog() {
   const fieldsByStep: (keyof (OrderForm & { items: OrderItemDetail[] }))[][] = [
     [
       "customer_id",
-      "delivery_type",
       "notes",
       "is_custom_shipping",
       "shipping_recipient",

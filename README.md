@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HyOps frontend
 
-## Getting Started
+The frontend is a Next.js 16 application using React 19, TypeScript, Tailwind
+CSS, TanStack Query, and the App Router. It provides the HyOps operations
+dashboard for authentication, products, inventory, orders, deliveries,
+warehouses, vehicles, users, notifications, audit logs, sessions, and the
+calendar.
 
-First, run the development server:
+## Requirements
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Node.js 20 or newer
+- Bun (recommended) or npm
+- The backend running on `http://localhost:5173`
+
+## Setup
+
+1. Install dependencies:
+
+   ```bash
+   bun install
+   ```
+
+2. Create `.env.local`:
+
+   ```env
+   APP_ENV=development
+   APP_NAME=HyOps
+   NEXT_PUBLIC_API_URL=http://localhost:5173
+   NEXT_PUBLIC_DEBUG=false
+   ```
+
+3. Start the development server:
+
+   ```bash
+   bun run dev
+   ```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Available scripts
+
+| Command | Description |
+| --- | --- |
+| `bun run dev` | Start the Next.js development server |
+| `bun run build` | Create a production build |
+| `bun run start` | Serve the production build |
+| `bun run lint` | Run ESLint |
+
+## API and authentication
+
+Browser requests use the `/api/*` path. `next.config.ts` rewrites those
+requests to the backend URL from `API_URL`, which defaults to
+`http://localhost:5173`. Authentication uses HTTP-only cookies issued by the
+backend, so requests that need a session must include credentials.
+
+The websocket dashboard connection uses `ws://localhost:5173/ws` during local
+development. Make sure the backend is running before opening protected panel
+pages.
+
+## Project structure
+
+```text
+app/
+  page.tsx                    Login page
+  (protected)/panel/          Authenticated operations screens
+components/                   Shared UI, providers, and request helpers
+lib/                          Authentication and utility helpers
+public/                       Static assets
+next.config.ts                Backend API rewrite
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Protected dashboard pages are under
+`app/(protected)/panel`, including `/panel/products`, `/panel/inventory`,
+`/panel/orders`, `/panel/deliveries`, `/panel/delivery-schedules`,
+`/panel/warehouses`, `/panel/vehicles`, `/panel/users`, `/panel/calendar`,
+`/panel/archives`, `/panel/audit-logs`, and `/panel/sessions-and-logs`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Set `API_URL` to the reachable backend origin, build the application, and run:
 
-## Learn More
+```bash
+bun run build
+bun run start
+```
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use HTTPS in production and ensure the backend CORS and cookie settings allow
+the deployed frontend origin.

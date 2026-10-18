@@ -134,22 +134,22 @@ export default function DataTable() {
           </div>
         ),
       },
-      {
-        accessorKey: "delivery_type",
-        header: () => sortableHeader("delivery_type", "Delivery"),
-        cell: ({ row }) => {
-          const labels: Record<string, string> = {
-            LALAMOVE: "Lalamove",
-            PICKUP: "Customer pickup",
-            INTERNAL: "Company delivery",
-          };
-          return (
-            <Badge variant="secondary">
-              {labels[row.original.delivery_type] ?? row.original.delivery_type}
-            </Badge>
-          );
-        },
-      },
+      // {
+      //   accessorKey: "delivery_type",
+      //   header: () => sortableHeader("delivery_type", "Delivery"),
+      //   cell: ({ row }) => {
+      //     const labels: Record<string, string> = {
+      //       LALAMOVE: "Lalamove",
+      //       PICKUP: "Customer pickup",
+      //       INTERNAL: "Company delivery",
+      //     };
+      //     return (
+      //       <Badge variant="secondary">
+      //         {labels[row.original.delivery_type] ?? row.original.delivery_type}
+      //       </Badge>
+      //     );
+      //   },
+      // },
       {
         accessorKey: "status",
         header: () => "Order Status",

@@ -7,6 +7,7 @@ import { DialogMode } from "@/types/dialog";
 import { DeliveryScheduleProvider } from "./provider";
 import DeliverySchedulePage from "./components/delivery-schedule-page";
 import DeliveryScheduleDialog from "./components/dialog";
+import SubDialog from "./components/sub-modal";
 
 export default function Page() {
   return (
@@ -64,6 +65,7 @@ export default function Page() {
             <DeliverySchedulePage />
           </section>
         </ModalProvider>
+        <SubDialog />
       </DeliveryScheduleProvider>
     </div>
   );

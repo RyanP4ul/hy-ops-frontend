@@ -93,6 +93,22 @@ export default function DataTable() {
         ),
       },
       {
+        accessorKey: "customer_address",
+        header: () => "Destination",
+        cell: ({ row }) => (
+          <div className="min-w-36 space-y-1">
+            <p className="font-medium">{row.original.customer_address}</p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "payment_arrangement",
+        header: () => "Payment Arrangement",
+        cell: ({ row }) => (
+          <Badge variant="defaults">{row.original.payment_arrangement}</Badge>
+        ),
+      },
+      {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
@@ -170,6 +186,23 @@ export default function DataTable() {
             </InputGroup>
           </div>
         </div>
+
+        <Button
+          type="button"
+          variant="default"
+          size="lg"
+          className="cursor-pointer"
+          onClick={() => {
+            openModal(DialogMode.INSERT, {
+              title: "Schedule Order",
+              description: "Schedule a new orders for delivery.",
+              action: "Schedule Order",
+            });
+          }}
+        >
+          <Plus className="h-3 w-3" />
+          <span>Schedule Order</span>
+        </Button>
       </div>
 
       <div className="rounded-md border overflow-hidden">

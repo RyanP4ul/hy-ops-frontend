@@ -208,7 +208,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
       const response = await request(
         "GET",
-        `/api/orders/details?ids=${inventoryItem.map((item) => item.inventory_id).join(",")}`,
+        `/api/inventory/details?ids=${inventoryItem.map((item) => item.inventory_id).join(",")}`,
       );
 
       if (!response.ok) return null;
