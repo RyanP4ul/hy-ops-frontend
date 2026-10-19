@@ -79,13 +79,6 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       role: ["admin"],
       isDisabled: false,
     },
-    {
-      title: "Driver Schedules",
-      url: "/panel/driver-schedules",
-      icon: TruckIcon,
-      role: ["admin"],
-      isDisabled: true,
-    },
   ],
   "Sales Processing": [
     {
@@ -100,7 +93,7 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       url: "/panel/payments",
       icon: CreditCardIcon,
       role: ["admin"],
-      isDisabled: true,
+      isDisabled: false,
     },
   ],
   "Logistics & Tracking": [
@@ -110,13 +103,6 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       icon: TruckIcon,
       role: ["admin", "staff"],
       isDisabled: false,
-    },
-    {
-      title: "Schedule",
-      url: "/panel/schedule",
-      icon: CalendarDaysIcon,
-      role: ["admin", "staff"],
-      isDisabled: true,
     },
     {
       title: "Fleet Map",

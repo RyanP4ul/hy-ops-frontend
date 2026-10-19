@@ -83,7 +83,7 @@ const data = {
     },
     {
       title: "Payments",
-      url: "/payments",
+      url: "/panel/payments",
       icon: <CreditCardIcon />,
     },
     {

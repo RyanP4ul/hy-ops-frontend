@@ -1,3 +1,21 @@
+export const DEFAULT_LOCATION: Coordinate = [120.9842, 14.5995];
+
+export const styles = {
+  default: undefined,
+  openstreetmap3d: "https://tiles.openfreemap.org/styles/liberty",
+};
+
+export type StyleKey = keyof typeof styles;
+
+export type Coordinate = [number, number];
+
+export type Destination = {
+  id: number;
+  name: string;
+  description: string;
+  coordinate: Coordinate;
+};
+
 export type GeocodeResult = {
   place_id: number;
   name: string;
