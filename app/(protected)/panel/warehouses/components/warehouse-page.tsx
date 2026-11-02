@@ -20,10 +20,10 @@ export default function WarehousePage() {
   return (
     <section>
       <Card>
-        <CardHeader>
+        <CardHeader className="max-sm:flex max-sm:flex-col max-sm:items-start max-sm:gap-2">
           <CardTitle className="leading-none">Warehouses</CardTitle>
           <CardDescription>
-            Manage your inventory and their variants. Click on an item to view
+            Manage warehouse locations and delivery addresses.
           </CardDescription>
           <CardAction>
             <div className="flex items-center gap-2">
@@ -34,14 +34,14 @@ export default function WarehousePage() {
                 className="cursor-pointer"
                 onClick={() => {
                   openModal(DialogMode.INSERT, {
-                    title: "Add Inventory",
-                    description: "Add a new inventory item below.",
-                    action: "Add Item",
+                    title: "Add Warehouse",
+                    description: "Create a warehouse location.",
+                    action: "Save Warehouse",
                   });
                 }}
               >
                 <Plus className="h-3 w-3" />
-                <span>Add Inventory</span>
+                <span>Add Warehouse</span>
               </Button>
             </div>
           </CardAction>

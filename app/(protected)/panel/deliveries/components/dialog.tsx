@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { PaginatedCombobox } from "@/components/paginated-combobox";
 import {
   DialogContent,
   DialogDescription,
@@ -20,12 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Controller, useForm } from "react-hook-form";
+import { Controller } from "react-hook-form";
 import {
-  DeliveriesEventForm,
   DeliveriesEventFormType,
+  DeliveriesAssignmentFormType,
 } from "@/schema/deliveries";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Field,
   FieldDescription,
@@ -41,13 +41,23 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { manilaCalendarNow } from "@/utils/date-util";
 import { format, startOfDay } from "date-fns";
 import { request, requestWithErrorHandling } from "@/components/http";
+import { REQUESTS } from "@/constant/request";
 
 export default function DeliveriesDialog() {
   const { state, dispatch } = useModal();
   const { send } = useWebSocket();
-  const { deliveriesQuery, event_form } = useDeliveries();
+  const {
+    deliveriesQuery,
+    event_form,
+    assignment_form,
+    driversQuery,
+    vehiclesQuery,
+    driverCB,
+    vehicleCB,
+  } = useDeliveries();
 
   const event_type = event_form.watch("event_type");
   const reason = event_form.watch("reason");
@@ -84,18 +94,46 @@ export default function DeliveriesDialog() {
   };
 
   async function handleSubmit(data: DeliveriesEventFormType) {
-    console.log("Submitting form data:", data);
     ToastSubmit(data);
 
-    requestWithErrorHandling(
-      await request("POST", `/api/deliveries/event`, data),
+    await requestWithErrorHandling(
+      await request("POST", `/api/deliveries/event`, { ...data, scheduled_date: data.scheduled_date ? format(data.scheduled_date, "yyyy-MM-dd") : undefined }),
       event_form,
-      () => {
+      (result) => {
         deliveriesQuery.refetch();
+        if (result.delivery) {
+          send({
+            type: REQUESTS.DELIVERY_UPDATED,
+            payload: [JSON.stringify(result.delivery)],
+          });
+        }
 
         dispatch({
           type: "CLOSE",
         });
+      },
+    );
+  }
+
+  async function handleAssignmentSubmit(data: DeliveriesAssignmentFormType) {
+    ToastSubmit(data);
+
+    await requestWithErrorHandling(
+      await request("PATCH", `/api/deliveries/${data.delivery_id}/assignment`, {
+        driver_id: data.driver_id,
+        vehicle_id: data.vehicle_id,
+        delivery_version: data.delivery_version,
+      }),
+      assignment_form,
+      (result) => {
+        deliveriesQuery.refetch();
+        if (result.delivery) {
+          send({
+            type: REQUESTS.DELIVERY_UPDATED,
+            payload: [JSON.stringify(result.delivery)],
+          });
+        }
+        dispatch({ type: "CLOSE" });
       },
     );
   }
@@ -115,6 +153,98 @@ export default function DeliveriesDialog() {
           />
         ) : (
           <>
+            {state.mode === DialogMode.CHANGE_ASSIGNMENT ? (
+              <form
+                onSubmit={assignment_form.handleSubmit(
+                  handleAssignmentSubmit,
+                  (error) => ToastValidationError(error),
+                )}
+                className="space-y-5"
+              >
+                <Controller
+                  control={assignment_form.control}
+                  name="driver_id"
+                  render={({ field, fieldState }) => (
+                    <PaginatedCombobox
+                      id={field.name}
+                      label="Driver"
+                      required
+                      value={field.value > 0 ? String(field.value) : null}
+                      selectedLabel={field.value > 0 ? driverCB.inputValue : ""}
+                      options={driversQuery.data?.rows ?? []}
+                      getOptionValue={(driver) => String(driver.id)}
+                      renderOption={(driver) => `${driver.name} · Available`}
+                      onValueChange={(value, driver) => {
+                        field.onChange(value ? Number(value) : -1);
+                        driverCB.setInputValue(driver?.name ?? "");
+                      }}
+                      onSearchChange={driverCB.setSearchQuery}
+                      page={driverCB.page}
+                      totalPages={Math.ceil((driversQuery.data?.total ?? 0) / 10)}
+                      onPageChange={driverCB.setPage}
+                      isLoading={driversQuery.isFetching}
+                      disabled={assignment_form.formState.isSubmitting}
+                      placeholder="Search drivers..."
+                      emptyMessage={driversQuery.isError ? "Unable to load drivers. Please try again." : "No drivers found."}
+                      invalid={fieldState.invalid}
+                      error={fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                    />
+                  )}
+                />
+
+                <Controller
+                  control={assignment_form.control}
+                  name="vehicle_id"
+                  render={({ field, fieldState }) => (
+                    <PaginatedCombobox
+                      id={field.name}
+                      label="Vehicle"
+                      required
+                      value={field.value > 0 ? String(field.value) : null}
+                      selectedLabel={field.value > 0 ? vehicleCB.inputValue : ""}
+                      options={vehiclesQuery.data?.rows ?? []}
+                      getOptionValue={(vehicle) => String(vehicle.id)}
+                      renderOption={(vehicle) => `${vehicle.plate_number} (${vehicle.type})`}
+                      onValueChange={(value, vehicle) => {
+                        field.onChange(value ? Number(value) : -1);
+                        vehicleCB.setInputValue(vehicle ? `${vehicle.plate_number} (${vehicle.type})` : "");
+                      }}
+                      onSearchChange={vehicleCB.setSearchQuery}
+                      page={vehicleCB.page}
+                      totalPages={Math.ceil((vehiclesQuery.data?.total ?? 0) / 10)}
+                      onPageChange={vehicleCB.setPage}
+                      isLoading={vehiclesQuery.isFetching}
+                      disabled={assignment_form.formState.isSubmitting}
+                      placeholder="Search vehicles..."
+                      emptyMessage={vehiclesQuery.isError ? "Unable to load vehicles. Please try again." : "No vehicles found."}
+                      invalid={fieldState.invalid}
+                      error={fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                    />
+                  )}
+                />
+
+                {(event_form.formState.errors.root?.message || assignment_form.formState.errors.root?.message) && <p role="alert" className="text-sm text-destructive">{event_form.formState.errors.root?.message ?? assignment_form.formState.errors.root?.message}</p>}
+              <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={assignment_form.formState.isSubmitting}
+                    onClick={() => dispatch({ type: "CLOSE" })}
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={assignment_form.formState.isSubmitting}
+                  >
+                    {assignment_form.formState.isSubmitting && (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    )}
+                    Save Changes
+                  </Button>
+                </DialogFooter>
+              </form>
+            ) : (
             <form
               onSubmit={event_form.handleSubmit(handleSubmit, (error) => {
                 ToastValidationError(error);
@@ -189,33 +319,13 @@ export default function DeliveriesDialog() {
                               mode="single"
                               selected={field.value}
                               onSelect={field.onChange}
-                              disabled={[
-                                { before: startOfDay(new Date()) },
-                                { dayOfWeek: [0] },
-                                (date) => {
-                                  const dateKey = format(date, "yyyy-MM-dd");
-
-                                  const day = [
-                                    {
-                                      date: "2026-10-16",
-                                      available_slots: 0,
-                                    },
-                                    {
-                                      date: "2026-10-17",
-                                      available_slots: 5,
-                                    },
-                                  ].find((item) => item.date === dateKey);
-
-                                  return day?.available_slots === 0;
-                                },
-                              ]}
+                              disabled={{ before: startOfDay(manilaCalendarNow()) }}
                             />
                           </PopoverContent>
                         </Popover>
 
                         <FieldDescription>
-                          If you see disabled dates, it means there are no
-                          available slots for that date.
+                          Choose a future departure in Asia/Manila.
                         </FieldDescription>
 
                         {fieldState.invalid && (
@@ -284,6 +394,7 @@ export default function DeliveriesDialog() {
                 )}
               />
 
+              {(event_form.formState.errors.root?.message || assignment_form.formState.errors.root?.message) && <p role="alert" className="text-sm text-destructive">{event_form.formState.errors.root?.message ?? assignment_form.formState.errors.root?.message}</p>}
               <DialogFooter>
                 <Button
                   type="button"
@@ -315,6 +426,7 @@ export default function DeliveriesDialog() {
                 </Button>
               </DialogFooter>
             </form>
+            )}
           </>
         )}
       </DialogContent>

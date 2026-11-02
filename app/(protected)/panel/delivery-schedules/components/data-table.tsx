@@ -1,5 +1,9 @@
 "use client";
 
+import { QueryFeedback } from "@/components/query-feedback";
+import { DestinationEditor } from "./destination-editor";
+
+
 import { ModalProvider, useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,8 +67,15 @@ import {
 
 export default function DataTable() {
   const { subscribe } = useWebSocket();
-  const { deliveryScheduleQuery, page, setPage, search, setSearch } =
-    useDeliverySchedule();
+  const {
+    form, setStep, warehouseCB, warehouseQuery,
+    availableDateQuery,
+    deliveryScheduleQuery,
+    page,
+    setPage,
+    search,
+    setSearch,
+  } = useDeliverySchedule();
   const { openModal } = useModal();
   const [searchInput, setSearchInput] = useState(search);
   const debouncedSearch = useMemo(() => debounce(setSearch, 500), [setSearch]);
@@ -93,19 +104,20 @@ export default function DataTable() {
         ),
       },
       {
-        accessorKey: "customer_address",
+        accessorKey: "shipping_address",
         header: () => "Destination",
         cell: ({ row }) => (
           <div className="min-w-36 space-y-1">
-            <p className="font-medium">{row.original.customer_address}</p>
+            <p className="font-medium">{row.original.shipping_address}</p>
+            <DestinationEditor order={row.original} />
           </div>
         ),
       },
       {
-        accessorKey: "payment_arrangement",
+        accessorKey: "customer_company",
         header: () => "Payment Arrangement",
         cell: ({ row }) => (
-          <Badge variant="defaults">{row.original.payment_arrangement}</Badge>
+          <Badge variant="default">{row.original.payment_arrangement}</Badge>
         ),
       },
       {
@@ -113,27 +125,22 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
-            {/* View Order */}
+            {/* Schedule the selected order */}
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     variant="outline"
                     size="icon"
-                    aria-label="View order"
+                    aria-label={`Schedule order ${row.original.order_number}`}
+                    disabled={row.original.shipping_latitude == null || row.original.shipping_longitude == null || (Number(row.original.shipping_latitude) === 0 && Number(row.original.shipping_longitude) === 0)}
                     onClick={() => {
-                      // setSelected({
-                      //   id: row.original.id,
-                      //   version: 1,
-                      // });
-
-                      // viewOrder(row.original.id);
-
-                      openModal(DialogMode.VIEW, {
-                        title: `Order #${row.original.id}`,
-                        description: "View order details and items.",
-                        action: "Close",
-                      });
+                      form.reset();
+                      form.setValue("warehouse_id", row.original.warehouse_id);
+                      form.setValue("order_ids", [row.original.id]);
+                      warehouseCB.setInputValue(warehouseQuery.data?.rows.find(w => w.id === row.original.warehouse_id)?.name ?? "");
+                      setStep(1);
+                      openModal(DialogMode.INSERT, { title: "Schedule Delivery", description: `Schedule ${row.original.order_number} for delivery.`, action: "Schedule Delivery" });
                     }}
                   >
                     <Calendar className="size-4" />
@@ -141,14 +148,14 @@ export default function DataTable() {
                 }
               />
               <TooltipContent>
-                <p>Set Delivery Schedule</p>
+                <p>Schedule this order. Confirm its location first if unavailable.</p>
               </TooltipContent>
             </Tooltip>
           </div>
         ),
       },
     ],
-    [openModal],
+    [openModal, form, setStep, warehouseCB, warehouseQuery.data],
   );
 
   const table = useReactTable({
@@ -164,6 +171,40 @@ export default function DataTable() {
   });
 
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const queryKey = [
+      "deliveryScheduleQuery",
+      page.pageIndex,
+      page.pageSize,
+      search,
+    ];
+
+    return subscribe(REQUESTS.DELIVERY_SCHEDULE_CREATED, (message) => {
+      const orderIds = new Set<number>(message.payload.order_ids);
+
+      queryClient.setQueryData(
+        queryKey,
+        (
+          oldData: { rows: DeliveryScheduleRow[]; total: number } | undefined,
+        ) => {
+          if (!oldData) {
+            return { rows: [], total: 0 };
+          }
+
+          const rows = oldData.rows.filter((row) => !orderIds.has(row.id));
+
+          return {
+            rows,
+            total: Math.max(
+              oldData.total - (oldData.rows.length - rows.length),
+              0,
+            ),
+          };
+        },
+      );
+    });
+  }, [page.pageIndex, page.pageSize, queryClient, search, subscribe]);
 
   return (
     <>
@@ -194,19 +235,20 @@ export default function DataTable() {
           className="cursor-pointer"
           onClick={() => {
             openModal(DialogMode.INSERT, {
-              title: "Schedule Order",
-              description: "Schedule a new orders for delivery.",
-              action: "Schedule Order",
+              title: "Schedule Delivery",
+              description: "Create a delivery schedule for selected orders.",
+              action: "Schedule Delivery",
             });
           }}
         >
           <Plus className="h-3 w-3" />
-          <span>Schedule Order</span>
+          <span>Schedule Delivery</span>
         </Button>
       </div>
 
       <div className="rounded-md border overflow-hidden">
-        <Table>
+        <QueryFeedback query={deliveryScheduleQuery} label="delivery schedules" />
+            <Table>
           <TableHeader className="bg-muted sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -226,7 +268,7 @@ export default function DataTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {deliveryScheduleQuery.isFetching ? (
+            {deliveryScheduleQuery.isPending ? (
               <TableRow>
                 <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex items-center justify-center">

@@ -33,21 +33,25 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { manilaCalendarNow } from "@/utils/date-util";
 import { format, startOfDay } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
-import { useEffect } from "react";
+import { useEffect, useState, useRef } from "react";
 import { DialogMode } from "@/types/dialog";
 import { request, requestWithErrorHandling } from "@/components/http";
 
 export default function CalendarDialog() {
   const { state, dispatch } = useModal();
+  const initialized = useRef<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { calendar_form, eventQuery, selected } = useCalendar();
 
   async function handleSubmit(data: CalendarFormType) {
     ToastSubmit(data);
 
-    requestWithErrorHandling(
-      await request("POST", `/api/calendar/event`, data),
+    calendar_form.clearErrors("root");
+    await requestWithErrorHandling(
+      await request(state.mode === DialogMode.EDIT ? "PUT" : "POST", state.mode === DialogMode.EDIT ? `/api/calendar/event/${selected.id}` : `/api/calendar/event`, { ...data, date: format(data.date, "yyyy-MM-dd"), ...(state.mode === DialogMode.EDIT ? { version: selected.version } : {}) }),
       calendar_form,
       () => {
         eventQuery.refetch();
@@ -59,9 +63,20 @@ export default function CalendarDialog() {
     );
   }
 
+  async function deleteEvent() {
+    const current = eventQuery.data?.find((event) => event.id === selected.id);
+    if (!current || deleting) return;
+    setDeleting(true);
+    try { await requestWithErrorHandling(await request("DELETE", `/api/calendar/event/${selected.id}?version=${selected.version}`), calendar_form, () => { void eventQuery.refetch(); dispatch({ type: "CLOSE" }); }); }
+    finally { setDeleting(false); }
+  }
+
   useEffect(() => {
+    if (!state.isOpen) { initialized.current = null; return; }
+    const key = `${state.mode}:${selected.id}:${selected.version}`;
+    if (initialized.current === key) return;
+    initialized.current = key;
     if (state.mode === DialogMode.EDIT) {
-      console.log("EDIT!");
       const event = eventQuery.data?.find((e) => e.id === selected.id);
 
       if (event) {
@@ -82,7 +97,7 @@ export default function CalendarDialog() {
         end_time: "08:00",
       });
     }
-  }, [selected]);
+  }, [selected, state.isOpen, state.mode, calendar_form, eventQuery.data]);
 
   return (
     <>
@@ -104,6 +119,8 @@ export default function CalendarDialog() {
             })}
             className="space-y-4"
           >
+            {calendar_form.formState.errors.root && <p role="alert" className="text-sm text-destructive">{calendar_form.formState.errors.root.message}</p>}
+            <p className="text-xs text-muted-foreground">All dates and times use Asia/Manila. Events start and end on the same day.</p>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Controller
                 control={calendar_form.control}
@@ -162,6 +179,8 @@ export default function CalendarDialog() {
                         <SelectItem value="MEETING_APPOINTMENT">
                           Meeting/Appointment
                         </SelectItem>
+                        <SelectItem value="ORDER_FULFILLMENT">Order fulfillment</SelectItem>
+                        <SelectItem value="STAFF_SCHEDULE">Staff schedule</SelectItem>
                         <SelectItem value="OTHER">Other</SelectItem>
                       </SelectContent>
                     </Select>
@@ -205,14 +224,14 @@ export default function CalendarDialog() {
                         mode="single"
                         selected={field.value}
                         onSelect={field.onChange}
-                        disabled={[{ before: startOfDay(new Date()) }]}
+                        disabled={state.mode === DialogMode.EDIT ? undefined : [{ before: startOfDay(manilaCalendarNow()) }]}
                       />
                     </PopoverContent>
                   </Popover>
 
                   <FieldDescription>
-                    If you see disabled dates, it means there are no available
-                    slots for that date.
+                    New events can be created for today or a future Manila date.
+                    Existing events retain their original date when edited.
                   </FieldDescription>
 
                   {fieldState.invalid && (
@@ -272,6 +291,7 @@ export default function CalendarDialog() {
               />
             </div>
             <DialogFooter>
+              {state.mode === DialogMode.EDIT && <Button type="button" variant="destructive" disabled={deleting || calendar_form.formState.isSubmitting} onClick={() => void deleteEvent()}>{deleting ? "Deleting..." : "Delete event"}</Button>}
               <Button
                 type="button"
                 variant="outline"
@@ -292,7 +312,7 @@ export default function CalendarDialog() {
                 {calendar_form.formState.isSubmitting && (
                   <Loader2 className="mr-2 size-4 animate-spin" />
                 )}
-                Submit
+                {state.mode === DialogMode.EDIT ? "Save changes" : "Create event"}
               </Button>
             </DialogFooter>
           </form>

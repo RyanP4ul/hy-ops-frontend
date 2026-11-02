@@ -544,7 +544,7 @@ export default function OrdersPage() {
               />
             </div>
 
-            <Select value={deliveryFilter} onValueChange={setDeliveryFilter}>
+            <Select value={deliveryFilter} onValueChange={(value) => { if (value !== null) setDeliveryFilter(value); }}>
               <SelectTrigger className="sm:w-48">
                 <SelectValue placeholder="Delivery method" />
               </SelectTrigger>
@@ -970,7 +970,7 @@ export default function OrdersPage() {
 
               <Select
                 value={selectedProductId}
-                onValueChange={setSelectedProductId}
+                onValueChange={(value) => { if (value !== null) setSelectedProductId(value); }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a product" />

@@ -24,6 +24,8 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
 
+const formSchema = z.object({ email: z.string().email("Enter a valid email"), password: z.string().min(1, "Password is required") });
+
 export function LoginForm({
   className,
   ...props
@@ -53,6 +55,7 @@ export function LoginForm({
     if (!result.ok) {
       const errorData = await result.json();
       toast.error(`Login failed: ${errorData.message}`);
+      return;
     }
 
     router.push("/panel");

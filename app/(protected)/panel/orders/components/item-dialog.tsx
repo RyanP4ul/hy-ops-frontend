@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { request } from "@/components/http";
 import { useOrders } from "../provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,34 +86,21 @@ export default function OrderItemDialog() {
   });
 
   async function onSubmit(data: OrderItem) {
-    const is_existing = form
-      .getValues("items")
-      .find((item) => item.inventory_id === data.inventory_id);
-
-    if (is_existing) {
-      const updated_items = form.getValues("items").map((item) => {
-        if (item.inventory_id === data.inventory_id) {
-          return {
-            ...item,
-            quantity:
-              sub.mode === DialogMode.EDIT
-                ? data.quantity
-                : item.quantity + data.quantity,
-          };
-        }
-        return item;
-      });
-
-      form.setValue("items", updated_items);
-    } else {
-      setInventoryItem((prev) => [
-        ...prev,
-        { inventory_id: data.inventory_id, quantity: data.quantity },
-      ]);
-    }
-
-    item_form.reset();
-    setSub({ is_open: false, mode: DialogMode.DEFAULT });
+    item_form.clearErrors("root");
+    try {
+      const response = await request("GET", `/api/inventory/details?ids=${data.inventory_id}`);
+      if (!response.ok) throw new Error("Unable to verify stock. Try again.");
+      const [stock] = await response.json() as (OrderItemDetail & { quantity: number; price: string | number })[];
+      if (!stock) throw new Error("This item is no longer available.");
+      const current = form.getValues("items");
+      const existing = current.find((item) => item.inventory_id === data.inventory_id);
+      const quantity = sub.mode === DialogMode.EDIT ? data.quantity : (existing?.quantity ?? 0) + data.quantity;
+      if (quantity > stock.quantity) { item_form.setError("quantity", { message: `Only ${stock.quantity} units are currently available.` }); return; }
+      const item = { ...stock, description: stock.description ?? "", price: Number(stock.price), quantity };
+      form.setValue("items", existing ? current.map((row) => row.inventory_id === data.inventory_id ? item : row) : [...current, item], { shouldValidate: true });
+      item_form.reset();
+      setSub({ is_open: false, mode: DialogMode.DEFAULT });
+    } catch (error) { item_form.setError("root", { message: error instanceof Error ? error.message : "Unable to add item." }); }
   }
 
   const getModalSize = () => {
@@ -127,14 +115,14 @@ export default function OrderItemDialog() {
     }
   };
 
-  function Form() {
-    return (
+  const itemForm = (
       <form
         id="sub-form"
         onSubmit={item_form.handleSubmit(onSubmit, (error) =>
           ToastValidationError(error),
         )}
       >
+        {item_form.formState.errors.root && <p role="alert" className="mb-3 text-sm text-destructive">{item_form.formState.errors.root.message}</p>}
         <FieldGroup className="grid gap-5">
           <div className="grid gap-3 sm:grid-cols-1">
             <div className="grid grid-cols-2 gap-2">
@@ -143,6 +131,7 @@ export default function OrderItemDialog() {
                 control={item_form.control}
                 render={({ field, fieldState }) => (
                   <Combobox
+                    disabled={sub.mode === DialogMode.EDIT}
                     open={inventoryCB.open}
                     onOpenChange={(open) => inventoryCB.setOpen(open)}
                     value={field.value ? String(field.value) : ""}
@@ -162,6 +151,7 @@ export default function OrderItemDialog() {
                       </FieldLabel>
 
                       <ComboboxInput
+                        id="inventory_id"
                         placeholder="Select inventory name..."
                         value={inventoryCB.inputValue}
                         disabled={inventoryQuery.isFetching}
@@ -249,6 +239,8 @@ export default function OrderItemDialog() {
                     <Input
                       {...field}
                       id="quantity"
+                      min={1}
+                      step={1}
                       type="number"
                       aria-invalid={fieldState.invalid}
                       placeholder="Enter quantity"
@@ -268,7 +260,6 @@ export default function OrderItemDialog() {
         </FieldGroup>
       </form>
     );
-  }
 
   async function onDelete() {
     if (sub.id === undefined) {
@@ -280,18 +271,9 @@ export default function OrderItemDialog() {
     setSub({ is_open: false, mode: DialogMode.DEFAULT });
   }
 
-  function DeleteConfirmation() {
-    return (
-      <div className="grid gap-3">
-        <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete this variant? This action cannot be
-          undone.
-        </p>
-      </div>
-    );
-  }
 
   useEffect(() => {
+    if (!sub.is_open) return;
     if (sub.mode === DialogMode.EDIT) {
       const item = form
         .getValues("items")
@@ -313,35 +295,8 @@ export default function OrderItemDialog() {
 
       inventoryCB.setInputValue("");
     }
-  }, [sub, orderDetailQuery.isFetched]);
+  }, [sub, form, item_form, inventoryCB.setInputValue]);
 
-  useEffect(() => {
-    const new_items = orderItemDetailQuery.data?.map((item) => {
-      const inventory = inventoryItem.find(
-        (inv) => inv.inventory_id === item.inventory_id,
-      );
-
-      return {
-        inventory_id: item.inventory_id,
-        product_id: item.product_id,
-        product_variant_name: item.product_variant_name,
-        product_variant_sku: item.product_variant_sku,
-        quantity: inventory?.quantity || 0,
-        price: Number(item.price),
-        description: item.description,
-      };
-    });
-
-    const current_items = form.getValues("items");
-
-    if (current_items.length > 0) {
-      form.setValue("items", [...current_items, ...(new_items || [])]);
-    } else {
-      form.setValue("items", new_items || []);
-    }
-
-    setInventoryItem([]);
-  }, [orderItemDetailQuery.isFetched]);
 
   return (
     <>
@@ -368,7 +323,7 @@ export default function OrderItemDialog() {
           </DialogHeader>
 
           {sub.mode === DialogMode.INSERT || sub.mode === DialogMode.EDIT ? (
-            <Form />
+            itemForm
           ) : (
             <DeleteConfirmation />
           )}
@@ -388,7 +343,8 @@ export default function OrderItemDialog() {
                 sub.mode === DialogMode.DELETE ? "destructive" : "default"
               }
               onClick={() => sub.mode === DialogMode.DELETE && onDelete()}
-              type="submit"
+              disabled={item_form.formState.isSubmitting}
+              type={sub.mode === DialogMode.DELETE ? "button" : "submit"}
               form="sub-form"
             >
               {sub.mode === DialogMode.INSERT
@@ -403,3 +359,13 @@ export default function OrderItemDialog() {
     </>
   );
 }
+
+  function DeleteConfirmation() {
+    return (
+      <div className="grid gap-3">
+        <p className="text-sm text-muted-foreground">
+          Remove this item from the draft order? You can add it again before checkout.
+        </p>
+      </div>
+    );
+  }

@@ -6,13 +6,9 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useTheme } from "next-themes";
 import {
   Bell,
-  BellIcon,
   Check,
   CircleX,
   Info,
-  InfoIcon,
-  MailIcon,
-  MessageSquareIcon,
   Moon,
   Sun,
   TriangleAlert,
@@ -65,7 +61,7 @@ export function SiteHeader() {
         <h1 className="text-base font-medium">{currentPage}</h1>
         <div className="ml-auto flex items-center gap-2">
           {!connected ? (
-            <Badge variant="destructive" className="text-xs">
+            <Badge role="status" aria-label="Live update connection" variant="destructive" className="text-xs">
               {connecting
                 ? "Connecting..."
                 : reconnecting
@@ -73,9 +69,9 @@ export function SiteHeader() {
                   : "Disconnected"}
             </Badge>
           ) : (
-            <Badge variant="secondary" className="text-xs gap-1.5">
+            <Badge role="status" aria-label="Live update connection" variant="secondary" className="text-xs gap-1.5">
               <span className="h-2 w-2 rounded-full bg-green-500" />
-              System Online
+              Live updates connected
             </Badge>
           )}
 
@@ -137,7 +133,7 @@ export function SiteHeader() {
                           transition={{ duration: 0.2 }}
                           // onClick={() => markAsRead(notification.id)}
                           className={cn(
-                            "flex w-full gap-3 rounded-lg p-3 text-left transition-colors hover:bg-accent",
+                            "flex w-full gap-3 rounded-lg p-3 text-left transition-colors hover:bg-accent mb-2",
                             !notification.is_read && "bg-primary/5",
                           )}
                         >

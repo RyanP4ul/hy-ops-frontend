@@ -114,7 +114,6 @@ export default function Page() {
   }, [latitude, longitude]);
 
   const onSubmit = (data: WarehouseForm) => {
-    console.log(data);
   };
 
   const hasLocation =

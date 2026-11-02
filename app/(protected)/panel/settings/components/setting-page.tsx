@@ -5,12 +5,13 @@ import TabInventory from "@/app/(protected)/panel/settings/components/tab-invent
 import React from "react";
 import TabGeneral from "./tab-general";
 import { useSetting } from "@/components/providers/setting-provider";
+import { MotionPage } from "@/components/page-motion";
 
 export default function SettingPage() {
   const { settingQuery: query, isModified } = useSetting();
 
   return (
-    <div className="flex flex-col gap-4 md:gap-6 py-4 md:py-6 px-4 lg:px-6">
+    <MotionPage className="flex flex-col gap-4 md:gap-6 py-4 md:py-6 px-4 lg:px-6">
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
@@ -23,6 +24,6 @@ export default function SettingPage() {
           <TabInventory />
         </TabsContent>
       </Tabs>
-    </div>
+    </MotionPage>
   );
 }

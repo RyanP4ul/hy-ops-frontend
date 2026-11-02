@@ -18,7 +18,7 @@ import { DialogMode } from "@/types/dialog";
 import { MapRef } from "@/components/ui/map";
 
 type WarehouseContext = {
-  form: UseFormReturn<WarehouseForm, any>;
+  form: UseFormReturn<WarehouseForm>;
   warehouseQuery: ReturnType<
     typeof useQuery<{
       rows: (WarehouseRow & { version: number })[];
@@ -118,51 +118,32 @@ export function WarehousesProvider({
   });
 
   const warehouseDetailQuery = useQuery({
-    queryKey: ["warehouse_detail", selected.id],
+    queryKey: ["warehouse_detail", selected.id, selected.version],
     queryFn: async () => {
       if (!selected) return null;
 
       const response = await request("GET", `/api/warehouses/${selected.id}`);
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Unable to load warehouse details.");
 
       return (await response.json()) as WarehouseRow;
     },
-    enabled: selected.id !== -1,
+    enabled: state.isOpen && state.mode === DialogMode.EDIT && selected.id > 0,
   });
 
   const geocodeQuery = useQuery({
     queryKey: ["geocode", searchAddress],
-    queryFn: async () => {
-      const response = await request(
-        "GET",
-        `/api/geocode/search?q=${encodeURIComponent(searchAddress)}`,
-      );
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/geocode/search?q=${encodeURIComponent(searchAddress)}`, { signal, credentials: "include" });
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Address search unavailable. Enter the address manually.");
 
       const result = (await response.json()) as GeocodeResult[];
 
-      if (result && result.length > 0) {
-        console.log("Geocode result for address:", searchAddress, "is", result);
-        const newLatitude = Number(result[0].lat);
-        const newLongitude = Number(result[0].lon);
-
-        setLatitude(newLatitude);
-        setLongitude(newLongitude);
-
-        mapRef.current?.flyTo({
-          center: [newLongitude, newLatitude],
-          zoom: 16,
-          duration: 1000,
-        });
-      } else {
-        console.log("Geocode result for address:", searchAddress, "is", result);
-      }
-
       return result;
     },
-    enabled: searchAddress.trim().length > 0,
+    enabled: searchAddress.trim().length >= 3,
+    retry: false,
   });
 
   return (

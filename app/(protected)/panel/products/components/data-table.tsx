@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { QueryFeedback } from "@/components/query-feedback";
+
+
+import { useEffect, useMemo, useState } from "react";
 import {
   ColumnDef,
   flexRender,
@@ -58,17 +61,28 @@ import { debounce } from "@/utils/debounce";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import Form from "./form";
+import { useWebSocket } from "@/components/providers/websocket-provider";
+import { REQUESTS } from "@/constant/request";
+import { useQueryClient } from "@tanstack/react-query";
+
+type ProductQueryData = {
+  rows: ProductType[];
+  total: number;
+};
 
 export default function DataTable() {
   const { openModal } = useModal();
-  const { query, page, setPage, setSelected, setSearchQuery } = useProducts();
+  const { query, page, setPage, setSelected, setSearchQuery, searchQuery, variantFilter, setVariantFilter } =
+    useProducts();
+  const { subscribe } = useWebSocket();
+  const queryClient = useQueryClient();
 
   const columns: ColumnDef<ProductType>[] = [
     {
       accessorKey: "name",
       header: "Name",
       cell: ({ row }) => (
-        <div className="flex items-center gap-2">{row.original.name}</div>
+        <Button variant="link" className="h-auto p-0 text-left" onClick={() => { setSelected({ id: row.original.id || -1, version: row.original.version || 0 }); openModal(DialogMode.EDIT, { title: "Edit Product", description: "Update this product and its variants.", action: "Save changes" }); }}>{row.original.name}</Button>
       ),
     },
     {
@@ -76,9 +90,9 @@ export default function DataTable() {
       header: "Variants",
       cell: ({ row }) => (
         <div className="flex flex-col gap-1">
-          <Badge variant="outline">
-            {row.original.variants.length ?? 0} Variant
-          </Badge>
+          <details><summary className="cursor-pointer">{row.original.variants.length} {row.original.variants.length === 1 ? "variant" : "variants"}</summary>
+            <ul className="min-w-64 space-y-2 py-2 text-sm">{row.original.variants.map((variant) => <li key={variant.id ?? variant.sku}><p className="font-medium">{variant.name} - {variant.sku}</p><p className="text-xs text-muted-foreground">{variant.price} PHP / {variant.unit}</p></li>)}</ul>
+          </details>
         </div>
       ),
     },
@@ -102,7 +116,7 @@ export default function DataTable() {
               });
             }}
           >
-            <Edit className="h-3 w-3" />
+            <Edit className="h-3 w-3" /> Edit
           </Button>
           <Button
             variant="outline"
@@ -121,7 +135,7 @@ export default function DataTable() {
             }}
             className="text-destructive hover:text-destructive"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="h-3 w-3" /> Delete
           </Button>
         </div>
       ),
@@ -141,21 +155,26 @@ export default function DataTable() {
     manualPagination: true,
   });
 
+  // Shared resource invalidation preserves the server search/filter result.
+
   const debouncedSearch = useMemo(
     () =>
       debounce((value: string) => {
+        setPage((page) => ({ ...page, pageIndex: 0 }));
         setSearchQuery(value);
       }, 500),
-    [],
+    [setSearchQuery, setPage],
   );
+
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
   return (
     <section>
       <Card>
-        <CardHeader>
+        <CardHeader className="max-sm:flex max-sm:flex-col max-sm:items-start max-sm:gap-2">
           <CardTitle className="leading-none">Products</CardTitle>
           <CardDescription>
-            Manage your products and their variants. Click on a product to view
+            Search by product, variant name, or SKU. Expand variants to review pricing and units.
           </CardDescription>
           <CardAction>
             <div className="flex items-center gap-2">
@@ -179,10 +198,10 @@ export default function DataTable() {
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 px-0">
-          <div className="flex items-center justify-between px-4">
+          <div className="flex flex-wrap items-center gap-3 px-4">
             <Input
               className="h-7 w-44 md:w-52"
-              placeholder="Search deals..."
+              placeholder="Search products or variants..."
               value={search}
               onChange={(event) => {
                 const value = event.target.value;
@@ -190,8 +209,14 @@ export default function DataTable() {
                 debouncedSearch(value);
               }}
             />
+            <Select items={[{ value: "all", label: "All products" }, { value: "with", label: "With variants" }, { value: "without", label: "Without variants" }]} value={variantFilter} onValueChange={(value) => { if (value) { setVariantFilter(value); setPage((page) => ({ ...page, pageIndex: 0 })); } }}>
+              <SelectTrigger aria-label="Filter products by variants" className="w-44"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All products</SelectItem><SelectItem value="with">With variants</SelectItem><SelectItem value="without">Without variants</SelectItem></SelectContent>
+            </Select>
+            <Button type="button" variant="ghost" onClick={() => { debouncedSearch.cancel(); setSearch(""); setSearchQuery(""); setVariantFilter("all"); setPage((page) => ({ ...page, pageIndex: 0 })); }}>Clear filters</Button>
           </div>
           <div className="overflow-hidden">
+            <QueryFeedback query={query} label="products" />
             <Table>
               <TableHeader className="bg-muted sticky top-0 z-10">
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -212,7 +237,7 @@ export default function DataTable() {
                 ))}
               </TableHeader>
               <TableBody>
-                {query.isFetching ? (
+                {query.isPending ? (
                   <TableRow>
                     <TableCell colSpan={10} className="h-40 text-center">
                       <div className="flex items-center justify-center">
@@ -224,25 +249,19 @@ export default function DataTable() {
                 ) : (
                   <>
                     {table.getRowModel().rows.length ? (
-                      table.getRowModel().rows.map((row: any) => (
-                        <>
+                      table.getRowModel().rows.map((row) => (
                           <TableRow key={row.id}>
-                            {row.getVisibleCells().map((cell: any) => (
+                            {row.getVisibleCells().map((cell) => (
                               <TableCell key={cell.id}>
-                                {cell.column.columnDef.cell
-                                  ? (cell.column.columnDef.cell as any)(
-                                      cell.getContext(),
-                                    )
-                                  : cell.getValue()}
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
                               </TableCell>
                             ))}
                           </TableRow>
-                        </>
                       ))
                     ) : (
                       <TableRow>
                         <TableCell colSpan={10} className="h-24 text-center">
-                          No Results Found
+                          {query.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
                         </TableCell>
                       </TableRow>
                     )}
@@ -250,7 +269,7 @@ export default function DataTable() {
                 )}
               </TableBody>
             </Table>
-            <div className="flex items-center justify-between px-4">
+            <div className="flex flex-wrap items-center gap-3 px-4">
               <div className="text-muted-foreground hidden flex-1 text-sm lg:flex">
                 <Field orientation="horizontal" className="w-fit">
                   <FieldLabel htmlFor="select-rows-per-page">

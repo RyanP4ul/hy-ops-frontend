@@ -57,10 +57,11 @@ import {
 } from "@/components/ui/item";
 import { OrderFormData, orderSchema } from "@/schema/delivery-schedule";
 import { toast } from "sonner";
+import { DestinationEditor } from "./destination-editor";
+import { QueryFeedback } from "@/components/query-feedback";
 
 export default function SubDialog() {
-  const { form, sub, setSub, orderCB, orderQuery } =
-    useDeliverySchedule();
+  const { form, sub, setSub, orderCB, orderQuery } = useDeliverySchedule();
 
   const item_form = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
@@ -69,8 +70,17 @@ export default function SubDialog() {
     },
   });
 
+  const selectedOrderId = item_form.watch("order_id");
+  const selectedOrder = orderQuery.data?.rows.find(order => order.id === selectedOrderId);
+  function locationReady(order: typeof selectedOrder) {
+    return order && order.shipping_latitude != null && order.shipping_longitude != null &&
+      Number.isFinite(Number(order.shipping_latitude)) && Number.isFinite(Number(order.shipping_longitude)) &&
+      Math.abs(Number(order.shipping_latitude)) <= 90 && Math.abs(Number(order.shipping_longitude)) <= 180 &&
+      (Number(order.shipping_latitude) !== 0 || Number(order.shipping_longitude) !== 0);
+  }
   async function onSubmit(data: OrderFormData) {
-    const currentOrderIds = form.getValues("order_ids") || {};
+    if (!locationReady(selectedOrder)) { item_form.setError("order_id", { message: "Confirm this order's destination coordinates before adding it." }); return; }
+    const currentOrderIds = form.getValues("order_ids") || [];
 
     // Check if the order_id is already in the array
     if (currentOrderIds.includes(data.order_id)) {
@@ -79,8 +89,7 @@ export default function SubDialog() {
       return;
     }
 
-    currentOrderIds.push(data.order_id);
-    form.setValue("order_ids", currentOrderIds);
+    form.setValue("order_ids", [...currentOrderIds, data.order_id], { shouldDirty: true, shouldValidate: true });
 
     item_form.reset();
     setSub({ is_open: false, mode: DialogMode.DEFAULT });
@@ -105,7 +114,7 @@ export default function SubDialog() {
     }
   }, [sub.mode]);
 
-  function Form() {
+  function renderForm() {
     return (
       <form
         id="sub-form"
@@ -114,6 +123,7 @@ export default function SubDialog() {
         )}
       >
         <FieldGroup className="grid gap-5">
+          <QueryFeedback query={orderQuery} label="ready orders" />
           <Controller
             name="order_id"
             control={item_form.control}
@@ -146,18 +156,26 @@ export default function SubDialog() {
                   />
                   <ComboboxContent>
                     <ComboboxList>
-                      {orderQuery.data?.rows?.map((order) => (
-                        <ComboboxItem key={order.id} value={String(order.id)}>
-                          <Item size="xs" className="p-0">
-                            <ItemContent>
-                              <ItemTitle className="whitespace-nowrap">
-                                ({order.id}) {order.order_number}
-                              </ItemTitle>
-                              <ItemDescription>{order.name}</ItemDescription>
-                            </ItemContent>
-                          </Item>
-                        </ComboboxItem>
-                      ))}
+                      {orderQuery.data?.rows?.map((order) => {
+                        const order_ids = form.getValues("order_ids") || [];
+
+                        if (order_ids.includes(order.id)) {
+                          return null; // Skip rendering this order if it's already in the array
+                        }
+
+                        return (
+                          <ComboboxItem key={order.id} value={String(order.id)}>
+                            <Item size="xs" className="p-0">
+                              <ItemContent>
+                                <ItemTitle className="whitespace-nowrap">
+                                  ({order.id}) {order.order_number}
+                                </ItemTitle>
+                                <ItemDescription>{order.customer_name}</ItemDescription>
+                              </ItemContent>
+                            </Item>
+                          </ComboboxItem>
+                        );
+                      })}
 
                       {orderQuery.isFetching && (
                         <div className="px-2 py-1 text-xs text-muted-foreground">
@@ -167,7 +185,7 @@ export default function SubDialog() {
 
                       {!orderQuery.isFetching &&
                         orderQuery.data?.rows?.length === 0 && (
-                          <ComboboxEmpty>No found.</ComboboxEmpty>
+                          <ComboboxEmpty>No ready orders found.</ComboboxEmpty>
                         )}
                     </ComboboxList>
 
@@ -210,6 +228,10 @@ export default function SubDialog() {
               </Combobox>
             )}
           />
+          {selectedOrder && <div className="space-y-2">
+            <p className="text-sm">{selectedOrder.shipping_address}</p>
+            <DestinationEditor order={selectedOrder} />
+          </div>}
         </FieldGroup>
       </form>
     );
@@ -221,6 +243,7 @@ export default function SubDialog() {
       return;
     }
 
+    form.setValue("order_ids", form.getValues("order_ids").filter((_, index) => index !== sub.id), { shouldDirty: true, shouldValidate: true });
     setSub({ is_open: false, mode: DialogMode.DEFAULT });
   }
 
@@ -228,7 +251,7 @@ export default function SubDialog() {
     return (
       <div className="grid gap-3">
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete this variant? This action cannot be
+          Are you sure you want to remove this order from the delivery? This action cannot be
           undone.
         </p>
       </div>
@@ -260,7 +283,7 @@ export default function SubDialog() {
           </DialogHeader>
 
           {sub.mode === DialogMode.INSERT || sub.mode === DialogMode.EDIT ? (
-            <Form />
+            renderForm()
           ) : (
             <DeleteConfirmation />
           )}

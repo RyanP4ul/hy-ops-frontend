@@ -1,5 +1,9 @@
 "use client";
 
+import { useAuth } from "@/components/providers/auth-provider";
+import { QueryFeedback } from "@/components/query-feedback";
+
+
 import { ModalProvider, useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,14 +30,14 @@ import {
 import {
   Archive,
   ArrowDownUp,
+  KeyRound,
   Edit,
   Filter,
   Loader2Icon,
   Plus,
   Search,
-  Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
 import { WarehouseRow } from "@/schema/warehouse";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -45,9 +49,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { REQUESTS } from "@/constant/request";
-import { useWebSocket } from "@/components/providers/websocket-provider";
-import { useQueryClient } from "@tanstack/react-query";
 import { useSetting } from "@/components/providers/setting-provider";
 import { useUser } from "../provider";
 import { UserRow } from "@/schema/user";
@@ -55,10 +56,11 @@ import { Badge } from "@/components/ui/badge";
 import PaginationUser from "./pagination";
 
 export default function DataTable() {
-  const { subscribe } = useWebSocket();
   const { userQuery, page, setPage, search, setSearch, setSelected } =
     useUser();
   const { openModal } = useModal();
+  const { userQuery: sessionQuery } = useAuth();
+  const actorId = Number(sessionQuery.data?.sub);
   const [searchInput, setSearchInput] = useState(search);
   const debouncedSearch = useMemo(() => debounce(setSearch, 500), [setSearch]);
 
@@ -96,7 +98,7 @@ export default function DataTable() {
         cell: ({ row }) => {
           const profile =
             "profile" in row.original ? row.original.profile : undefined;
-          if (!profile)
+          if (!profile || !("phone_number" in profile))
             return <span className="text-muted-foreground">None</span>;
           return <span>{profile.phone_number}</span>;
         },
@@ -106,51 +108,58 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
+            {row.original.role !== "customer" && (
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Change password"
+                onClick={() => {
+                  setSelected({
+                    id: row.original.id,
+                    version: row.original.version,
+                  });
+                  openModal(DialogMode.CHANGE_PASSWORD, {
+                    title: "Change Password",
+                    description: `Set a new password for ${row.original.name}.`,
+                    action: "Change Password",
+                  });
+                }}
+              >
+                <KeyRound className="size-4" />
+              </Button>
+            )}
             <Button
               variant="outline"
               size="icon"
-              aria-label="Edit warehouse"
+              aria-label={`Edit user ${row.original.name}`}
               onClick={() => {
                 setSelected({
                   id: row.original.id,
                   version: row.original.version,
                 });
                 openModal(DialogMode.EDIT, {
-                  title: "Edit Warehouse",
-                  description: "Update this warehouse.",
+                  title: "Edit User",
+                  description: `Update the account for ${row.original.name}.`,
                   action: "Save changes",
                 });
               }}
             >
               <Edit className="size-4" />
             </Button>
+
             <Button
               variant="outline"
               size="icon"
-              aria-label="Delete warehouse"
-              className="text-destructive"
-              onClick={() => {
-                setSelected(row.original);
-                openModal(DialogMode.DELETE, {
-                  title: "Delete Warehouse",
-                  description: `Are you sure you want to delete the warehouse "${row.original.name}"? This action cannot be undone.`,
-                  action: "Delete",
-                });
-              }}
-            >
-              <Trash2 className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Archive warehouse"
+              aria-label={`Deactivate user ${row.original.name}`}
+              disabled={row.original.id === actorId}
+              title={row.original.id === actorId ? "You cannot deactivate your own account." : "Deactivate this account while retaining its history"}
               onClick={() => {
                 setSelected(row.original);
 
                 openModal(DialogMode.ARCHIVE, {
-                  title: "Archive Warehouse",
-                  description: `Are you sure you want to archive the warehouse "${row.original.name}"? This action cannot be undone.`,
-                  action: "Archive",
+                  title: "Deactivate User",
+                  description: `Deactivate ${row.original.name} (${row.original.email})? They will no longer be able to sign in. The account can be restored from Archives, and existing records are retained.`,
+                  action: "Deactivate User",
                 });
               }}
             >
@@ -160,7 +169,7 @@ export default function DataTable() {
         ),
       },
     ],
-    [openModal, setSelected],
+    [openModal, setSelected, actorId],
   );
   const table = useReactTable({
     data: userQuery.data?.rows ?? [],
@@ -172,74 +181,7 @@ export default function DataTable() {
     manualPagination: true,
   });
 
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    console.log("Setting up WebSocket subscriptions for user updates");
-    return subscribe(
-      [
-        REQUESTS.USER_ADDED,
-        REQUESTS.USER_ARCHIVED,
-        REQUESTS.USER_DELETED,
-        REQUESTS.USER_UPDATED,
-        REQUESTS.USER_RESTORED,
-      ],
-      (message) => {
-        const query_key = ["users", page.pageIndex, page.pageSize, search];
-
-        const payload = message.payload;
-        const userId =
-          typeof payload === "object" && payload !== null
-            ? payload.id
-            : Array.isArray(payload)
-              ? payload[payload.length - 1]
-              : payload;
-
-        switch (message.type) {
-          case REQUESTS.USER_ADDED:
-          case REQUESTS.USER_RESTORED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) return { rows: [payload], total: 1 };
-
-              return {
-                rows: [payload, ...oldData.rows].slice(0, page.pageSize),
-                total: oldData.total + 1,
-              };
-            });
-            break;
-          case REQUESTS.USER_ARCHIVED:
-          case REQUESTS.USER_DELETED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) return oldData;
-
-              const rows = oldData.rows.filter(
-                (row: UserRow) => row.id !== userId,
-              );
-              return {
-                rows,
-                total: Math.max(
-                  0,
-                  oldData.total - (rows.length < oldData.rows.length ? 1 : 0),
-                ),
-              };
-            });
-            break;
-          case REQUESTS.USER_UPDATED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) return oldData;
-
-              return {
-                ...oldData,
-                rows: oldData.rows.map((row: UserRow) =>
-                  row.id === userId ? payload : row,
-                ),
-              };
-            });
-            break;
-        }
-      },
-    );
-  }, [page.pageIndex, page.pageSize, queryClient, search, subscribe]);
+  // Shared WebSocket invalidation refetches server-filtered rows and totals.
 
   return (
     <>
@@ -263,7 +205,8 @@ export default function DataTable() {
       </div>
 
       <div className="rounded-md border overflow-hidden">
-        <Table>
+        <QueryFeedback query={userQuery} label="users" />
+            <Table>
           <TableHeader className="bg-muted sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -283,7 +226,7 @@ export default function DataTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {userQuery.isFetching ? (
+            {userQuery.isPending ? (
               <TableRow>
                 <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex items-center justify-center">
@@ -299,11 +242,7 @@ export default function DataTable() {
                     <TableRow key={row.id}>
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>
-                          {cell.column.columnDef.cell
-                            ? (cell.column.columnDef.cell as any)(
-                                cell.getContext(),
-                              )
-                            : cell.getValue()}
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
                       ))}
                     </TableRow>
@@ -311,7 +250,7 @@ export default function DataTable() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={10} className="h-24 text-center">
-                      No Results Found
+                      {userQuery.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
                     </TableCell>
                   </TableRow>
                 )}

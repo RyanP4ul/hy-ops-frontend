@@ -1,5 +1,4 @@
 import { formatCurrency } from "@/utils/date-util";
-import { ArrowUpRight } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -17,30 +16,32 @@ export default function RevenueOverview() {
   const currentRevenue = dashboardQuery.data?.revenue ?? 0;
 
   function formatCompactPHP(value: number) {
-    if (value >= 1_000_000) {
+    if (!Number.isFinite(value)) {
+      return "₱—";
+    }
+
+    if (Math.abs(value) >= 1_000_000) {
       return `₱${(value / 1_000_000).toFixed(1)}M`;
     }
 
-    if (value >= 1_000) {
+    if (Math.abs(value) >= 1_000) {
       return `₱${Math.round(value / 1_000)}k`;
     }
 
-    return `₱${value}`;
+    return `₱${value.toFixed(0)}`;
   }
 
   return (
     <>
       <div className="mb-4">
-        <p className="text-3xl font-bold">
+        <p className="text-3xl font-semibold tracking-tight tabular-nums">
           {formatCurrency(Number(currentRevenue))}
         </p>
-        <p className="mt-1 text-sm text-emerald-600">
-          <ArrowUpRight className="mr-1 inline size-4" />
-          12.8% compared with the previous month
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Receipts minus refunds this Manila month.</p>
       </div>
 
-      <div className="h-[260px] w-full">
+      <div className="h-[260px] min-w-0 w-full">
+        {!revenueData.length ? <p className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">No monthly cashflow data available.</p> : revenueData.every((item: { revenue: number }) => item.revenue === 0) ? <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No net cash movement in each of the last six Manila months.</p> :
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={revenueData}
@@ -76,10 +77,12 @@ export default function RevenueOverview() {
             />
 
             <Tooltip
-              formatter={(value) => [formatCurrency(Number(value)), "Revenue"]}
+              formatter={(value) => [formatCurrency(Number(value)), "Net cashflow"]}
               contentStyle={{
                 borderRadius: 12,
                 border: "1px solid var(--border)",
+                background: "var(--popover)",
+                color: "var(--popover-foreground)",
               }}
             />
 
@@ -90,9 +93,10 @@ export default function RevenueOverview() {
               strokeWidth={2.5}
               fill="url(#revenueGradient)"
               activeDot={{ r: 5 }}
+              isAnimationActive={false}
             />
           </AreaChart>
-        </ResponsiveContainer>
+        </ResponsiveContainer>}
       </div>
     </>
   );

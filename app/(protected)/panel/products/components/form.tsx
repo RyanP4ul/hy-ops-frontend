@@ -1,3 +1,4 @@
+import { formatCurrency } from "@/utils/date-util";
 import {
   Field,
   FieldError,
@@ -17,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "motion/react";
 import { ProductType } from "@/schema/product";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
+import { QueryFeedback } from "@/components/query-feedback";
+import { useEffect, useRef, useState } from "react";
 import {
   Table,
   TableBody,
@@ -40,6 +42,7 @@ export default function Form() {
     setVariant,
   } = useProducts();
 
+  const initialized = useRef<string | null>(null);
   const fieldArray = useFieldArray({
     control: form.control,
     name: "variants",
@@ -64,7 +67,7 @@ export default function Form() {
         await updateProduct.mutateAsync({
           ...data,
           id: selected.id,
-          version: productDetailQuery?.data?.version ?? 0,
+          version: data.version ?? selected.version,
         });
       } else {
         await createProduct.mutateAsync(data);
@@ -75,7 +78,7 @@ export default function Form() {
       });
     } catch (error) {
       const errorData =
-        error instanceof Error ? JSON.parse(error.message) : null;
+        error instanceof Error ? (() => { try { return JSON.parse(error.message); } catch { return { message: error.message }; } })() : null;
 
       if (errorData?.errors) {
         Object.entries(errorData.errors).forEach(([field, message]) => {
@@ -85,31 +88,19 @@ export default function Form() {
           });
         });
       } else {
-        toast.error("An error occurred while creating the product.");
+        form.setError("root", { message: errorData?.message || "Unable to save this product. Please try again." });
       }
     }
   }
 
   useEffect(() => {
-    // if (state.mode === DialogMode.EDIT && productDetailQuery.data) {
-    console.log(
-      `state: ${state.mode}, selected.id: ${selected.id}, productDetailQuery.data: ${JSON.stringify(productDetailQuery?.data, null, 2)}`,
-    );
-    if (state.mode === DialogMode.EDIT && productDetailQuery.data) {
-      console.log(
-        "Resetting form with product details:",
-        JSON.stringify(productDetailQuery?.data, null, 2),
-      );
-      form.reset(productDetailQuery?.data ?? {});
-    } else {
-      console.log("Resetting form to default values");
-      form.reset({
-        name: "",
-        variants: [],
-        version: 0,
-      });
-    }
-  }, [state, productDetailQuery.isFetched]);
+    if (!state.isOpen) { initialized.current = null; return; }
+    const key = `${state.mode}:${selected.id}:${selected.version}`;
+    if (initialized.current === key) return;
+    if (state.mode === DialogMode.EDIT && (productDetailQuery.isFetching || !productDetailQuery.data)) return;
+    initialized.current = key;
+    form.reset(state.mode === DialogMode.EDIT && productDetailQuery.data ? productDetailQuery.data : { name: "", variants: [], version: 0 });
+  }, [state.isOpen, state.mode, selected.id, selected.version, productDetailQuery.isFetching, productDetailQuery.data, form]);
 
   return (
     <>
@@ -119,6 +110,8 @@ export default function Form() {
           ToastValidationError(error),
         )}
       >
+        {state.mode === DialogMode.EDIT && <QueryFeedback query={productDetailQuery} label="product details" />}
+        {form.formState.errors.root && <p role="alert" className="mb-3 text-sm text-destructive">{form.formState.errors.root.message}</p>}
         <FieldGroup className="grid grid-cols-1 items-center gap-4">
           <Controller
             name="name"
@@ -130,12 +123,12 @@ export default function Form() {
             }
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
-                <FieldLabel htmlFor="name">
+                <FieldLabel htmlFor="product-name">
                   Product Name<span className="text-destructive">*</span>
                 </FieldLabel>
                 <Input
                   {...field}
-                  id="name"
+                  id="product-name"
                   aria-invalid={fieldState.invalid}
                   placeholder="Enter name"
                   autoComplete="off"
@@ -199,10 +192,7 @@ export default function Form() {
                       {variant.description || "—"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">
-                      {variant.price !== "" &&
-                      Number.isFinite(Number(variant.price))
-                        ? `₱${Number(variant.price).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : "—"}
+                      {formatCurrency(variant.price)}
                     </TableCell>
                     <TableCell>{variant.unit || "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
@@ -230,13 +220,13 @@ export default function Form() {
                           ]);
 
                           setVariant({
-                            id: variant.id,
+                            id: index,
                             is_open: true,
                             mode: DialogMode.EDIT,
                           });
                         }}
                       >
-                        <Edit className="size-4" />
+                        <Edit className="size-4" /><span className="sr-only">Edit variant {variant.sku}</span>
                       </Button>
                       <Button
                         size="sm"
@@ -249,7 +239,7 @@ export default function Form() {
                           });
                         }}
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 className="size-4" /><span className="sr-only">Remove variant {variant.sku}</span>
                       </Button>
                     </TableCell>
                   </TableRow>

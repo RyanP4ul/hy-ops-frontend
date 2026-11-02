@@ -1,5 +1,8 @@
 "use client";
 
+import { QueryFeedback } from "@/components/query-feedback";
+
+
 import { ModalProvider, useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,7 +66,6 @@ export default function DataTable() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    console.log("Setting up WebSocket subscriptions for archive updates");
     return subscribe([REQUESTS.ARCHIVE_CREATED], (message) => {
       const query_key = ["archives"];
       switch (message.type) {
@@ -138,10 +140,6 @@ export default function DataTable() {
               variant="outline"
               size="sm"
               onClick={() => {
-                console.log(
-                  "Restoring archive with ID:",
-                  row.original.entity_id,
-                );
                 setSelected({
                   archived_id: row.original.id,
                   entity_id: row.original.entity_id,
@@ -176,7 +174,8 @@ export default function DataTable() {
   return (
     <>
       <div className="rounded-md border overflow-hidden">
-        <Table>
+        <QueryFeedback query={archivesQuery} label="archives" />
+            <Table>
           <TableHeader className="bg-muted sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -196,7 +195,7 @@ export default function DataTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {archivesQuery.isFetching ? (
+            {archivesQuery.isPending ? (
               <TableRow>
                 <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex items-center justify-center">

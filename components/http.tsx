@@ -1,9 +1,9 @@
-import { UseFormReturn } from "react-hook-form";
+import { type FieldValues, type Path, type UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 
 let refreshPromise: Promise<boolean> | null = null;
 
-async function refreshAccessToken() {
+export async function refreshAccessToken() {
   if (refreshPromise) {
     return refreshPromise;
   }
@@ -43,7 +43,8 @@ export async function request(method: string, path: string, data?: object) {
     body: data ? JSON.stringify(data) : undefined,
   };
 
-  let response = await fetch(path, options);
+  const send = () => fetch(path, options).catch(() => Response.json({ message: "Unable to confirm the operation. Check your connection and refresh before retrying." }, { status: 503 }));
+  let response = await send();
 
   // If not unauthorized, return the response
   if (response.status !== 401) {
@@ -57,32 +58,42 @@ export async function request(method: string, path: string, data?: object) {
     return response;
   }
 
-  response = await fetch(path, options);
+  response = await send();
 
   return response;
 }
 
-export async function requestWithErrorHandling(
+export async function requestWithErrorHandling<T extends FieldValues>(
   response: Response,
-  form: UseFormReturn<any> | null,
-  onSuccess?: (result: any) => void,
+  form: UseFormReturn<T> | null,
+  onSuccess?: (result: Record<string, unknown>) => void,
   onError?: () => void,
 ) {
-  const result = await response.json();
+  // Expired sessions and proxy failures may return plain text or an empty body.
+  const payload: unknown = await response.json().catch(() => null);
+  const result = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown> : {};
+  const serverMessage = typeof result.message === "string" ? result.message : undefined;
 
   if (response.ok) {
-    toast.success(result?.message || "Operation successful");
+    toast.success(serverMessage || "Operation successful");
     onSuccess?.(result);
   } else {
-    if (form !== null && !response.ok && result?.errors) {
+    if (form !== null && result.errors && typeof result.errors === "object") {
       Object.entries(result.errors).forEach(([field, message]) => {
-        form?.setError(field as any, {
+        form.setError(field as Path<T>, {
           type: "manual",
-          message: message as string,
+          message: typeof message === "string" ? message : "Invalid value",
         });
       });
     } else {
-      toast.error(result?.message || "Failed to update warehouse");
+      const message = serverMessage || (response.status === 401
+        ? "Your session expired. Sign in again to continue."
+        : response.status === 409
+          ? "This record changed. Refresh it and try again."
+          : "Unable to save changes. Please try again.");
+      form?.setError("root", { type: "server", message });
+      toast.error(message);
     }
     onError?.();
   }

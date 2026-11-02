@@ -30,7 +30,7 @@ import { InputGroup, InputGroupTextarea } from "@/components/ui/input-group";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { useProducts } from "../provider";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useModal } from "@/components/providers/modal-provider";
 import { ToastSubmit, ToastValidationError } from "@/components/util";
@@ -40,9 +40,12 @@ import Form from "./form";
 
 export default function DialogPage() {
   const { state, dispatch } = useModal();
-  const { deleteProduct, selected } = useProducts();
+  const { deleteProduct, selected, form, createProduct, updateProduct, productDetailQuery } = useProducts();
+
+  useEffect(() => { if (state.isOpen) form.clearErrors(); }, [state.isOpen, state.mode, selected.id, form]);
 
   async function onDelete() {
+    form.clearErrors("root");
     try {
       await deleteProduct.mutateAsync({
         id: selected.id,
@@ -54,6 +57,7 @@ export default function DialogPage() {
       });
     } catch (error) {
       if (error instanceof Error) {
+        form.setError("root", { message: error.message });
         toast.error(
           error.message || "An error occurred while deleting the product.",
         );
@@ -97,15 +101,14 @@ export default function DialogPage() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   onDelete();
-                  dispatch({
-                    type: "CLOSE",
-                  });
+
                 }}
               ></form>
             </>
           )
         )}
 
+        {state.mode === DialogMode.DELETE && form.formState.errors.root?.message && <p role="alert" className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
         <DialogFooter>
           <DialogClose
             render={
@@ -118,7 +121,7 @@ export default function DialogPage() {
             variant={
               state.mode === DialogMode.DELETE ? "destructive" : "default"
             }
-            disabled={!state.isOpen}
+            disabled={(state.mode === DialogMode.EDIT && (productDetailQuery.isFetching || productDetailQuery.isError || !productDetailQuery.data)) || !state.isOpen || form.formState.isSubmitting || deleteProduct.isPending || createProduct.isPending || updateProduct.isPending}
             type="submit"
             form="form"
           >

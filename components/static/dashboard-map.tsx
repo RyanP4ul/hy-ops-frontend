@@ -9,7 +9,7 @@ export default function DashboardMap() {
   return (
     <>
       <MapContainer
-        center={[14.5995, 120.9842]}
+        center={[14.832451, 120.882177]}
         zoom={13}
         style={{ height: "100%", width: "100%" }}
       >

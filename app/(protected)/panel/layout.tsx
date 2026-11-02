@@ -1,5 +1,6 @@
 "use client";
 
+import { PrototypeNotice } from "@/components/prototype-notice";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ConnectionProvider } from "@/components/providers/connection-provider";
 import QueryProvider from "@/components/providers/query-provider";
@@ -14,6 +15,7 @@ import React from "react";
 import { SettingProvider } from "@/components/providers/setting-provider";
 import { NotificationProvider } from "@/components/providers/notification-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import SyncCurrentPage from "@/components/sync-current";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -29,6 +31,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <SettingProvider>
               <NotificationProvider>
                 <TooltipProvider>
+                  <SyncCurrentPage />
                   <SidebarProvider
                     defaultOpen={true}
                     style={
@@ -50,7 +53,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       )}
                     >
                       <SiteHeader />
-                      <ConnectionProvider>{children}</ConnectionProvider>
+                      <ConnectionProvider><PrototypeNotice />{children}</ConnectionProvider>
                     </SidebarInset>
                   </SidebarProvider>
                   <Toaster position="top-right" />

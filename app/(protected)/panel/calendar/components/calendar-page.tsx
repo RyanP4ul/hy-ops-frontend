@@ -1,4 +1,7 @@
 "use client";
+import { DeliveryCalendarDetails } from "@/components/delivery-calendar-details";
+import { calendarEventKey } from "@/lib/delivery-calendar";
+import { layoutOverlappingEvents } from "@/lib/calendar-layout";
 
 import * as React from "react";
 import {
@@ -11,6 +14,7 @@ import {
   format,
   isSameDay,
   isSameMonth,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -31,22 +35,31 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatTimeRange, toDateInputValue } from "@/utils/date-util";
+import { manilaCalendarNow, formatTimeRange } from "@/utils/date-util";
 import { useModal } from "@/components/providers/modal-provider";
 import { DialogMode } from "@/types/dialog";
 import { useCalendar } from "../provider";
-import { CalendarEventResponse, CalendarFormType } from "@/schema/calendar";
-import { request, requestWithErrorHandling } from "@/components/http";
+import type { CalendarEventResponse } from "@/schema/calendar";
 
-const START_HOUR = 8;
-const END_HOUR = 18;
-const HOUR_HEIGHT = 116;
+const START_HOUR = 0;
+const END_HOUR = 24;
+const HOUR_HEIGHT = 64;
 const HOURS = Array.from(
   { length: END_HOUR - START_HOUR },
   (_, index) => START_HOUR + index,
 );
 
+type CalendarCategory =
+  | "ORDER_FULFILLMENT"
+  | "STAFF_SCHEDULE"
+  | "DELIVERY"
+  | "INVENTORY_WAREHOUSE"
+  | "VEHICLE_MAINTENANCE"
+  | "MEETING_APPOINTMENT"
+  | "OTHER";
+
 const CATEGORIES: CalendarCategory[] = [
+  "ORDER_FULFILLMENT", "STAFF_SCHEDULE",
   "DELIVERY",
   "INVENTORY_WAREHOUSE",
   "VEHICLE_MAINTENANCE",
@@ -58,43 +71,39 @@ const CATEGORY_STYLES: Record<
   CalendarCategory,
   { card: string; accent: string; dot: string; month: string }
 > = {
+  ORDER_FULFILLMENT: { card: "bg-orange-200 text-orange-950", accent: "border-orange-500", dot: "bg-orange-500", month: "bg-orange-500/10" },
+  STAFF_SCHEDULE: { card: "bg-teal-200 text-teal-950", accent: "border-teal-500", dot: "bg-teal-500", month: "bg-teal-500/10" },
   DELIVERY: {
-    card: "bg-amber-200 text-amber-900",
+    card: "bg-amber-200 text-amber-950 hover:bg-amber-300",
     accent: "border-amber-500",
     dot: "bg-amber-500",
     month: "bg-amber-500/10 text-amber-900",
   },
   INVENTORY_WAREHOUSE: {
-    card: "bg-lime-200 text-lime-900",
+    card: "bg-lime-200 text-lime-950 hover:bg-lime-300",
     accent: "border-lime-500",
     dot: "bg-lime-500",
     month: "bg-lime-500/10 text-lime-900",
   },
   VEHICLE_MAINTENANCE: {
-    card: "bg-violet-200 text-violet-900",
+    card: "bg-violet-200 text-violet-950 hover:bg-violet-300",
     accent: "border-violet-500",
     dot: "bg-violet-500",
     month: "bg-violet-500/10 text-violet-900",
   },
   MEETING_APPOINTMENT: {
-    card: "bg-sky-200 text-sky-900",
+    card: "bg-sky-200 text-sky-950 hover:bg-sky-300",
     accent: "border-sky-500",
     dot: "bg-sky-500",
     month: "bg-sky-500/10 text-sky-900",
   },
   OTHER: {
-    card: "bg-slate-200 text-slate-900",
+    card: "bg-slate-200 text-slate-950 hover:bg-slate-300",
     accent: "border-slate-500",
     dot: "bg-slate-500",
     month: "bg-slate-500/10 text-slate-900",
   },
 };
-
-const AVATAR_COLORS = [
-  "bg-amber-200 text-amber-900",
-  "bg-lime-200 text-lime-900",
-  "bg-violet-200 text-violet-900",
-];
 
 function atTime(day: Date, hour: number, minute = 0) {
   const date = new Date(day);
@@ -105,7 +114,7 @@ function atTime(day: Date, hour: number, minute = 0) {
 export default function Page() {
   const {
     eventQuery,
-    calendar_form,
+    deliveryQuery,
     filteredEvents,
     view,
     setView,
@@ -114,16 +123,24 @@ export default function Page() {
     calendarDays,
     selectedCategories,
     setSelectedCategories,
-    selected,
     setSelected,
   } = useCalendar();
-  const { state, dispatch, openModal } = useModal();
+  const { openModal } = useModal();
 
+  const [selectedDeliveryId, setSelectedDeliveryId] = React.useState<number | null>(null);
   const [datePickerOpen, setDatePickerOpen] = React.useState(false);
+  const [now, setNow] = React.useState(() => manilaCalendarNow());
+
+  // Keep the current-time marker fresh without forcing frequent rerenders.
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(manilaCalendarNow()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const monthDays = React.useMemo(() => {
     const monthStart = startOfMonth(selectedDate);
     const monthEnd = endOfMonth(selectedDate);
+
     return eachDayOfInterval({
       start: startOfWeek(monthStart, { weekStartsOn: 1 }),
       end: endOfWeek(monthEnd, { weekStartsOn: 1 }),
@@ -131,13 +148,45 @@ export default function Page() {
   }, [selectedDate]);
 
   const visibleEventCount = React.useMemo(() => {
-    return filteredEvents?.filter((event) => {
-      if (view === "Day") return isSameDay(event.start_time, selectedDate);
-      if (view === "Week")
-        return calendarDays.some((day) => isSameDay(event.start_time, day));
-      return isSameMonth(event.start_time, selectedDate);
-    }).length;
+    const events = filteredEvents ?? [];
+    let rangeStart: Date;
+    let rangeEndExclusive: Date;
+
+    if (view === "Day") {
+      rangeStart = startOfDay(selectedDate);
+      rangeEndExclusive = startOfDay(addDays(selectedDate, 1));
+    } else if (view === "Week") {
+      const firstDay =
+        calendarDays[0] ?? startOfWeek(selectedDate, { weekStartsOn: 1 });
+      const lastDay =
+        calendarDays[calendarDays.length - 1] ??
+        endOfWeek(selectedDate, { weekStartsOn: 1 });
+      rangeStart = startOfDay(firstDay);
+      rangeEndExclusive = startOfDay(addDays(lastDay, 1));
+    } else {
+      rangeStart = startOfMonth(selectedDate);
+      rangeEndExclusive = startOfMonth(addMonths(selectedDate, 1));
+    }
+
+    // Count an event once if any part of it falls inside the current view.
+    return events.filter(
+      (event) =>
+        event.end_time > rangeStart && event.start_time < rangeEndExclusive,
+    ).length;
   }, [calendarDays, filteredEvents, selectedDate, view]);
+
+  const heading = React.useMemo(() => {
+    if (view === "Day") return format(selectedDate, "EEE, MMM d, yyyy");
+    if (view === "Week") {
+      const firstDay =
+        calendarDays[0] ?? startOfWeek(selectedDate, { weekStartsOn: 1 });
+      const lastDay =
+        calendarDays[calendarDays.length - 1] ??
+        endOfWeek(selectedDate, { weekStartsOn: 1 });
+      return `${format(firstDay, "MMM d")} – ${format(lastDay, "MMM d, yyyy")}`;
+    }
+    return format(selectedDate, "MMMM, yyyy");
+  }, [calendarDays, selectedDate, view]);
 
   function navigateDate(direction: -1 | 1) {
     setSelectedDate((current) => {
@@ -158,111 +207,49 @@ export default function Page() {
     });
   }
 
-  async function handleSubmit(data: CalendarFormType) {
-    // event.preventDefault();
-    // setFormError("");
-    // const start = new Date(`${draft.date}T${draft.startTime}:00`);
-    // const end = new Date(`${draft.date}T${draft.endTime}:00`);
-    // if (!draft.title.trim()) {
-    //   setFormError("Please enter an event title.");
-    //   return;
-    // }
-    // if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    //   setFormError("Please enter a valid date and time.");
-    //   return;
-    // }
-    // if (end <= start) {
-    //   setFormError("The end time must be later than the start time.");
-    //   return;
-    // }
-    // if (editingEventId) {
-    //   setEvents((current) =>
-    //     current.map((item) =>
-    //       item.id === editingEventId
-    //         ? {
-    //             ...item,
-    //             title: draft.title.trim(),
-    //             start,
-    //             end,
-    //             category: draft.category,
-    //           }
-    //         : item,
-    //     ),
-    //   );
-    // } else {
-    //   setEvents((current) => [
-    //     ...current,
-    //     {
-    //       id:
-    //         typeof crypto !== "undefined" && "randomUUID" in crypto
-    //           ? crypto.randomUUID()
-    //           : `event-${Date.now()}`,
-    //       title: draft.title.trim(),
-    //       start,
-    //       end,
-    //       category: draft.category,
-    //       attendees: [],
-    //       extraAttendees: 0,
-    //     },
-    //   ]);
-    // }
-    // setSelectedDate(start);
-    // setView("Week");
-    // dispatch({ type: "CLOSE" });
+  function showDay(day: Date) {
+    setSelectedDate(day);
+    setView("Day");
   }
 
-  function parseLocalDateTime(date: string, time: string) {
-    return new Date(`${date}T${time}`);
-  }
-
-  function renderEventCard(event: CalendarEventResponse, compact = false) {
-    const style = CATEGORY_STYLES[event.category as CalendarCategory];
+  function renderEventCard(
+    event: CalendarEventResponse,
+    compact = false,
+    dense = false,
+  ) {
+    const style =
+      CATEGORY_STYLES[event.category as CalendarCategory] ??
+      CATEGORY_STYLES.OTHER;
+    const eventTime = event.delivery ? `Departure ${format(event.start_time, "h:mm a")}` : formatTimeRange(event.start_time, event.end_time);
 
     return (
       <button
-        key={event.id}
+        key={calendarEventKey(event)}
         type="button"
+        title={`${event.title} · ${eventTime}`}
+        aria-label={`${event.delivery ? "View" : "Edit"} ${event.title}, ${eventTime}`}
         onClick={() => {
-          setSelected({ id: Number(event.id), version: 1 });
+          if (event.delivery) { setSelectedDeliveryId(event.delivery.id); return; }
+          setSelected({ id: Number(event.id), version: event.version });
           openModal(DialogMode.EDIT, {
             title: "Edit Event",
             description: "Edit the details of your event",
             action: "Save",
           });
         }}
-        className={`w-full rounded-lg border border-l-[3px] text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${style.card} ${style.accent} ${compact ? "px-2 py-1 text-xs" : "p-2.5"}`}
+        className={`h-full w-full overflow-hidden rounded-md border border-l-[3px] text-left shadow-sm transition hover:shadow-md focus-visible:z-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${style.card} ${style.accent} ${event.delivery?.status === "cancelled" ? "border-dashed opacity-75" : ""} ${compact ? "px-2 py-1 text-xs" : dense ? "px-1.5 py-0.5 text-[11px]" : "p-2"}`}
       >
-        <span className="block truncate font-semibold leading-5">
+        <span
+          className={`block truncate font-semibold ${dense ? "leading-4" : "leading-5"}`}
+        >
           {event.title}
         </span>
-        {!compact && (
-          <>
-            <span className="mt-1 flex items-center gap-1 text-xs text-slate-600">
-              <Clock3 className="size-3 shrink-0" />
-              <span className="truncate">
-                {formatTimeRange(event.start_time, event.end_time)}
-              </span>
-            </span>
-            {/* {(event.attendees.length > 0 || event.extraAttendees > 0) && (
-              <span className="mt-3 flex items-center gap-1.5 overflow-hidden">
-                <span className="flex -space-x-1.5">
-                  {event.attendees.slice(0, 3).map((attendee, index) => (
-                    <span
-                      key={`${event.id}-${attendee}-${index}`}
-                      className={`flex size-5 shrink-0 items-center justify-center rounded-full border border-white text-[8px] font-bold ${AVATAR_COLORS[index % AVATAR_COLORS.length]}`}
-                    >
-                      {attendee}
-                    </span>
-                  ))}
-                </span>
-                {event.extraAttendees > 0 && (
-                  <span className="truncate text-[11px] text-slate-600">
-                    +{event.extraAttendees} Other
-                  </span>
-                )}
-              </span>
-            )} */}
-          </>
+        {compact && event.delivery && <span className="block truncate text-[11px]">{eventTime}</span>}
+        {!compact && !dense && (
+          <span className="mt-1 flex items-center gap-1 text-xs opacity-80">
+            <Clock3 className="size-3 shrink-0" />
+            <span className="truncate">{eventTime}</span>
+          </span>
         )}
       </button>
     );
@@ -270,10 +257,18 @@ export default function Page() {
 
   return (
     <div className="w-full min-w-0 space-y-6 text-foreground">
+      <DeliveryCalendarDetails delivery={deliveryQuery.data?.find(delivery => delivery.id === selectedDeliveryId)} onClose={() => setSelectedDeliveryId(null)} />
+      {deliveryQuery.isPending && <p role="status" className="text-sm text-muted-foreground">Loading deliveries...</p>}
+      {deliveryQuery.isError && <div role="alert" className="flex items-center gap-3 text-sm"><span>Unable to load deliveries.</span><Button variant="outline" size="sm" onClick={() => void deliveryQuery.refetch()}>Retry deliveries</Button></div>}
+      <p className="text-sm text-muted-foreground">All dates and times are in Asia/Manila (UTC+8).</p>
+      {eventQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">
+        <span>{eventQuery.data ? "Unable to refresh. Showing the last loaded events." : "Unable to load calendar events."}</span>
+        <Button variant="outline" size="sm" disabled={eventQuery.isFetching} onClick={() => void eventQuery.refetch()}>Retry</Button>
+      </div>}
       {/* Calendar controls */}
       <div className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-end xl:justify-between">
         <div className="flex items-start gap-3">
-          <div className="flex gap-1 pt-0.5">
+          <div className="flex items-center gap-1 pt-0.5">
             <Button
               type="button"
               variant="outline"
@@ -294,19 +289,29 @@ export default function Page() {
             >
               <ChevronRight className="size-4" />
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="ml-1 h-8 rounded-full px-3"
+              onClick={() => setSelectedDate(manilaCalendarNow())}
+            >
+              Today
+            </Button>
           </div>
-          <div>
+
+          <div className="min-w-0">
             <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
               <PopoverTrigger
                 render={
                   <Button
                     type="button"
                     variant="ghost"
-                    className="-ml-2 h-auto justify-start gap-1.5 px-2 py-1 text-left hover:bg-muted/60"
+                    className="-ml-2 h-auto max-w-full justify-start gap-1.5 px-2 py-1 text-left hover:bg-muted/60"
                     aria-label="Choose calendar date"
                   >
-                    <span className="text-xl font-semibold tracking-tight sm:text-2xl">
-                      {format(selectedDate, "MMMM, yyyy")}
+                    <span className="truncate text-lg font-semibold tracking-tight sm:text-2xl">
+                      {heading}
                     </span>
                     <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
                   </Button>
@@ -320,18 +325,14 @@ export default function Page() {
                   weekStartsOn={1}
                   onMonthChange={setSelectedDate}
                   onSelect={(date) => {
-                    if (!date) {
-                      console.error("No date selected");
-                      return;
-                    }
-
+                    if (!date) return;
                     setSelectedDate(date);
                     setDatePickerOpen(false);
                   }}
                 />
               </PopoverContent>
             </Popover>
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-sky-600">
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-sky-700 dark:text-sky-300">
               <CalendarDays className="size-4" />
               {visibleEventCount} {visibleEventCount === 1 ? "event" : "events"}
             </p>
@@ -410,7 +411,7 @@ export default function Page() {
                 <span
                   className={`mr-2 size-2 rounded-full ${CATEGORY_STYLES[category].dot}`}
                 />
-                {category}
+                {category.replaceAll("_", " ")}
               </Button>
             );
           })}
@@ -418,8 +419,10 @@ export default function Page() {
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-        {eventQuery.isFetching ? (
-          <>Loading...</>
+        {eventQuery.isPending ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            Loading calendar events…
+          </div>
         ) : (
           <>
             {view === "Month" ? (
@@ -445,9 +448,14 @@ export default function Page() {
                   </div>
                   <div className="grid grid-cols-7">
                     {monthDays.map((day) => {
-                      if (!filteredEvents) return null;
-                      const dayEvents = filteredEvents
-                        .filter((event) => isSameDay(event.start_time, day))
+                      const dayStart = startOfDay(day);
+                      const dayEnd = startOfDay(addDays(day, 1));
+                      const dayEvents = (filteredEvents ?? [])
+                        .filter(
+                          (event) =>
+                            event.end_time > dayStart &&
+                            event.start_time < dayEnd,
+                        )
                         .sort(
                           (a, b) =>
                             a.start_time.getTime() - b.start_time.getTime(),
@@ -463,24 +471,32 @@ export default function Page() {
                           }`}
                         >
                           <div className="mb-2 flex justify-end">
-                            <span
-                              className={`flex size-7 items-center justify-center rounded-full text-sm ${
-                                isSameDay(day, new Date())
-                                  ? "bg-slate-900 font-semibold text-white"
+                            <button
+                              type="button"
+                              onClick={() => showDay(day)}
+                              aria-label={`Show events for ${format(day, "MMMM d, yyyy")}`}
+                              className={`flex size-7 items-center justify-center rounded-full text-sm transition hover:bg-muted ${
+                                isSameDay(day, now)
+                                  ? "bg-slate-900 font-semibold text-white hover:bg-slate-700"
                                   : ""
                               }`}
                             >
                               {format(day, "d")}
-                            </span>
+                            </button>
                           </div>
                           <div className="space-y-1">
                             {dayEvents
                               .slice(0, 3)
                               .map((event) => renderEventCard(event, true))}
                             {dayEvents.length > 3 && (
-                              <p className="px-1 text-xs text-muted-foreground">
+                              <button
+                                type="button"
+                                onClick={() => showDay(day)}
+                                className="w-full rounded px-1 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label={`View ${dayEvents.length - 3} more events on ${format(day, "MMMM d")}`}
+                              >
                                 +{dayEvents.length - 3} more
-                              </p>
+                              </button>
                             )}
                           </div>
                         </div>
@@ -493,29 +509,35 @@ export default function Page() {
               <div className="overflow-x-auto">
                 <div
                   className="min-w-[620px]"
-                  style={{ minWidth: view === "Week" ? "1120px" : "620px" }}
+                  style={{
+                    minWidth:
+                      view === "Week"
+                        ? `${84 + calendarDays.length * 190}px`
+                        : "620px",
+                  }}
                 >
                   {/* Day labels */}
                   <div
                     className="grid border-b bg-muted/20"
                     style={{
-                      gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(${view === "Week" ? "190px" : "0"}, 1fr))`,
                     }}
                   >
                     <div className="flex items-center justify-center border-r px-2 py-4 text-xs font-medium text-muted-foreground">
-                      UTC +8
+                      PHT (UTC+8)
                     </div>
                     {calendarDays.map((day) => (
                       <button
                         key={format(day, "yyyy-MM-dd")}
                         type="button"
-                        onClick={() => {
-                          setSelectedDate(day);
-                          setView("Day");
-                        }}
+                        onClick={() => showDay(day)}
                         className="border-r px-2 py-3 text-center last:border-r-0 hover:bg-muted/40"
                       >
-                        <span className="block text-lg font-semibold leading-6">
+                        <span
+                          className={`mx-auto flex size-8 items-center justify-center rounded-full text-lg font-semibold leading-6 ${
+                            isSameDay(day, now) ? "bg-slate-900 text-white" : ""
+                          }`}
+                        >
                           {format(day, "d")}
                         </span>
                         <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -525,11 +547,11 @@ export default function Page() {
                     ))}
                   </div>
 
-                  {/* Time slots and event cards */}
+                  {/* Time slots and side-by-side event cards */}
                   <div
                     className="grid"
                     style={{
-                      gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(${view === "Week" ? "190px" : "0"}, 1fr))`,
                     }}
                   >
                     <div
@@ -548,14 +570,11 @@ export default function Page() {
                     </div>
 
                     {calendarDays.map((day) => {
-                      if (!filteredEvents) return null;
-
                       const dayStart = atTime(day, START_HOUR);
                       const dayEnd = atTime(day, END_HOUR);
-                      const dayEvents = filteredEvents
+                      const dayEvents = (filteredEvents ?? [])
                         .filter(
                           (event) =>
-                            isSameDay(event.start_time, day) &&
                             event.end_time > dayStart &&
                             event.start_time < dayEnd,
                         )
@@ -563,6 +582,13 @@ export default function Page() {
                           (a, b) =>
                             a.start_time.getTime() - b.start_time.getTime(),
                         );
+                      const positionedEvents =
+                        layoutOverlappingEvents(dayEvents);
+                      const isCurrentDay = isSameDay(day, now);
+                      const isNowInGrid = now >= dayStart && now < dayEnd;
+                      const currentTimeTop =
+                        ((now.getTime() - dayStart.getTime()) / 3_600_000) *
+                        HOUR_HEIGHT;
 
                       return (
                         <div
@@ -581,30 +607,64 @@ export default function Page() {
                             className="pointer-events-none absolute left-0 right-0 border-t border-border/80"
                             style={{ top: HOURS.length * HOUR_HEIGHT }}
                           />
-                          {dayEvents.map((event) => {
-                            const startMinutes =
-                              (event.start_time.getHours() - START_HOUR) * 60 +
-                              event.start_time.getMinutes();
-                            const durationMinutes =
-                              (event.end_time.getTime() -
-                                event.start_time.getTime()) /
-                              60_000;
-                            const top = (startMinutes / 60) * HOUR_HEIGHT + 4;
-                            const height = Math.max(
-                              (durationMinutes / 60) * HOUR_HEIGHT - 8,
-                              48,
-                            );
 
-                            return (
-                              <div
-                                key={event.id}
-                                className="absolute left-1 right-1 z-10"
-                                style={{ top, height }}
-                              >
-                                {renderEventCard(event)}
-                              </div>
-                            );
-                          })}
+                          {isCurrentDay && isNowInGrid && (
+                            <div
+                              role="img"
+                              aria-label="Current time"
+                              className="pointer-events-none absolute left-0 right-0 z-20 border-t-2 border-rose-500"
+                              style={{ top: currentTimeTop }}
+                            >
+                              <span className="absolute -left-1.5 -top-[5px] size-2.5 rounded-full bg-rose-500" />
+                            </div>
+                          )}
+
+                          {positionedEvents.map(
+                            ({ event, column, columnCount, columnSpan }) => {
+                              // Clip multi-day events to the visible hours of this day.
+                              const visibleStart = new Date(
+                                Math.max(
+                                  event.start_time.getTime(),
+                                  dayStart.getTime(),
+                                ),
+                              );
+                              const visibleEnd = new Date(
+                                Math.min(
+                                  event.end_time.getTime(),
+                                  dayEnd.getTime(),
+                                ),
+                              );
+                              const startMinutes =
+                                (visibleStart.getTime() - dayStart.getTime()) /
+                                60_000;
+                              const durationMinutes =
+                                (visibleEnd.getTime() -
+                                  visibleStart.getTime()) /
+                                60_000;
+                              const top = (startMinutes / 60) * HOUR_HEIGHT + 3;
+                              const height = Math.max(
+                                (durationMinutes / 60) * HOUR_HEIGHT - 6,
+                                28,
+                              );
+                              const left = (column / columnCount) * 100;
+                              const width = (columnSpan / columnCount) * 100;
+
+                              return (
+                                <div
+                                  key={calendarEventKey(event)}
+                                  className="absolute z-10"
+                                  style={{
+                                    top,
+                                    height,
+                                    left: `calc(${left}% + 3px)`,
+                                    width: `calc(${width}% - 6px)`,
+                                  }}
+                                >
+                                  {renderEventCard(event, false, height < 56)}
+                                </div>
+                              );
+                            },
+                          )}
                         </div>
                       );
                     })}

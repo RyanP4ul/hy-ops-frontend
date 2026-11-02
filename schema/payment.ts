@@ -7,13 +7,14 @@ export const paymentRowSchema = z.object({
   customer_id: z.number().int().min(1, "Customer is required"),
   customer_name: z.string().max(100).nullable(),
   payment_method: z.enum(["CASH", "BANK_TRANSFER", "CARD"]),
-  payment_status: z.enum(["UNPAID", "PARTIALLY_PAID", "PAID", "OVERDUE"]),
+  payment_status: z.enum(["UNPAID", "PARTIALLY_PAID", "PAID", "OVERDUE", "UNVERIFIED"]),
   amount: z.number().nonnegative("Amount must be a non-negative number"),
-  remaining_amount: z
-    .number()
-    .nonnegative("Remaining amount must be a non-negative number"),
+  refunded_amount: z.number().nonnegative(),
+  gross_received: z.number().nonnegative(),
+  order_status: z.string(),
+  remaining_amount: z.number().nonnegative("Remaining amount must be a non-negative number").nullable(),
   reference_number: z.string().max(100).optional(),
-  received_at: z.string().min(1, "Received date is required"),
+  received_at: z.string().nullable(),
   version: z.number().int(),
 });
 
@@ -22,17 +23,9 @@ export const paymentSchema = z.object({
   order_id: z.number().int().min(1, "Order is required"),
   payment_amount: z
     .number()
-    .nonnegative("Amount must be a non-negative number"),
+    .positive("Amount must be greater than zero"),
   version: z.number().int(),
 });
 
 export type PaymentRowType = z.infer<typeof paymentRowSchema>;
 export type PaymentFormType = z.infer<typeof paymentSchema>;
-
-// export type PaymentRow = Omit<PaymentForm, "amount" | "received_at"> & {
-//   id: number;
-//   amount: string;
-//   remaining_amount: string;
-//   received_at: string;
-//   customer_name: string | null;
-// };

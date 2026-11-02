@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { QueryFeedback } from "@/components/query-feedback";
+
+
+import { useEffect, useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -24,6 +27,14 @@ import { useVehicles } from "../provider";
 import { VehicleRow } from "@/schema/vehicle";
 import PaginationVehicle from "./pagination";
 import { debounce } from "@/utils/debounce";
+import { useWebSocket } from "@/components/providers/websocket-provider";
+import { REQUESTS } from "@/constant/request";
+import { useQueryClient } from "@tanstack/react-query";
+
+type VehicleQueryData = {
+  rows: VehicleRow[];
+  total: number;
+};
 
 export default function DataTable() {
   const {
@@ -37,6 +48,8 @@ export default function DataTable() {
     setSortBy,
   } = useVehicles();
   const { openModal } = useModal();
+  const { subscribe } = useWebSocket();
+  const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState(search);
   const updateSearch = useMemo(() => debounce(setSearch, 400), [setSearch]);
   const sortableHeader = (id: string, label: string) => (
@@ -66,7 +79,7 @@ export default function DataTable() {
         accessorKey: "status",
         header: () => sortableHeader("status", "Status"),
       },
-      { accessorKey: "image", header: "Image" },
+      { accessorKey: "warehouse_name", header: "Assigned Warehouse" },
       {
         id: "actions",
         header: "Actions",
@@ -124,6 +137,59 @@ export default function DataTable() {
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
   });
+
+  useEffect(() => {
+    const queryKey = [
+      "vehicles",
+      page.pageIndex,
+      page.pageSize,
+      search,
+      sortBy,
+    ];
+
+    return subscribe(
+      [
+        REQUESTS.VEHICLE_ADDED,
+        REQUESTS.VEHICLE_UPDATED,
+        REQUESTS.VEHICLE_DELETED,
+      ],
+      (message) => {
+        const payload = message.payload as VehicleRow | { id: number };
+        const vehicle = payload as VehicleRow;
+
+        queryClient.setQueryData(
+          queryKey,
+          (oldData: VehicleQueryData | undefined) => {
+            if (message.type === REQUESTS.VEHICLE_DELETED) {
+              if (!oldData) return { rows: [], total: 0 };
+
+              return {
+                rows: oldData.rows.filter((row) => row.id !== payload.id),
+                total: Math.max(
+                  oldData.total -
+                    (oldData.rows.some((row) => row.id === payload.id) ? 1 : 0),
+                  0,
+                ),
+              };
+            }
+
+            if (!oldData) return { rows: [vehicle], total: 1 };
+
+            const exists = oldData.rows.some((row) => row.id === vehicle.id);
+
+            return {
+              rows: exists
+                ? oldData.rows.map((row) =>
+                    row.id === vehicle.id ? vehicle : row,
+                  )
+                : [vehicle, ...oldData.rows].slice(0, page.pageSize),
+              total: exists ? oldData.total : oldData.total + 1,
+            };
+          },
+        );
+      },
+    );
+  }, [page.pageIndex, page.pageSize, queryClient, search, sortBy, subscribe]);
   return (
     <>
       <div className="mb-3">
@@ -142,7 +208,8 @@ export default function DataTable() {
         </div>
       </div>
       <div className="overflow-hidden rounded-md border">
-        <Table>
+        <QueryFeedback query={vehicleQuery} label="vehicles" />
+            <Table>
           <TableHeader className="bg-muted">
             <TableRow>
               {table.getHeaderGroups()[0]?.headers.map((header) => (
@@ -156,7 +223,7 @@ export default function DataTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {vehicleQuery.isFetching ? (
+            {vehicleQuery.isPending ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-40 text-center">
                   <Loader2Icon className="mr-2 inline size-4 animate-spin" />
@@ -179,7 +246,7 @@ export default function DataTable() {
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center">
-                  No Results Found
+                  {vehicleQuery.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
                 </TableCell>
               </TableRow>
             )}

@@ -6,16 +6,17 @@ export const inventoryTableSchema = z.object({
   sku: z.string().min(1).nonempty(),
   reserved: z.number().nonnegative(),
   warehouse_name: z.string().min(1).nonempty(),
-  quantity: z.number().nonnegative(),
+  quantity: z.number().int().nonnegative(),
   price: z.number().nonnegative(),
   version: z.number().nonnegative(),
 });
 
 export const inventorySchema = z.object({
-  warehouse_id: z.number().nonnegative(),
-  product_variant_id: z.number().nonnegative(),
-  quantity: z.number().nonnegative(),
-  reserved: z.number().nonnegative().optional(),
+  warehouse_id: z.number().int().positive("Select a warehouse"),
+  product_variant_id: z.number().int().positive("Select a product variant"),
+  quantity: z.number().int().nonnegative(),
+  reserved: z.number().int().nonnegative().optional(),
+  reason: z.string().max(500).optional(),
 });
 
 export type InventoryType = z.infer<typeof inventorySchema>;

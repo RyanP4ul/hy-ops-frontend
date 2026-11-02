@@ -27,7 +27,6 @@ export default function ArchiveDialog() {
       await request("PUT", `/api/archives/${selected?.archived_id}/restore`),
       null,
       (result) => {
-        console.log("Archive restored successfully:", result);
         archivesQuery.refetch();
 
         dispatch({

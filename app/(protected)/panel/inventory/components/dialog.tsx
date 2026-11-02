@@ -1,5 +1,8 @@
 "use client";
 
+import { QueryFeedback } from "@/components/query-feedback";
+import { formatCurrency } from "@/utils/date-util";
+
 import { Button } from "@/components/ui/button";
 import {
   DialogClose,
@@ -19,7 +22,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { inventorySchema, InventoryType } from "@/schema/inventory";
 import { Input } from "@/components/ui/input";
@@ -32,8 +35,8 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import { useComboBoxPagination } from "@/components/base-pagination";
-import { useEffect } from "react";
+import { PaginatedCombobox } from "@/components/paginated-combobox";
+import { useEffect, useRef, useState } from "react";
 import {
   Item,
   ItemContent,
@@ -43,7 +46,9 @@ import {
 
 export default function DialogPage() {
   const { state, dispatch } = useModal();
+  const [deleting, setDeleting] = useState(false);
   const {
+    setVariantWarehouseId,
     inventoryQuery,
     inventoryDetail,
     warehouseQuery,
@@ -66,7 +71,14 @@ export default function DialogPage() {
     },
   });
 
+  const selectedWarehouseId = useWatch({ control: form.control, name: "warehouse_id" });
+  const initialized = useRef<string | null>(null);
   useEffect(() => {
+    if (!state.isOpen) { initialized.current = null; setVariantWarehouseId(0); return; }
+    const key = `${state.mode}:${inventoryDetail.id}:${inventoryDetail.version}`;
+    if (initialized.current === key) return;
+    if (state.mode === DialogMode.EDIT && (inventoryDetailQuery.isFetching || !inventoryDetailQuery.data)) return;
+    initialized.current = key;
     if (state.mode === DialogMode.EDIT && inventoryDetail.id > 0) {
       form.reset({
         warehouse_id: inventoryDetailQuery.data?.warehouse_id ?? 0,
@@ -81,12 +93,11 @@ export default function DialogPage() {
         );
       }
 
-      if (productVariantQuery.data) {
-        productVariantCB.setInputValue(
-          inventoryDetailQuery.data?.product_variant_sku ?? "",
-        );
-      }
+      productVariantCB.setInputValue(inventoryDetailQuery.data?.product_variant_sku ?? "");
     } else {
+      setVariantWarehouseId(0);
+      productVariantCB.setPage(0);
+      productVariantCB.setSearchQuery("");
       form.reset({
         warehouse_id: 0,
         product_variant_id: 0,
@@ -96,9 +107,11 @@ export default function DialogPage() {
       warehouseCB.setInputValue("");
       productVariantCB.setInputValue("");
     }
-  }, [state, inventoryDetailQuery.isFetched]);
+  }, [state.isOpen, state.mode, inventoryDetail.id, inventoryDetail.version, inventoryDetailQuery.isFetching, inventoryDetailQuery.data, form, warehouseCB, productVariantCB, warehouseQuery.data, productVariantQuery.data, setVariantWarehouseId]);
 
-  async function onSubmit(data: any) {
+  async function onSubmit(data: InventoryType) {
+    form.clearErrors("root");
+    try {
     ToastSubmit(data);
 
     if (state.mode === DialogMode.EDIT && inventoryDetail.id > 0) {
@@ -112,19 +125,28 @@ export default function DialogPage() {
 
     inventoryQuery.refetch();
 
-    dispatch({
-      type: "CLOSE",
-    });
+    dispatch({ type: "CLOSE" });
+    } catch (error) {
+      form.setError("root", { message: error instanceof Error ? error.message : "Unable to save inventory. Try again." });
+    }
   }
 
   async function onDelete() {
-    ToastSubmit({ inventory_id: inventoryDetail.id });
-    await deleteInventory();
-    inventoryQuery.refetch();
+    if (deleting) return;
+    setDeleting(true);
+    form.clearErrors("root");
+    try {
+      await deleteInventory();
+      await inventoryQuery.refetch();
+      dispatch({ type: "CLOSE" });
+    } catch (error) {
+      form.setError("root", { message: error instanceof Error ? error.message : "Unable to delete inventory. Try again." });
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  function Form() {
-    return (
+  const formContent = (
       <>
         <form
           id="form"
@@ -132,21 +154,33 @@ export default function DialogPage() {
             ToastValidationError(error),
           )}
         >
+          {state.mode === DialogMode.EDIT && <QueryFeedback query={inventoryDetailQuery} label="inventory details" />}
+          <p className="mb-4 text-sm text-muted-foreground">Reservations are managed by orders. On-hand quantity must cover reserved units.</p>
+          {form.formState.errors.root && <p role="alert" className="mb-3 text-sm text-destructive">{form.formState.errors.root.message}</p>}
           <FieldGroup className="grid grid-cols-1 items-center gap-4">
             <Controller
               name="warehouse_id"
               control={form.control}
               render={({ field, fieldState }) => (
                 <Combobox
+                  disabled={state.mode === DialogMode.EDIT}
                   open={warehouseCB.open}
                   onOpenChange={(open) => warehouseCB.setOpen(open)}
-                  value={field.value ? String(field.value) : ""}
+                  value={field.value && field.value > 0 ? String(field.value) : null}
                   onValueChange={(value) => {
                     const selectedWarehouse = warehouseQuery.data?.rows?.find(
                       (warehouse) => warehouse.id === Number(value),
                     );
 
                     warehouseCB.setInputValue(selectedWarehouse?.name ?? "");
+                    if (Number(value) !== field.value) {
+                      form.setValue("product_variant_id", 0);
+                      productVariantCB.setInputValue("");
+                      productVariantCB.setSearchQuery("");
+                      productVariantCB.setPage(0);
+                      productVariantCB.setOpen(false);
+                      setVariantWarehouseId(value ? Number(value) : 0);
+                    }
 
                     field.onChange(value ? Number(value) : null);
                   }}
@@ -157,9 +191,10 @@ export default function DialogPage() {
                     </FieldLabel>
 
                     <ComboboxInput
-                      placeholder="Select warehouse name..."
+                      id="warehouse-name"
+                    placeholder="Select warehouse name..."
                       value={warehouseCB.inputValue}
-                      disabled={warehouseQuery.isFetching}
+                      disabled={state.mode === DialogMode.EDIT || warehouseQuery.isFetching}
                       aria-invalid={fieldState.invalid}
                       readOnly
                     />
@@ -175,7 +210,7 @@ export default function DialogPage() {
                                 <ItemTitle className="whitespace-nowrap">
                                   ({productVariant.id}) {productVariant.name}
                                 </ItemTitle>
-                                <ItemDescription>Unknown</ItemDescription>
+                                
                               </ItemContent>
                             </Item>
                           </ComboboxItem>
@@ -234,117 +269,63 @@ export default function DialogPage() {
                 </Combobox>
               )}
             />
+            {state.mode === DialogMode.INSERT && selectedWarehouseId > 0 && <QueryFeedback query={productVariantQuery} label="available product variants" />}
             <Controller
               name="product_variant_id"
               control={form.control}
               render={({ field, fieldState }) => (
-                <Combobox
-                  open={productVariantCB.open}
-                  onOpenChange={(open) => productVariantCB.setOpen(open)}
-                  value={field.value ? String(field.value) : ""}
-                  onValueChange={(value) => {
-                    const selectedProductVariant =
-                      productVariantQuery.data?.rows?.find(
-                        (productVariant) => productVariant.id === Number(value),
-                      );
-
+                <PaginatedCombobox
+                  key={selectedWarehouseId}
+                  id="product-variant"
+                  label="Product Variant"
+                  required
+                  disabled={state.mode === DialogMode.EDIT || !selectedWarehouseId || productVariantQuery.isError}
+                  value={field.value && field.value > 0 ? String(field.value) : null}
+                  selectedLabel={productVariantCB.inputValue}
+                  options={productVariantQuery.data?.rows ?? []}
+                  getOptionValue={(productVariant) => String(productVariant.id)}
+                  renderOption={(productVariant) => (
+                    <Item size="xs" className="p-0">
+                      <ItemContent>
+                        <ItemTitle className="whitespace-nowrap">
+                          ({productVariant.id}) {productVariant.sku}
+                        </ItemTitle>
+                        <ItemDescription>
+                          {formatCurrency(productVariant.price)}
+                        </ItemDescription>
+                      </ItemContent>
+                    </Item>
+                  )}
+                  onValueChange={(value, selectedProductVariant) => {
                     productVariantCB.setInputValue(
                       selectedProductVariant?.sku ?? "",
                     );
-
                     field.onChange(value ? Number(value) : null);
                   }}
-                >
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="Product-Variant">
-                      Product Variant<span className="text-destructive">*</span>
-                    </FieldLabel>
-
-                    <ComboboxInput
-                      placeholder="Select product variant..."
-                      value={productVariantCB.inputValue}
-                      disabled={productVariantQuery.isFetching}
-                      aria-invalid={fieldState.invalid}
-                      readOnly
-                    />
-                    <ComboboxContent>
-                      <ComboboxList>
-                        {productVariantQuery.data?.rows?.map(
-                          (productVariant) => (
-                            <ComboboxItem
-                              key={productVariant.id}
-                              value={String(productVariant.id)}
-                            >
-                              <Item size="xs" className="p-0">
-                                <ItemContent>
-                                  <ItemTitle className="whitespace-nowrap">
-                                    ({productVariant.id}) {productVariant.sku}
-                                  </ItemTitle>
-                                  <ItemDescription>
-                                    ₱{productVariant.price}
-                                  </ItemDescription>
-                                </ItemContent>
-                              </Item>
-                            </ComboboxItem>
-                          ),
-                        )}
-
-                        {productVariantQuery.isFetching && (
-                          <div className="px-2 py-1 text-xs text-muted-foreground">
-                            Loading...
-                          </div>
-                        )}
-
-                        {!productVariantQuery.isFetching &&
-                          productVariantQuery.data?.rows?.length === 0 && (
-                            <ComboboxEmpty>No found.</ComboboxEmpty>
-                          )}
-                      </ComboboxList>
-
-                      <div className="flex items-center justify-between border-t p-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={
-                            productVariantCB.page <= 0 ||
-                            productVariantQuery.isFetching
-                          }
-                          onClick={() => productVariantCB.setPage((p) => p - 1)}
-                        >
-                          Previous
-                        </Button>
-
-                        <span className="text-muted-foreground text-xs">
-                          {productVariantCB.page + 1} /{" "}
-                          {productVariantCB.totalPages}
-                        </span>
-
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={
-                            productVariantCB.page + 1 >=
-                              productVariantCB.totalPages ||
-                            productVariantQuery.isFetching
-                          }
-                          onClick={() => {
-                            productVariantCB.setPage((p) => p + 1);
-                          }}
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </ComboboxContent>
-
-                    {fieldState.invalid && (
-                      <FieldError errors={[fieldState.error]} />
-                    )}
-                  </Field>
-                </Combobox>
+                  onSearchChange={productVariantCB.setSearchQuery}
+                  page={productVariantCB.page}
+                  totalPages={Math.max(
+                    1,
+                    Math.ceil((productVariantQuery.data?.total ?? 0) / 10),
+                  )}
+                  onPageChange={productVariantCB.setPage}
+                  isLoading={productVariantQuery.isFetching}
+                  invalid={fieldState.invalid}
+                  error={fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  placeholder={
+                    selectedWarehouseId
+                      ? "Select product variant..."
+                      : "Select a warehouse first"
+                  }
+                  emptyMessage="All product variants are already in this warehouse inventory, or no variants match."
+                />
               )}
             />
+            {state.mode === DialogMode.EDIT && <Controller name="reason" control={form.control} render={({ field, fieldState }) => <Field>
+              <FieldLabel htmlFor="stock-adjustment-reason">Reason for stock adjustment</FieldLabel>
+              <Input {...field} value={field.value ?? ""} id="stock-adjustment-reason" placeholder="For example: received delivery or corrected count" />
+              <FieldError errors={[fieldState.error]} />
+            </Field>} />}
             <Controller
               name="quantity"
               control={form.control}
@@ -361,6 +342,8 @@ export default function DialogPage() {
                   <Input
                     {...field}
                     id="quantity"
+                    min={form.getValues("reserved") ?? 0}
+                    step={1}
                     type="number"
                     aria-invalid={fieldState.invalid}
                     placeholder="Enter quantity"
@@ -392,6 +375,8 @@ export default function DialogPage() {
                     <Input
                       {...field}
                       id="reserved"
+                      readOnly
+                      title="Reservations are managed by orders"
                       type="number"
                       aria-invalid={fieldState.invalid}
                       placeholder="Enter reserved quantity"
@@ -411,7 +396,6 @@ export default function DialogPage() {
         </form>
       </>
     );
-  }
 
   return (
     <>
@@ -431,7 +415,7 @@ export default function DialogPage() {
             aria-label="Loading"
           />
         ) : state.mode !== DialogMode.DELETE && state.isOpen ? (
-          <Form />
+          formContent
         ) : (
           state.mode === DialogMode.DELETE &&
           state.isOpen && (
@@ -441,11 +425,11 @@ export default function DialogPage() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   onDelete();
-                  dispatch({
-                    type: "CLOSE",
-                  });
+
                 }}
-              ></form>
+              >
+                {form.formState.errors.root && <p role="alert" className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
+              </form>
             </>
           )
         )}
@@ -462,11 +446,11 @@ export default function DialogPage() {
             variant={
               state.mode === DialogMode.DELETE ? "destructive" : "default"
             }
-            disabled={!state.isOpen}
+            disabled={!state.isOpen || form.formState.isSubmitting || deleting || (state.mode === DialogMode.EDIT && (inventoryDetailQuery.isFetching || inventoryDetailQuery.isError || !inventoryDetailQuery.data))}
             type="submit"
             form="form"
           >
-            {state.action}
+            {form.formState.isSubmitting || deleting ? "Saving..." : state.action}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useModal } from "@/components/providers/modal-provider";
 import { request } from "@/components/http";
 import {
   productSchema,
@@ -20,6 +21,8 @@ import {
 } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { useWebSocket } from "@/components/providers/websocket-provider";
+import { REQUESTS } from "@/constant/request";
 
 type ProductDetails = {
   id: number;
@@ -50,6 +53,8 @@ type ProductContextType = {
   variant: VariantType;
   setVariant: React.Dispatch<React.SetStateAction<VariantType>>;
 
+  variantFilter: string;
+  setVariantFilter: Dispatch<SetStateAction<string>>;
   searchQuery: string;
   setSearchQuery: Dispatch<SetStateAction<string>>;
 
@@ -80,12 +85,15 @@ export function useProducts() {
 }
 
 export function ProductProvider({ children }: { children: React.ReactNode }) {
+  const { send } = useWebSocket();
+  const { state } = useModal();
   const [variant, setVariant] = useState<VariantType>({
     id: -1,
     is_open: false,
     mode: DialogMode.DEFAULT,
   });
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
+  const [variantFilter, setVariantFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selected, setSelected] = useState<ProductDetails>({
     id: -1,
@@ -102,11 +110,12 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
   });
 
   const query = useQuery({
-    queryKey: ["products", page.pageIndex, page.pageSize, searchQuery],
+    queryKey: ["products", page.pageIndex, page.pageSize, searchQuery, variantFilter],
 
     queryFn: async () => {
       const url_params = new URLSearchParams();
 
+      url_params.set("variants", variantFilter);
       url_params.append("page", page.pageIndex.toString());
       url_params.append("limit", page.pageSize.toString());
 
@@ -128,17 +137,18 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
   });
 
   const productDetailQuery = useQuery({
-    queryKey: ["edit_product", selected.id],
+    queryKey: ["edit_product", selected.id, selected.version],
     queryFn: async () => {
       if (!selected) return null;
 
       const response = await request("GET", `/api/products/${selected.id}`);
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Unable to load product details. Please retry.");
 
-      return await response.json();
+      const product = await response.json();
+      return { ...product, variants: product.variants.map((variant: ProductVariantType) => ({ ...variant, description: variant.description ?? "", weight_kg: variant.weight_kg ?? "0", width_value: variant.width_value ?? "0", width_unit: variant.width_unit ?? "m", length_value: variant.length_value ?? "0", length_unit: variant.length_unit ?? "m" })) };
     },
-    enabled: selected.id != -1,
+    enabled: state.isOpen && state.mode === DialogMode.EDIT && selected.id > 0,
   });
 
   // http://localhost:3000/api/products/variant/1?product_id=1
@@ -156,7 +166,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
       return await response.json();
     },
-    enabled: variant.id != -1,
+    enabled: false,
   });
 
   const createProduct = useMutation({
@@ -169,7 +179,6 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         },
         body: JSON.stringify({
           ...data,
-          product_id: Number(selected),
         }),
       });
 
@@ -180,14 +189,18 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
           throw new Error(JSON.stringify(result));
         }
 
-        throw new Error("Failed to create product");
+        throw new Error(result?.message || result?.error || "Failed to create product");
       }
 
       return result as ProductType;
     },
 
-    onSuccess: async (_) => {
+    onSuccess: async (product) => {
       await query.refetch();
+      send({
+        type: REQUESTS.PRODUCT_ADDED,
+        payload: [JSON.stringify(product)],
+      });
     },
   });
 
@@ -208,12 +221,16 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         if (result?.errors) {
           throw new Error(JSON.stringify(result));
         }
-        throw new Error("Failed to update product");
+        throw new Error(result?.message || result?.error || "Failed to update product");
       }
       return result as ProductType;
     },
-    onSuccess: async (_) => {
+    onSuccess: async (product) => {
       await query.refetch();
+      send({
+        type: REQUESTS.PRODUCT_UPDATED,
+        payload: [JSON.stringify(product)],
+      });
     },
   });
 
@@ -232,12 +249,16 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         if (result?.errors) {
           throw new Error(JSON.stringify(result));
         }
-        throw new Error("Failed to delete product");
+        throw new Error(result?.message || result?.error || "Failed to delete product");
       }
       return result as ProductType;
     },
-    onSuccess: async (_) => {
+    onSuccess: async (_, product) => {
       await query.refetch();
+      send({
+        type: REQUESTS.PRODUCT_DELETED,
+        payload: [product.id],
+      });
     },
   });
 
@@ -255,6 +276,8 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         setPage,
         searchQuery,
         setSearchQuery,
+        variantFilter,
+        setVariantFilter,
         selected,
         setSelected,
         updateProduct,

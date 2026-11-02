@@ -1,71 +1,46 @@
-export function formatElapsedTime(timestamp: number) {
-  const start = new Date(timestamp);
-  const now = new Date();
-
-  if (timestamp > now.getTime()) {
-    return "0 seconds";
+export function formatElapsedTime(
+  timestamp: number | null | undefined,
+  now = Date.now(),
+): string {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+    return "Date unavailable";
   }
 
-  let years = now.getFullYear() - start.getFullYear();
-  let months = now.getMonth() - start.getMonth();
-  let days = now.getDate() - start.getDate();
-
-  if (days < 0) {
-    months--;
-
-    const previousMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-
-    days += previousMonth.getDate();
+  // Notification.created_at is an epoch-seconds integer, not milliseconds.
+  const timestampMs = timestamp * 1000;
+  if (!Number.isFinite(timestampMs) || !Number.isFinite(new Date(timestampMs).getTime())) {
+    return "Date unavailable";
   }
 
-  if (months < 0) {
-    years--;
-    months += 12;
+  const deltaSeconds = (timestampMs - now) / 1000;
+  if (Math.abs(deltaSeconds) < 60) {
+    return deltaSeconds > 0 ? "in a few seconds" : "just now";
   }
 
-  // Calculate the remaining time after years/months/days
-  const baseDate = new Date(start);
-  baseDate.setFullYear(baseDate.getFullYear() + years);
-  baseDate.setMonth(baseDate.getMonth() + months);
-  baseDate.setDate(baseDate.getDate() + days);
+  const elapsedSeconds = Math.abs(deltaSeconds);
+  const unit =
+    elapsedSeconds < 60 * 60
+      ? "minute"
+      : elapsedSeconds < 24 * 60 * 60
+        ? "hour"
+        : elapsedSeconds < 30 * 24 * 60 * 60
+          ? "day"
+          : elapsedSeconds < 365 * 24 * 60 * 60
+            ? "month"
+            : "year";
+  const secondsPerUnit = {
+    minute: 60,
+    hour: 60 * 60,
+    day: 24 * 60 * 60,
+    month: 30 * 24 * 60 * 60,
+    year: 365 * 24 * 60 * 60,
+  }[unit];
+  const value = Math.round(deltaSeconds / secondsPerUnit);
 
-  let remainingSeconds = Math.floor(
-    (now.getTime() - baseDate.getTime()) / 1000,
+  return new Intl.RelativeTimeFormat("en", { numeric: "always" }).format(
+    value,
+    unit,
   );
-
-  const hours = Math.floor(remainingSeconds / 3600);
-  remainingSeconds %= 3600;
-
-  const minutes = Math.floor(remainingSeconds / 60);
-  const seconds = remainingSeconds % 60;
-
-  const parts: string[] = [];
-
-  if (years > 0) {
-    parts.push(`${years} year${years !== 1 ? "s" : ""}`);
-  }
-
-  if (months > 0) {
-    parts.push(`${months} month${months !== 1 ? "s" : ""}`);
-  }
-
-  if (days > 0) {
-    parts.push(`${days} day${days !== 1 ? "s" : ""}`);
-  }
-
-  if (hours > 0) {
-    parts.push(`${hours} hour${hours !== 1 ? "s" : ""}`);
-  }
-
-  if (minutes > 0) {
-    parts.push(`${minutes} minute${minutes !== 1 ? "s" : ""}`);
-  }
-
-  if (seconds > 0 || parts.length === 0) {
-    parts.push(`${seconds} second${seconds !== 1 ? "s" : ""}`);
-  }
-
-  return parts.join(", ");
 }
 
 export function formatTime(time: string): string {

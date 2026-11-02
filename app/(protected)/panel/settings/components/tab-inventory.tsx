@@ -45,7 +45,6 @@ export default function TabInventory() {
 
   const onSubmit = (data: StockStatusSchema) => {
     ToastSubmit(data);
-    console.log("Form submitted with data:", data);
   };
 
   return (

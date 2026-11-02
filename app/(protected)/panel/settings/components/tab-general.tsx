@@ -26,6 +26,11 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { request, requestWithErrorHandling } from "@/components/http";
 
+function parseSettingNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export default function TabGeneral() {
   const { settingQuery, isModified, setIsModified } = useSetting();
 
@@ -34,6 +39,9 @@ export default function TabGeneral() {
     defaultValues: {
       is_form_validation_debug_enabled: false,
       refresh_interval_ms: 30000,
+      order_limit_per_day: 10,
+      customer_order_limit: 1,
+      max_order_per_vehicle: 5,
     },
   });
 
@@ -42,13 +50,27 @@ export default function TabGeneral() {
       form.reset({
         is_form_validation_debug_enabled:
           settingQuery.data?.is_form_validation_debug_enabled.value === "true",
-        refresh_interval_ms:
-          Number(settingQuery.data?.refresh_interval_ms.value) ?? 30000,
+        refresh_interval_ms: parseSettingNumber(
+          settingQuery.data?.refresh_interval_ms.value,
+          30000,
+        ),
+        order_limit_per_day: parseSettingNumber(
+          settingQuery.data?.order_limit_per_day.value,
+          10,
+        ),
+        customer_order_limit: parseSettingNumber(
+          settingQuery.data?.customer_order_limit.value,
+          1,
+        ),
+        max_order_per_vehicle: parseSettingNumber(
+          settingQuery.data?.max_order_per_vehicle.value,
+          5,
+        ),
       });
     }
   }, [settingQuery.data, form]);
 
-  async function onSubmit(data: any) {
+  async function onSubmit(data: GeneralSettingSchema) {
     const setting_changes = [
       {
         name: "is_form_validation_debug_enabled",
@@ -61,18 +83,30 @@ export default function TabGeneral() {
         value: data.refresh_interval_ms.toString(),
         version: settingQuery.data?.refresh_interval_ms.version ?? 1,
       },
+      {
+        name: "order_limit_per_day",
+        value: data.order_limit_per_day.toString(),
+        version: settingQuery.data?.order_limit_per_day.version ?? 1,
+      },
+      {
+        name: "customer_order_limit",
+        value: data.customer_order_limit.toString(),
+        version: settingQuery.data?.customer_order_limit.version ?? 1,
+      },
+      {
+        name: "max_order_per_vehicle",
+        value: data.max_order_per_vehicle.toString(),
+        version: settingQuery.data?.max_order_per_vehicle.version ?? 1,
+      },
     ];
 
     ToastSubmit(setting_changes);
 
-    requestWithErrorHandling(
-      await request("POST", `/api/settings`, setting_changes),
-      form,
-      (_) => {
-        setIsModified(false);
-        settingQuery.refetch();
-      },
-    );
+    const response = await request("POST", `/api/settings`, setting_changes);
+    await requestWithErrorHandling(response, form, () => {
+      setIsModified(false);
+      void settingQuery.refetch();
+    });
   }
 
   return (
@@ -110,7 +144,6 @@ export default function TabGeneral() {
                       id="is_form_validation_debug_enabled"
                       checked={field.value}
                       onCheckedChange={(checked) => {
-                        console.log(`Switch toggled to ${checked}`);
                         field.onChange(checked);
                         setIsModified(true);
                       }}
@@ -138,6 +171,75 @@ export default function TabGeneral() {
 
                     <FieldDescription>
                       The interval is used for real-time updates.
+                    </FieldDescription>
+                  </Field>
+                )}
+              />
+
+              <Controller
+                name="order_limit_per_day"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel>Order Limit Per Day</FieldLabel>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={field.value}
+                      onChange={(event) => {
+                        field.onChange(event.target.valueAsNumber);
+                        setIsModified(true);
+                      }}
+                      aria-invalid={fieldState.invalid}
+                    />
+                    <FieldDescription>
+                      Maximum number of orders allowed per day.
+                    </FieldDescription>
+                  </Field>
+                )}
+              />
+
+              <Controller
+                name="customer_order_limit"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel>Customer Order Limit</FieldLabel>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={field.value}
+                      onChange={(event) => {
+                        field.onChange(event.target.valueAsNumber);
+                        setIsModified(true);
+                      }}
+                      aria-invalid={fieldState.invalid}
+                    />
+                    <FieldDescription>
+                      Maximum number of active orders allowed per customer.
+                    </FieldDescription>
+                  </Field>
+                )}
+              />
+
+              <Controller
+                name="max_order_per_vehicle"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel>Maximum Orders Per Vehicle</FieldLabel>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={field.value}
+                      onChange={(event) => {
+                        field.onChange(event.target.valueAsNumber);
+                        setIsModified(true);
+                      }}
+                      aria-invalid={fieldState.invalid}
+                    />
+                    <FieldDescription>
+                      Maximum number of orders assigned to one vehicle.
                     </FieldDescription>
                   </Field>
                 )}

@@ -5,7 +5,10 @@ import {
   CalendarForm,
   CalendarFormType,
 } from "@/schema/calendar";
-import { parseLocalDateTime } from "@/utils/date-util";
+import type { DeliveryCalendarEntry } from "@/schema/delivery-calendar";
+import { deliveryCalendarEvent } from "@/lib/delivery-calendar";
+import { request } from "@/components/http";
+import { manilaCalendarNow, parseLocalDateTime } from "@/utils/date-util";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { addDays } from "date-fns/addDays";
@@ -21,6 +24,7 @@ type SelectedType = {
 
 type CalendarContext = {
   calendar_form: ReturnType<typeof useForm<CalendarFormType>>;
+  deliveryQuery: ReturnType<typeof useQuery<DeliveryCalendarEntry[]>>;
   eventQuery: ReturnType<typeof useQuery<CalendarEventResponse[]>>;
   filteredEvents: CalendarEventResponse[];
   view: CalendarViewMode;
@@ -67,7 +71,7 @@ export function CalendarProvider({ children }: { children: React.ReactNode }) {
 
   const [view, setView] = useState<CalendarViewMode>("Week");
 
-  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => manilaCalendarNow());
 
   const weekStart = useMemo(
     () => startOfWeek(selectedDate, { weekStartsOn: 1 }),
@@ -99,14 +103,24 @@ export function CalendarProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
+  const deliveryQuery = useQuery<DeliveryCalendarEntry[]>({
+    queryKey: ["delivery-calendar"],
+    queryFn: async () => {
+      const response = await request("GET", "/api/deliveries/calendar");
+      if (!response.ok) throw new Error("Unable to load deliveries.");
+      return response.json();
+    },
+    refetchInterval: 30000,
+  });
+
   const filteredEvents = useMemo(
     () =>
-      (eventQuery.data ?? []).filter(
+      [...(eventQuery.data ?? []), ...(deliveryQuery.data ?? []).map(deliveryCalendarEvent)].filter(
         (event) =>
           selectedCategories.length === 0 ||
           selectedCategories.includes(event.category as CalendarCategory),
       ),
-    [eventQuery.data, selectedCategories],
+    [eventQuery.data, deliveryQuery.data, selectedCategories],
   );
 
   return (
@@ -114,6 +128,7 @@ export function CalendarProvider({ children }: { children: React.ReactNode }) {
       value={{
         calendar_form,
         eventQuery,
+        deliveryQuery,
         filteredEvents,
         view,
         setView,

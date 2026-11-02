@@ -1,5 +1,8 @@
 "use client";
 
+import { QueryFeedback } from "@/components/query-feedback";
+
+
 import {
   InputGroup,
   InputGroupAddon,
@@ -88,7 +91,8 @@ export function DataTable() {
         />
       </InputGroup>
       <div className="overflow-x-auto rounded-md border">
-        <Table>
+        <QueryFeedback query={auditLogsQuery} label="audit logs" />
+            <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -106,7 +110,7 @@ export function DataTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {auditLogsQuery.isFetching ? (
+            {auditLogsQuery.isPending ? (
               <TableRow>
                 <TableCell
                   colSpan={columns.length}

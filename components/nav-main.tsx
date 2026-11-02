@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -9,30 +8,17 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { usePageStore } from "@/stores/page-store";
-import { CirclePlusIcon, MailIcon } from "lucide-react";
 import Link from "next/link";
-import { useWebSocket } from "./providers/websocket-provider";
-import { REQUESTS } from "@/constant/request";
-import { getSidebars, leftSidebarData } from "@/constant/left-sidebar";
+import { usePathname } from "next/navigation";
+import { isSidebarRouteActive } from "@/lib/sidebar-route";
+import { getSidebars } from "@/constant/left-sidebar";
 import { createElement } from "react";
-import { Badge } from "./ui/badge";
-import { useAuthStore } from "@/stores/auth-store";
 import { useAuth } from "./providers/auth-provider";
 import { Skeleton } from "./ui/skeleton";
 
-export function NavMain({
-  items,
-}: {
-  items: {
-    title: string;
-    url: string;
-    icon?: React.ReactNode;
-  }[];
-}) {
+export function NavMain() {
   const { userQuery } = useAuth();
-  const { setCurrentPage } = usePageStore();
-  const { send } = useWebSocket();
+  const pathname = usePathname();
 
   if (!userQuery.data) {
     return (
@@ -81,35 +67,28 @@ export function NavMain({
     <SidebarGroup>
       <SidebarGroupContent className="flex flex-col gap-2">
         {Object.entries(sidebar).map((group) => (
-          <SidebarMenu key={group[0]}>
+          <div key={group[0]}>
             <SidebarGroupLabel>{group[0]}</SidebarGroupLabel>
+            <SidebarMenu>
             {group[1].map((item) => (
               <SidebarMenuItem key={item.title}>
-                <Link
-                  href={item.isDisabled ? "#" : item.url}
-                  onClick={() => {
-                    send({
-                      type: REQUESTS.CHANGE_PAGE,
-                      payload: [item.title],
-                    });
-                    setCurrentPage(item.title);
-                  }}
-                >
                   <SidebarMenuButton
+                    render={item.isDisabled ? undefined : <Link href={item.url} />}
                     className={`cursor-pointer group-data-[collapsible=icon]:p-1.5! ${item.isDisabled ? "cursor-not-allowed opacity-50" : ""}`}
                     tooltip={item.title}
                     isActive={
-                      item.title === usePageStore.getState().currentPage
+                      isSidebarRouteActive(pathname, item.url, item.isDisabled)
                     }
+                    aria-current={isSidebarRouteActive(pathname, item.url, item.isDisabled) ? "page" : undefined}
                     disabled={item.isDisabled}
                   >
                     {createElement(item.icon)}
                     <span>{item.title}</span>
                   </SidebarMenuButton>
-                </Link>
               </SidebarMenuItem>
             ))}
-          </SidebarMenu>
+            </SidebarMenu>
+          </div>
         ))}
       </SidebarGroupContent>
     </SidebarGroup>

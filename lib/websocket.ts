@@ -1,5 +1,40 @@
 let socket: WebSocket | null = null;
 
+const isDebugMode = () => process.env.NODE_ENV !== "production";
+
+const debugLog = (...args: unknown[]) => {
+  if (isDebugMode()) {
+    console.debug("[websocket]", ...args);
+  }
+};
+
+const errorLog = (...args: unknown[]) => {
+  if (isDebugMode()) {
+    console.error("[websocket]", ...args);
+  }
+};
+
+function getSocketUrl() {
+  if (typeof window === "undefined") {
+    return "ws://localhost/ws";
+  }
+
+  const configured = process.env.NEXT_PUBLIC_WS_URL;
+  if (configured) {
+    return configured;
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const host = window.location.hostname;
+  const port =
+    window.location.port &&
+    window.location.port !== "80" &&
+    window.location.port !== "443"
+      ? `:${window.location.port}`
+      : "";
+  return `${protocol}://${host}${port}/ws`;
+}
+
 export function connectWebSocket() {
   if (
     socket &&
@@ -9,22 +44,18 @@ export function connectWebSocket() {
     return socket;
   }
 
-  socket = new WebSocket("http://localhost:5173/ws");
+  socket = new WebSocket(getSocketUrl());
 
   socket.onopen = () => {
-    console.log("Connected");
-  };
-
-  socket.onmessage = (event) => {
-    console.log(JSON.parse(event.data));
+    debugLog("Connected");
   };
 
   socket.onclose = () => {
-    console.log("Disconnected");
+    debugLog("Disconnected");
   };
 
   socket.onerror = (err) => {
-    console.error(err);
+    errorLog("connection error", err);
   };
 
   return socket;

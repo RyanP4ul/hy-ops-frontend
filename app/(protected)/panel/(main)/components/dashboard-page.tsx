@@ -1,134 +1,51 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import {
-  Activity,
-  ArrowRight,
-  ArrowUpRight,
-  Bell,
-  Boxes,
-  CalendarClock,
-  CalendarDays,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  CircleDollarSign,
-  Clock3,
-  MapPin,
-  Package,
-  Search,
-  ShoppingCart,
-  Truck,
-  Users,
-  Wallet,
-} from "lucide-react";
-
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-
+import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Boxes, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Package, RefreshCw, Truck, Users } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { DeliveryCalendarDetails } from "@/components/delivery-calendar-details";
+import { deliveryStatusLabel, type DeliveryCalendarEntry } from "@/schema/delivery-calendar";
+import { formatCurrency, manilaCalendarNow, parseLocalDateTime } from "@/utils/date-util";
+import { QueryFeedback } from "@/components/query-feedback";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useDashboard } from "../provider";
 import StatsCard from "./stats-card";
-import { Map } from "@/components/ui/map";
-import { formatCurrency } from "@/utils/date-util";
+import DashboardFleetMap from "./dashboard-fleet-map";
+import { OperationalExceptions } from "./operational-exceptions";
 import RevenueOverview from "./revenue-overview";
 
-// import DeliveryMapInner from "./deliver-map";
+function SectionHeading({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+  return <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="min-w-0 space-y-1"><h2 className="text-base font-semibold tracking-tight">{title}</h2>{description && <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>}</div>
+    {action}
+  </div>;
+}
 
-const recentActivity = [
-  {
-    title: "Order marked as ready for delivery",
-    detail: "ORD-0251 · ABC Trading",
-    time: "5 minutes ago",
-    icon: Package,
-    color: "text-blue-600 bg-blue-500/10",
-  },
-  {
-    title: "Delivery successfully completed",
-    detail: "RUN-0008 · 3 orders delivered",
-    time: "24 minutes ago",
-    icon: CheckCircle2,
-    color: "text-emerald-600 bg-emerald-500/10",
-  },
-  {
-    title: "New order received",
-    detail: "ORD-0252 · Northern Supplies",
-    time: "1 hour ago",
-    icon: ShoppingCart,
-    color: "text-violet-600 bg-violet-500/10",
-  },
-  {
-    title: "Delivery rescheduled",
-    detail: "RUN-0009 · Customer request",
-    time: "2 hours ago",
-    icon: CalendarClock,
-    color: "text-amber-600 bg-amber-500/10",
-  },
-];
+function ViewLink({ href, children }: { href: string; children: ReactNode }) {
+  return <Link href={href} className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-md px-2 text-sm font-medium text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">{children}<ArrowRight aria-hidden="true" className="size-4" /></Link>;
+}
 
 function StatusBadge({ status }: { status: string }) {
+  const key = status.toUpperCase();
   const styles: Record<string, string> = {
-    SCHEDULED:
-      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
-    IN_TRANSIT:
-      "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300",
-    COMPLETED:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
-    CANCELLED:
-      "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300",
-    DELIVERED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    SCHEDULED: "border-amber-500/20 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+    IN_TRANSIT: "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    RETURNING: "border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+    COMPLETED: "border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
+    DELIVERED: "border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
+    CANCELLED: "border-destructive/20 bg-destructive/5 text-destructive",
   };
-
-  return (
-    <Badge variant="outline" className={styles[status] ?? ""}>
-      {status.replace(/_/g, " ")}
-    </Badge>
-  );
+  return <Badge variant="outline" className={`whitespace-nowrap ${styles[key] ?? ""}`}>{key.toLowerCase().replace(/_/g, " ").replace(/^./, char => char.toUpperCase())}</Badge>;
 }
 
-function SectionHeading({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description?: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="space-y-1">
-        <CardTitle className="text-base font-semibold">{title}</CardTitle>
-
-        {description && <CardDescription>{description}</CardDescription>}
-      </div>
-
-      {action}
-    </div>
-  );
+function EmptyState({ title, description }: { title: string; description: string }) {
+  return <div className="flex min-h-36 flex-col items-center justify-center rounded-lg bg-muted/30 p-6 text-center"><Package aria-hidden="true" className="mb-3 size-5 text-muted-foreground" /><p className="text-sm font-medium">{title}</p><p className="mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p></div>;
 }
-
-// --------------------------------------------------
-// Calendar widget
-// --------------------------------------------------
 
 function makeDateKey(year: number, monthIndex: number, day: number) {
   return [
@@ -138,12 +55,8 @@ function makeDateKey(year: number, monthIndex: number, day: number) {
   ].join("-");
 }
 
-function CalendarWidget({
-  events,
-}: {
-  events: Array<{ date: string }>;
-}) {
-  const today = new Date();
+function CalendarWidget({ events }: { events: DeliveryCalendarEntry[] }) {
+  const today = manilaCalendarNow();
   const [month, setMonth] = useState(
     () => new Date(today.getFullYear(), today.getMonth(), 1),
   );
@@ -169,7 +82,9 @@ function CalendarWidget({
     },
     {},
   );
-  const selectedCount = deliveryEventCounts[selectedDate] ?? 0;
+  const selectedDeliveries = events.filter(event => event.date === selectedDate);
+  const selectedCount = selectedDeliveries.length;
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
 
   const selectedLabel = new Date(`${selectedDate}T00:00:00`).toLocaleDateString(
     "en-PH",
@@ -181,11 +96,12 @@ function CalendarWidget({
   );
 
   return (
-    <Card className="h-full">
+    <Card className="h-full min-w-0 shadow-none" role="region" aria-label="Dashboard delivery calendar">
+      <DeliveryCalendarDetails delivery={events.find(delivery => delivery.id === selectedDeliveryId)} onClose={() => setSelectedDeliveryId(null)} />
       <CardHeader className="pb-3">
         <SectionHeading
-          title="Delivery Calendar"
-          description="Scheduled delivery activity"
+          title="Delivery calendar"
+          description="Choose a date to see departures."
           action={<CalendarDays className="size-5 text-muted-foreground" />}
         />
       </CardHeader>
@@ -199,12 +115,16 @@ function CalendarWidget({
             })}
           </p>
 
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="sm" onClick={() => {
+              setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+              setSelectedDate(makeDateKey(today.getFullYear(), today.getMonth(), today.getDate()));
+            }}>Today</Button>
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="size-8"
+              className="size-9"
               aria-label="Previous month"
               onClick={() =>
                 setMonth(
@@ -220,7 +140,7 @@ function CalendarWidget({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-8"
+              className="size-9"
               aria-label="Next month"
               onClick={() =>
                 setMonth(
@@ -266,9 +186,10 @@ function CalendarWidget({
                 type="button"
                 aria-label={`${dateKey}${eventCount ? `, ${eventCount} deliveries` : ""}`}
                 aria-pressed={isSelected}
+                aria-current={isToday ? "date" : undefined}
                 onClick={() => setSelectedDate(dateKey)}
                 className={[
-                  "relative mx-auto flex size-9 flex-col items-center justify-center rounded-lg text-sm transition-colors",
+                  "relative mx-auto flex h-10 w-full max-w-10 flex-col items-center justify-center rounded-lg text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                   isSelected
                     ? "bg-primary text-primary-foreground"
                     : "hover:bg-muted",
@@ -296,7 +217,7 @@ function CalendarWidget({
           <div className="flex items-center justify-between gap-2">
             <div>
               <p className="text-sm font-semibold">{selectedLabel}</p>
-              <p className="text-xs text-muted-foreground">Selected date</p>
+              <p className="text-xs text-muted-foreground">Manila time</p>
             </div>
 
             <Badge variant="secondary">
@@ -304,9 +225,16 @@ function CalendarWidget({
             </Badge>
           </div>
 
+          {selectedDeliveries.length ? <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+            {selectedDeliveries.map(delivery => <li key={delivery.id}><button type="button" aria-label={`View delivery #${delivery.id}`} className="w-full rounded-md border bg-background p-3 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" onClick={() => setSelectedDeliveryId(delivery.id)}>
+              <span className="block font-medium">Delivery #{delivery.id} / {delivery.vehicle}</span>
+              <span className="block text-xs text-muted-foreground">{parseLocalDateTime(delivery.date, delivery.start_time).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })} / {deliveryStatusLabel[delivery.status]}</span>
+              <span className="block truncate text-xs text-muted-foreground">{delivery.driver}</span>
+            </button></li>)}
+          </ul> : <p className="mt-3 text-xs text-muted-foreground">No deliveries on this date.</p>}
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
             <span className="size-2 rounded-full bg-blue-500" />
-            Dates with scheduled deliveries
+            Dates with deliveries
           </div>
         </div>
       </CardContent>
@@ -314,493 +242,83 @@ function CalendarWidget({
   );
 }
 
+function DashboardSkeleton() {
+  return <div role="status" aria-label="Loading dashboard statistics" className="space-y-6">
+    <span className="sr-only">Loading dashboard statistics...</span>
+    <div aria-hidden="true" className="space-y-6 motion-reduce:[&_*]:animate-none">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[0,1,2,3].map(item => <Skeleton key={item} className="h-44 w-full rounded-xl" />)}</div>
+      <Skeleton className="h-40 w-full rounded-xl" />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]"><Skeleton className="h-[560px] w-full" /><Skeleton className="h-[560px] w-full rounded-xl" /></div>
+      <div className="grid gap-6 lg:grid-cols-2"><Skeleton className="h-72 w-full rounded-xl" /><Skeleton className="h-72 w-full rounded-xl" /></div>
+    </div>
+  </div>;
+}
+
 export default function DashboardPage() {
   const { dashboardQuery } = useDashboard();
-  const revenueData = dashboardQuery.data?.monthly_revenue ?? [];
-  const currentRevenue = dashboardQuery.data?.revenue ?? 0;
-  const dailySalesData = dashboardQuery.data?.daily_sales ?? [];
-  const topProducts = dashboardQuery.data?.top_selling_products ?? [];
-  const topCustomers = dashboardQuery.data?.top_customers ?? [];
-  const activeDeliveries = dashboardQuery.data?.active_deliveries ?? [];
-  const upcomingDeliveries = dashboardQuery.data?.upcoming_deliveries ?? [];
-  const deliveryCalendar = dashboardQuery.data?.delivery_calendar ?? [];
-  const dailySalesTotal = dailySalesData.reduce(
-    (total: number, item: { sales: number }) => total + Number(item.sales),
-    0,
-  );
+  const cache = useQueryClient();
+  const data = dashboardQuery.data;
+  const dailySalesData = data?.daily_sales ?? [];
+  const topProducts = data?.top_selling_products ?? [];
+  const topCustomers = data?.top_customers ?? [];
+  const activeDeliveries = data?.active_deliveries ?? [];
+  const upcomingDeliveries = data?.upcoming_deliveries ?? [];
+  const dailySalesTotal = dailySalesData.reduce((total, item) => total + Math.round(Number(item.sales) * 100), 0) / 100;
+  const dateLabel = new Intl.DateTimeFormat("en-PH", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "Asia/Manila" }).format(new Date());
 
-  return (
-    <main className="min-h-screen bg-muted/20 p-4 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-[1600px] space-y-6">
-        {/* Page header */}
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">HYOps / Overview</p>
+  return <main className="min-w-0 bg-muted/15 px-4 py-6 md:px-6 lg:px-8 lg:py-8">
+    <div className="mx-auto max-w-[1600px] space-y-6 lg:space-y-8">
+      <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div><p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">Operations overview</p><h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Keep orders moving, follow your fleet, and see what needs attention.</p><p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><CalendarDays aria-hidden="true" className="size-4" />{dateLabel} <span className="text-muted-foreground/70">/ Manila</span></p></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" disabled={dashboardQuery.isFetching} onClick={() => void cache.invalidateQueries({ queryKey: ["dashboard_query"] })}><RefreshCw aria-hidden="true" className={`size-4 ${dashboardQuery.isFetching ? "animate-spin motion-reduce:animate-none" : ""}`} />{dashboardQuery.isFetching ? "Refreshing..." : "Refresh overview"}</Button>
+          <Button nativeButton={false} render={<Link href="/panel/orders" />}><Package aria-hidden="true" className="size-4" />Manage orders</Button>
+        </div>
+      </header>
+      <QueryFeedback query={dashboardQuery} label="dashboard statistics" />
+      {dashboardQuery.isPending ? <DashboardSkeleton /> : !data ? <><EmptyState title="Dashboard overview is unavailable" description="Use Retry above to load your statistics. You can still open orders and delivery operations from the navigation." /><OperationalExceptions /></> : <>
+        <section aria-label="Business summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatsCard /></section>
+        <OperationalExceptions />
 
-            <h1 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">
-              Dashboard
-            </h1>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Monitor inventory, sales, orders, and deliveries in one place.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" aria-label="Search">
-              <Search className="size-4" />
-            </Button>
-
-            <Button variant="outline" size="icon" aria-label="Notifications">
-              <Bell className="size-4" />
-            </Button>
-
-            <Button>
-              <CalendarDays className="mr-2 size-4" />
-              October 2026
-            </Button>
-          </div>
-        </header>
-
-        {/* Stat cards */}
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatsCard />
-        </section>
-
-        {/* Big map + calendar */}
-        <section className="grid gap-4 xl:grid-cols-12">
-          <Card className="xl:col-span-8">
-            <Map center={[-74.006, 40.7128]} zoom={12} />
-          </Card>
-
-          <div className="xl:col-span-4">
-            <CalendarWidget events={deliveryCalendar} />
+        <section aria-labelledby="dashboard-fleet-heading" className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="dashboard-fleet-heading" className="text-xl font-semibold tracking-tight">Fleet & delivery schedule</h2><p className="mt-1 text-sm text-muted-foreground">Vehicle locations, routes to destinations, and scheduled departures.</p></div><ViewLink href="/panel/fleet-map">Open fleet map</ViewLink></div>
+          <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 space-y-3"><DashboardFleetMap /><div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Truck aria-hidden="true" className="size-4" />Vehicle GPS</span><span className="inline-flex items-center gap-1.5"><MapPin aria-hidden="true" className="size-4" />Next destination</span><span>Open the fleet map to manage vehicles and return pickups.</span></div></div>
+            <CalendarWidget events={data.delivery_calendar ?? []} />
           </div>
         </section>
 
-        {/* Revenue overview + active deliveries */}
-        <section className="grid gap-4 xl:grid-cols-12">
-          <Card className="xl:col-span-7">
-            <CardHeader>
-              <SectionHeading
-                title="Revenue Overview"
-                description="Monthly revenue for the last six months"
-                action={<Badge variant="outline">Last six months</Badge>}
-              />
-            </CardHeader>
-
-            <CardContent>
-              <RevenueOverview />
-            </CardContent>
-          </Card>
-
-          <Card className="xl:col-span-5">
-            <CardHeader>
-              <SectionHeading
-                title="Active Deliveries"
-                description="Current and scheduled delivery runs"
-                action={
-                  <Button variant="ghost" size="sm">
-                    View all
-                    <ArrowRight className="ml-2 size-4" />
-                  </Button>
-                }
-              />
-            </CardHeader>
-
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="pb-3 pr-3 font-medium">Run / Customer</th>
-                      <th className="pb-3 pr-3 font-medium">Driver</th>
-                      <th className="pb-3 font-medium">Status</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {activeDeliveries.map((delivery) => (
-                      <tr key={delivery.run} className="border-b last:border-0">
-                        <td className="py-4 pr-3">
-                          <p className="font-semibold">{delivery.run}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {delivery.customer}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {delivery.progress}
-                          </p>
-                        </td>
-
-                        <td className="py-4 pr-3">
-                          <p className="whitespace-nowrap text-xs">
-                            {delivery.driver}
-                          </p>
-                          <p className="mt-1 max-w-[140px] text-xs text-muted-foreground">
-                            {delivery.destination}
-                          </p>
-                        </td>
-
-                        <td className="py-4">
-                          <StatusBadge status={delivery.status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mt-4 rounded-lg bg-muted/50 p-3">
-                <div className="flex items-center gap-2">
-                  <Activity className="size-4 text-blue-600" />
-                  <p className="text-sm font-medium">Delivery operations</p>
-                </div>
-
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Run status and stop progress should refresh as your driver app
-                  submits updates.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+        <section aria-label="Delivery operations" className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+          <Card className="min-w-0 shadow-none"><CardHeader><SectionHeading title="Active deliveries" description="Scheduled, in transit and returning runs." action={<ViewLink href="/panel/deliveries">View deliveries</ViewLink>} /></CardHeader><CardContent>
+            {!activeDeliveries.length ? <EmptyState title="No active deliveries" description="Scheduled and ongoing delivery runs will appear here." /> : <ul className="divide-y">{activeDeliveries.map(delivery => <li key={delivery.run} className="py-4 first:pt-0 last:pb-0"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="break-words text-sm font-semibold">{delivery.run}</p><p className="mt-1 break-words text-sm">{delivery.customer}</p></div><StatusBadge status={delivery.status} /></div><div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2"><p className="flex min-w-0 items-start gap-2"><Users aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span className="break-words">{delivery.driver}</span></p><p className="flex min-w-0 items-start gap-2"><MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span className="break-words">{delivery.destination}</span></p></div><p className="mt-3 text-xs font-medium text-muted-foreground">{delivery.progress}</p></li>)}</ul>}
+          </CardContent></Card>
+          <Card className="min-w-0 shadow-none"><CardHeader><SectionHeading title="Upcoming deliveries" description="Next departures, in Manila time." action={<CalendarClock aria-hidden="true" className="size-5 text-muted-foreground" />} /></CardHeader><CardContent className="space-y-5">
+            {upcomingDeliveries.length ? <ul className="divide-y">{upcomingDeliveries.map(delivery => {
+              const departure = parseLocalDateTime(delivery.date, delivery.time);
+              return <li key={delivery.run} className="flex gap-3 py-4 first:pt-0 last:pb-0"><div aria-hidden="true" className="flex h-16 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-muted/60"><span className="text-[11px] font-medium uppercase text-muted-foreground">{departure.toLocaleDateString("en-PH", { month: "short" })}</span><span className="text-xl font-semibold tabular-nums">{departure.getDate()}</span></div><div className="min-w-0 flex-1"><p className="text-xs font-medium text-muted-foreground">{delivery.run}</p><p className="mt-1 break-words text-sm font-semibold">{delivery.customer}</p><p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 aria-hidden="true" className="size-3.5" /><time dateTime={`${delivery.date}T${delivery.time}+08:00`}>{departure.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} at {departure.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}</time></p><p className="mt-2 break-words text-xs text-muted-foreground">{delivery.destination}</p><p className="mt-1 break-words text-xs text-muted-foreground">Driver: {delivery.driver}</p></div></li>;
+            })}</ul> : <EmptyState title="No upcoming departures" description="New scheduled delivery runs will appear here." />}
+            <ViewLink href="/panel/delivery-schedules">View delivery schedule</ViewLink>
+          </CardContent></Card>
         </section>
 
-        {/* Daily sales, upcoming deliveries, recent activity */}
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {/* Daily sales */}
-          <Card>
-            <CardHeader>
-              <SectionHeading
-                title="Daily Sales"
-                description="Sales totals over the last seven days"
-                action={<Wallet className="size-5 text-muted-foreground" />}
-              />
-            </CardHeader>
-
-            <CardContent>
-              <div className="mb-5">
-                <p className="text-2xl font-bold">
-                  {formatCurrency(dailySalesTotal)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Total sales for the last seven days
-                </p>
-              </div>
-
-              <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={dailySalesData}
-                    margin={{ top: 8, right: 0, left: -15, bottom: 0 }}
-                  >
-                    <CartesianGrid
-                      stroke="var(--border)"
-                      strokeDasharray="3 3"
-                      vertical={false}
-                    />
-
-                    <XAxis
-                      dataKey="day"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-                    />
-
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                      tickFormatter={(value) =>
-                        `${Math.round(Number(value) / 1000)}k`
-                      }
-                    />
-
-                    <Tooltip
-                      formatter={(value) => [
-                        formatCurrency(Number(value)),
-                        "Sales",
-                      ]}
-                      contentStyle={{
-                        borderRadius: 12,
-                        border: "1px solid var(--border)",
-                      }}
-                    />
-
-                    <Bar
-                      dataKey="sales"
-                      fill="#0d9488"
-                      radius={[5, 5, 0, 0]}
-                      maxBarSize={32}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Upcoming deliveries */}
-          <Card>
-            <CardHeader>
-              <SectionHeading
-                title="Upcoming Deliveries"
-                description="Next scheduled delivery runs"
-                action={
-                  <CalendarClock className="size-5 text-muted-foreground" />
-                }
-              />
-            </CardHeader>
-
-            <CardContent className="space-y-4">
-              {upcomingDeliveries.length > 0 ? (
-                upcomingDeliveries.map((delivery) => {
-                  const deliveryDate = new Date(`${delivery.date}T00:00:00`);
-                  const [hours, minutes] = delivery.time
-                    .split(":")
-                    .map(Number);
-                  const timeLabel = new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(
-                    "en-US",
-                    { hour: "numeric", minute: "2-digit" },
-                  );
-
-                  return (
-                    <div key={delivery.run} className="flex gap-3">
-                      <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-lg border bg-muted/30 p-2">
-                        <span className="text-xs text-muted-foreground">
-                          {deliveryDate.toLocaleDateString("en-US", {
-                            month: "short",
-                          })}
-                        </span>
-                        <span className="text-xl font-bold">
-                          {deliveryDate.getDate()}
-                        </span>
-                      </div>
-
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="truncate text-sm font-semibold">
-                            {delivery.customer}
-                          </p>
-
-                          <Badge
-                            variant="outline"
-                            className="shrink-0 text-[10px]"
-                          >
-                            {delivery.run}
-                          </Badge>
-                        </div>
-
-                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock3 className="size-3.5" />
-                          {timeLabel}
-                        </p>
-
-                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="size-3.5 shrink-0" />
-                          <span className="truncate">{delivery.destination}</span>
-                        </p>
-
-                        <p className="text-xs text-muted-foreground">
-                          Driver: {delivery.driver}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="rounded-lg border border-dashed p-5 text-center">
-                  <CalendarClock className="mx-auto size-6 text-muted-foreground" />
-                  <p className="mt-2 text-sm font-medium">
-                    No upcoming deliveries scheduled
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    New scheduled delivery runs will appear here.
-                  </p>
-                </div>
-              )}
-
-              <Button variant="outline" className="w-full">
-                View delivery schedule
-                <ArrowRight className="ml-2 size-4" />
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Recent activity */}
-          <Card>
-            <CardHeader>
-              <SectionHeading
-                title="Recent Activity"
-                description="Latest changes in HYOps"
-                action={<Activity className="size-5 text-muted-foreground" />}
-              />
-            </CardHeader>
-
-            <CardContent>
-              <div className="space-y-5">
-                {recentActivity.map((activity) => {
-                  const Icon = activity.icon;
-
-                  return (
-                    <div key={activity.title} className="flex gap-3">
-                      <div
-                        className={`flex size-9 shrink-0 items-center justify-center rounded-full ${activity.color}`}
-                      >
-                        <Icon className="size-4" />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium leading-5">
-                          {activity.title}
-                        </p>
-
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {activity.detail}
-                        </p>
-
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {activity.time}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <Button variant="ghost" className="mt-4 w-full">
-                View activity history
-                <ArrowRight className="ml-2 size-4" />
-              </Button>
-            </CardContent>
-          </Card>
+        <section aria-labelledby="dashboard-performance-heading" className="space-y-4">
+          <div><h2 id="dashboard-performance-heading" className="text-xl font-semibold tracking-tight">Business performance</h2><p className="mt-1 text-sm text-muted-foreground">Cash movements and order activity. All amounts are in Philippine pesos.</p></div>
+          <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+            <Card className="min-w-0 shadow-none"><CardHeader><SectionHeading title="Monthly net cashflow" description="Last six Manila months / All warehouses" /></CardHeader><CardContent><RevenueOverview /></CardContent></Card>
+            <Card className="min-w-0 shadow-none"><CardHeader><SectionHeading title="Daily net cashflow" description="Last seven Manila days / All warehouses" /></CardHeader><CardContent><p className="text-3xl font-semibold tracking-tight tabular-nums">{formatCurrency(dailySalesTotal)}</p><p className="mt-1 text-sm text-muted-foreground">Receipts minus refunds over the last seven days.</p><div className="mt-5 h-[260px] min-w-0">
+              {!dailySalesData.length ? <EmptyState title="No daily cashflow data" description="Recorded receipts and refunds will appear here." /> : dailySalesData.every(item => Number(item.sales) === 0) ? <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">No net cash movement over the last seven days.</div> : <ResponsiveContainer width="100%" height="100%"><BarChart data={dailySalesData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} /><YAxis width={48} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={value => new Intl.NumberFormat("en-PH", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value))} /><Tooltip formatter={value => [formatCurrency(Number(value)), "Net cashflow"]} contentStyle={{ borderRadius: 8, border: "1px solid var(--border)", background: "var(--popover)", color: "var(--popover-foreground)" }} /><Bar dataKey="sales" fill="var(--primary)" radius={[4,4,0,0]} maxBarSize={32} isAnimationActive={false} /></BarChart></ResponsiveContainer>}
+            </div></CardContent></Card>
+            <Card className="min-w-0 shadow-none"><CardHeader><SectionHeading title="Top-selling products" description="All-time quantities from non-cancelled orders." action={<Boxes aria-hidden="true" className="size-5 text-muted-foreground" />} /></CardHeader><CardContent>
+              {!topProducts.length ? <EmptyState title="No products to rank yet" description="Products will appear after non-cancelled orders are recorded." /> : <ol className="divide-y">{topProducts.map((product, index) => <li key={product.sku} className="py-4 first:pt-0 last:pb-0"><div className="flex items-start gap-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">{index + 1}</span><div className="min-w-0 flex-1"><p className="break-words text-sm font-medium">{product.name}</p><p className="mt-1 break-all text-xs text-muted-foreground">{product.sku}</p></div><div className="shrink-0 text-right"><p className="text-sm font-semibold tabular-nums">{product.sold.toLocaleString()} units</p><p className="mt-1 text-xs text-muted-foreground">{product.revenue === null ? "Amount unverified" : formatCurrency(product.revenue)}</p></div></div><div aria-hidden="true" className="mt-3 h-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary/70" style={{ width: `${Math.max(0, Math.min(100, product.percent))}%` }} /></div></li>)}</ol>}
+              <p className="mt-5 border-t pt-3 text-xs leading-relaxed text-muted-foreground">Amounts use the prices saved at checkout.</p>
+            </CardContent></Card>
+            <Card className="min-w-0 shadow-none"><CardHeader><SectionHeading title="Top customers by orders" description="All-time non-cancelled orders." action={<Users aria-hidden="true" className="size-5 text-muted-foreground" />} /></CardHeader><CardContent>
+              {!topCustomers.length ? <EmptyState title="No customers to rank yet" description="Customers with non-cancelled orders will appear here." /> : <ol className="divide-y">{topCustomers.map((customer, index) => <li key={`${customer.name}-${index}`} className="flex items-start gap-3 py-4 first:pt-0 last:pb-0"><span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">{index + 1}</span><div className="min-w-0 flex-1"><p className="break-words text-sm font-medium">{customer.name}</p><p className="mt-1 break-words text-xs text-muted-foreground">{customer.location}</p></div><div className="shrink-0 text-right"><p className="text-sm font-semibold tabular-nums">{customer.orders.toLocaleString()} orders</p><p className="mt-1 text-xs text-muted-foreground">{customer.amount === null ? "Amount unverified" : formatCurrency(customer.amount)}</p></div></li>)}</ol>}
+              <p className="mt-5 border-t pt-3 text-xs leading-relaxed text-muted-foreground">Order amounts use the prices saved at checkout.</p>
+            </CardContent></Card>
+          </div>
         </section>
-
-        {/* Top products + most orders by customers */}
-        <section className="grid gap-4 xl:grid-cols-2">
-          {/* Top-selling products */}
-          <Card>
-            <CardHeader>
-              <SectionHeading
-                title="Top Selling Products"
-                description="Best-performing product variants by quantity sold"
-                action={<Boxes className="size-5 text-muted-foreground" />}
-              />
-            </CardHeader>
-
-            <CardContent>
-              <div className="space-y-5">
-                {topProducts.map((product, index) => (
-                  <div key={product.sku} className="space-y-2">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <Package className="size-4 text-muted-foreground" />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">
-                          {product.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          SKU: {product.sku}
-                        </p>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">
-                          {product.sold.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground">units</p>
-                      </div>
-                    </div>
-
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full rounded-full ${
-                          index === 0 ? "bg-blue-600" : "bg-blue-500/70"
-                        }`}
-                        style={{ width: `${product.percent}%` }}
-                      />
-                    </div>
-
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Sales contribution</span>
-                      <span>{formatCurrency(product.revenue)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Most orders by customers */}
-          <Card>
-            <CardHeader>
-              <SectionHeading
-                title="Most Orders by Customers"
-                description="Customers ranked by number of orders"
-                action={<Users className="size-5 text-muted-foreground" />}
-              />
-            </CardHeader>
-
-            <CardContent>
-              <div className="space-y-5">
-                {topCustomers.map((customer, index) => (
-                  <div key={customer.name} className="space-y-2">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold">
-                        {index + 1}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">
-                          {customer.name}
-                        </p>
-
-                        <p className="truncate text-xs text-muted-foreground">
-                          {customer.location}
-                        </p>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">
-                          {customer.orders} orders
-                        </p>
-
-                        <p className="text-xs text-muted-foreground">
-                          {formatCurrency(customer.amount)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-emerald-600"
-                        style={{ width: `${customer.percent}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-5 rounded-lg border p-3">
-                <div className="flex items-center gap-2">
-                  <Users className="size-4 text-muted-foreground" />
-
-                  <p className="text-sm font-medium">Customer insights</p>
-                </div>
-
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Use this ranking to identify your most frequent customers and
-                  prioritize customer account reviews.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-
-        <footer className="pb-2 pt-1 text-center text-xs text-muted-foreground">
-          HYOps Dashboard · Mock data for UI development
-        </footer>
-      </div>
-    </main>
-  );
+      </>}
+    </div>
+  </main>;
 }

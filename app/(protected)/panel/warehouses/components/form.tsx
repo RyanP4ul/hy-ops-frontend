@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/combobox";
 import { GeocodeResult } from "@/types/geocode";
 import { useQuery } from "@tanstack/react-query";
+import { QueryFeedback } from "@/components/query-feedback";
 import { debounce } from "@/utils/debounce";
 
 export default function Form() {
@@ -41,10 +42,22 @@ export default function Form() {
   } = useWarehouses();
   const { state, dispatch } = useModal();
   const { send } = useWebSocket();
+  const initialized = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!state.isOpen) { initialized.current = null; return; }
+    const key = `${state.mode}:${selected.id}:${selected.version}`;
+    if (initialized.current === key) return;
+    if (state.mode === DialogMode.EDIT && (warehouseDetailQuery.isFetching || !warehouseDetailQuery.data)) return;
+    initialized.current = key;
     if (state.mode === DialogMode.EDIT && warehouseDetailQuery.data) {
+      if (warehouseDetailQuery.data.latitude != null && warehouseDetailQuery.data.longitude != null) {
+        setLatitude(Number(warehouseDetailQuery.data.latitude)); setLongitude(Number(warehouseDetailQuery.data.longitude));
+        mapRef.current?.flyTo({ center: [Number(warehouseDetailQuery.data.longitude), Number(warehouseDetailQuery.data.latitude)], zoom: 16 });
+      }
       form.reset({
+        latitude: warehouseDetailQuery.data?.latitude == null ? null : Number(warehouseDetailQuery.data.latitude),
+        longitude: warehouseDetailQuery.data?.longitude == null ? null : Number(warehouseDetailQuery.data.longitude),
         name: warehouseDetailQuery.data?.name ?? "",
         street_address: warehouseDetailQuery.data?.street_address ?? "",
         city: warehouseDetailQuery.data?.city ?? "",
@@ -52,11 +65,12 @@ export default function Form() {
         zip_code: warehouseDetailQuery.data?.zip_code ?? "",
       });
 
-      setSearchAddress(
-        `${warehouseDetailQuery.data?.city}, ${warehouseDetailQuery.data?.state}, ${warehouseDetailQuery.data?.zip_code}`,
-      );
+      setSearchAddress("");
     } else {
+      setSearchAddress("");
       form.reset({
+        latitude: null,
+        longitude: null,
         name: "",
         street_address: "",
         city: "",
@@ -64,12 +78,14 @@ export default function Form() {
         zip_code: "",
       });
     }
-  }, [state, warehouseDetailQuery.isFetched]);
+  }, [state.isOpen, state.mode, selected.id, selected.version, warehouseDetailQuery.isFetching, warehouseDetailQuery.data, form, mapRef, setLatitude, setLongitude, setSearchAddress]);
 
   const debouncedSearch = useMemo(
     () => debounce(setSearchAddress, 500),
     [setSearchAddress],
   );
+
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
   const onSuccess = () => {
     warehouseQuery.refetch();
@@ -85,13 +101,15 @@ export default function Form() {
 
   async function onSubmit(data: WarehouseForm) {
     ToastSubmit(data);
+    const payload = { ...data, latitude: data.latitude ?? undefined, longitude: data.longitude ?? undefined };
 
     if (state.mode === DialogMode.EDIT && selected.id > 0) {
       const response = await request("PUT", `/api/warehouses/${selected.id}`, {
-        ...data,
+        ...payload,
         version: selected.version,
+        clear_coordinates: data.latitude == null && data.longitude == null,
       });
-      requestWithErrorHandling(response, form, (result) => {
+      await requestWithErrorHandling(response, form, (result) => {
         onSuccess();
         send({
           type: REQUESTS.WAREHOUSE_UPDATED,
@@ -99,11 +117,10 @@ export default function Form() {
         });
       });
     } else {
-      const response = await request("POST", `/api/warehouses`, data);
+      const response = await request("POST", `/api/warehouses`, payload);
 
-      requestWithErrorHandling(response, form, (result) => {
+      await requestWithErrorHandling(response, form, (result) => {
         onSuccess();
-        console.log(`Warehouse id: ${result?.id}`);
         send({
           type: REQUESTS.WAREHOUSE_ADDED,
           payload: [
@@ -126,11 +143,12 @@ export default function Form() {
         )}
         className="space-y-4"
       >
+        {state.mode === DialogMode.EDIT && <QueryFeedback query={warehouseDetailQuery} label="warehouse details" />}
+        {geocodeQuery.isError && <QueryFeedback query={geocodeQuery} label="address search" />}
         <div className="gap-4">
           <Controller
             name="search_address"
             control={form.control}
-            disabled={geocodeQuery.isFetching}
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
                 <FieldLabel htmlFor="search_address">Search Address</FieldLabel>
@@ -144,8 +162,6 @@ export default function Form() {
                     );
 
                     if (!selectedAddress) return;
-
-                    console.log("Selected Address:", selectedAddress);
 
                     // form.setValue(
                     //   "search_address",
@@ -163,7 +179,7 @@ export default function Form() {
 
                     form.setValue("street_address", street || "");
 
-                    form.setValue("city", selectedAddress.address.city || "");
+                    form.setValue("city", selectedAddress.address.city || selectedAddress.address.town || selectedAddress.address.municipality || "");
 
                     form.setValue("state", selectedAddress.address.state || "");
 
@@ -175,6 +191,8 @@ export default function Form() {
                     const newLatitude = Number(selectedAddress.lat);
                     const newLongitude = Number(selectedAddress.lon);
 
+                    form.setValue("latitude", newLatitude, { shouldDirty: true });
+                    form.setValue("longitude", newLongitude, { shouldDirty: true });
                     setLatitude(newLatitude);
                     setLongitude(newLongitude);
 
@@ -186,6 +204,7 @@ export default function Form() {
                   }}
                 >
                   <ComboboxInput
+                    id="search_address"
                     placeholder="Search Warehouse Address"
                     onChange={(e) => {
                       const value = e.target.value;
@@ -197,7 +216,7 @@ export default function Form() {
                     <ComboboxList>
                       {(item) => (
                         <ComboboxItem
-                          key={item}
+                          key={item.place_id}
                           value={item.place_id.toString()}
                         >
                           {item.display_name}
@@ -213,6 +232,28 @@ export default function Form() {
               </Field>
             )}
           />
+        </div>
+        <p className="text-sm text-muted-foreground" role={geocodeQuery.isError ? "status" : undefined}>
+          {geocodeQuery.isError ? "Address search is unavailable. " : ""}You can enter the address below without using search. Coordinates are optional; use a verified map location.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {(["latitude", "longitude"] as const).map((coordinate) => (
+            <Controller key={coordinate} name={coordinate} control={form.control} render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor={coordinate}>{coordinate === "latitude" ? "Latitude" : "Longitude"} (optional)</FieldLabel>
+                <Input id={coordinate} type="number" step="any" min={coordinate === "latitude" ? -90 : -180} max={coordinate === "latitude" ? 90 : 180}
+                  value={field.value ?? ""} onBlur={field.onBlur} name={field.name} ref={field.ref} aria-invalid={fieldState.invalid}
+                  onChange={(event) => {
+                    const value = event.target.value === "" ? null : event.target.valueAsNumber;
+                    field.onChange(value);
+                    if (value !== null && Number.isFinite(value)) {
+                      if (coordinate === "latitude") setLatitude(value); else setLongitude(value);
+                    }
+                  }} />
+                {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+              </Field>
+            )} />
+          ))}
         </div>
         <Controller
           name="name"
@@ -306,14 +347,14 @@ export default function Form() {
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
                 <FieldLabel htmlFor="state">
-                  State<span className="text-destructive">*</span>
+                  Province<span className="text-destructive">*</span>
                 </FieldLabel>
                 <Input
                   {...field}
                   id="state"
                   type="text"
                   aria-invalid={fieldState.invalid}
-                  placeholder="Enter State"
+                  placeholder="Enter Province"
                   autoComplete="off"
                 />
                 {fieldState.invalid && (

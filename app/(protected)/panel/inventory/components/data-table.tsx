@@ -1,3 +1,5 @@
+import { StockHistory } from "./stock-history";
+import { QueryFeedback } from "@/components/query-feedback";
 import { useModal } from "@/components/providers/modal-provider";
 import { InventoryTableSchemaType } from "@/schema/inventory";
 import {
@@ -9,9 +11,10 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowDownUp, Edit, Loader2Icon, Plus, Trash2 } from "lucide-react";
+import { Edit, Loader2Icon, Plus, Trash2 } from "lucide-react";
 import { useInventory } from "../provider";
 import { useMemo, useState } from "react";
+import { useEffect } from "react";
 import {
   Card,
   CardAction,
@@ -48,6 +51,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Filter from "./filter";
+import { useWebSocket } from "@/components/providers/websocket-provider";
+import { REQUESTS } from "@/constant/request";
+import { useQueryClient } from "@tanstack/react-query";
+
+type InventoryQueryData = {
+  rows: InventoryTableSchemaType[];
+  total: number;
+};
 
 export function DataTable() {
   const { openModal } = useModal();
@@ -57,9 +68,16 @@ export function DataTable() {
     pageSize,
     setPagination,
     setInventoryDetail,
+    searchQuery,
+    stockStatus,
+    warehouseId,
+    dateRange,
   } = useInventory();
+  const { subscribe } = useWebSocket();
+  const queryClient = useQueryClient();
 
   const columns: ColumnDef<InventoryTableSchemaType>[] = [
+    { id: "history", header: "History", cell: ({ row }) => <StockHistory id={row.original.id} /> },
     {
       accessorKey: "sku",
       header: "SKU",
@@ -79,14 +97,14 @@ export function DataTable() {
               render={
                 <a
                   className="font-medium text-blue-700 border-b border-blue-700 hover:text-blue-900 hover:border-blue-900"
-                  href="#"
+                  href="/panel/warehouses"
                 >
                   {warehouseName}
                 </a>
               }
             />
             <TooltipContent side="right">
-              <p>Add to library</p>
+              <p>View warehouses</p>
             </TooltipContent>
           </Tooltip>
         );
@@ -114,6 +132,11 @@ export function DataTable() {
           </Badge>
         );
       },
+    },
+    {
+      id: "available",
+      header: "Available",
+      cell: ({ row }) => <span title="On hand minus reserved">{row.original.quantity - row.original.reserved}</span>,
     },
     {
       accessorKey: "reserved",
@@ -144,11 +167,8 @@ export function DataTable() {
       header: "Actions",
       cell: ({ row }) => (
         <div className="flex space-x-2">
-          <Button variant="outline" size="sm" className="cursor-pointer">
-            <ArrowDownUp className="h-5 w-5" />
-          </Button>
-
           <Button
+            aria-label="Edit inventory"
             variant="outline"
             size="sm"
             className="cursor-pointer"
@@ -171,6 +191,7 @@ export function DataTable() {
             variant="outline"
             size="sm"
             className="text-destructive hover:text-destructive cursor-pointer"
+            aria-label="Delete inventory"
             onClick={() => {
               // console.log("Delete action for product:", row.original.id);
               openModal(DialogMode.DELETE, {
@@ -218,13 +239,78 @@ export function DataTable() {
     manualPagination: true,
   });
 
+  useEffect(() => {
+    const queryKey = [
+      "inventory",
+      pageIndex,
+      pageSize,
+      searchQuery,
+      stockStatus,
+      warehouseId,
+      dateRange,
+    ];
+
+    return subscribe(
+      [
+        REQUESTS.INVENTORY_ADDED,
+        REQUESTS.INVENTORY_UPDATED,
+        REQUESTS.INVENTORY_DELETED,
+      ],
+      (message) => {
+        queryClient.setQueryData(
+          queryKey,
+          (oldData: InventoryQueryData | undefined) => {
+            if (message.type === REQUESTS.INVENTORY_DELETED) {
+              if (!oldData) return { rows: [], total: 0 };
+
+              return {
+                rows: oldData.rows.filter(
+                  (row) => row.id !== message.payload.id,
+                ),
+                total: Math.max(oldData.total - 1, 0),
+              };
+            }
+
+            if (!oldData) {
+              return { rows: [message.payload], total: 1 };
+            }
+
+            if (message.type === REQUESTS.INVENTORY_UPDATED) {
+              return {
+                rows: oldData.rows.map((row) =>
+                  row.id === message.payload.id ? message.payload : row,
+                ),
+                total: oldData.total,
+              };
+            }
+
+            return {
+              rows: [message.payload, ...oldData.rows].slice(0, pageSize),
+              total: oldData.total + 1,
+            };
+          },
+        );
+      },
+    );
+  }, [
+    dateRange,
+    pageIndex,
+    pageSize,
+    queryClient,
+    searchQuery,
+    stockStatus,
+    subscribe,
+    warehouseId,
+  ]);
+
   return (
     <>
       <div className="px-4">
         <Filter />
 
         <div className="rounded-md border overflow-hidden">
-          <Table>
+          <QueryFeedback query={inventoryQuery} label="inventory" />
+            <Table>
             <TableHeader className="bg-muted sticky top-0 z-10">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
@@ -244,7 +330,7 @@ export function DataTable() {
               ))}
             </TableHeader>
             <TableBody>
-              {inventoryQuery.isFetching ? (
+              {inventoryQuery.isPending ? (
                 <TableRow>
                   <TableCell colSpan={10} className="h-40 text-center">
                     <div className="flex items-center justify-center">
@@ -260,11 +346,7 @@ export function DataTable() {
                       <TableRow key={row.id}>
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id}>
-                            {cell.column.columnDef.cell
-                              ? (cell.column.columnDef.cell as any)(
-                                  cell.getContext(),
-                                )
-                              : cell.getValue()}
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </TableCell>
                         ))}
                       </TableRow>
@@ -272,7 +354,7 @@ export function DataTable() {
                   ) : (
                     <TableRow>
                       <TableCell colSpan={10} className="h-24 text-center">
-                        No Results Found
+                        {inventoryQuery.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
                       </TableCell>
                     </TableRow>
                   )}

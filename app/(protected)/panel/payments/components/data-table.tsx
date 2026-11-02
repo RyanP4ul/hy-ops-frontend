@@ -1,6 +1,11 @@
 "use client";
+import { formatCurrency } from "@/utils/date-util";
 
-import { useMemo, useState } from "react";
+import { RefundControl } from "./refund-control";
+import { QueryFeedback } from "@/components/query-feedback";
+
+
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDownUp, CreditCard, Info, Search } from "lucide-react";
 import {
   useReactTable,
@@ -24,6 +29,9 @@ import { Button } from "@/components/ui/button";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { PaymentRowType } from "@/schema/payment";
+import { useWebSocket } from "@/components/providers/websocket-provider";
+import { REQUESTS } from "@/constant/request";
+import { useQueryClient } from "@tanstack/react-query";
 
 const labels: Record<string, string> = {
   CASH: "Cash",
@@ -33,6 +41,7 @@ const labels: Record<string, string> = {
   PARTIALLY_PAID: "Partially paid",
   PAID: "Paid",
   OVERDUE: "Overdue",
+  UNVERIFIED: "Unverified",
 };
 
 export default function DataTable() {
@@ -46,9 +55,13 @@ export default function DataTable() {
     setSelected,
   } = usePayments();
   const { openModal } = useModal();
+  const { subscribe } = useWebSocket();
+  const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState(search);
   const columns = useMemo<ColumnDef<PaymentRowType>[]>(
     () => [
+      { id: "received", header: "Total received", cell: ({ row }) => formatCurrency(row.original.gross_received) },
+      { id: "refunded", header: "Refunded", cell: ({ row }) => formatCurrency(row.original.refunded_amount) },
       {
         accessorKey: "payment_number",
         header: () => (
@@ -78,45 +91,55 @@ export default function DataTable() {
         cell: ({ row }) => (
           <Badge
             variant={
-              row.original.payment_status === "PAID" ? "default" : "secondary"
+              row.original.payment_status === "PAID" ? "default" : row.original.payment_status === "UNVERIFIED" ? "outline" : "secondary"
             }
           >
-            {labels[row.original.payment_status] ?? row.original.payment_status}
+            {Number(row.original.refunded_amount) > 0 && Number(row.original.amount) === 0 ? "Fully refunded" : labels[row.original.payment_status] ?? row.original.payment_status}
           </Badge>
         ),
       },
       {
         accessorKey: "amount",
         header: () => (
-          <SortableHeader label="Amount" id="amount" setSortBy={setSortBy} />
+          <SortableHeader label="Net received" id="amount" setSortBy={setSortBy} />
         ),
         cell: ({ row }) =>
-          new Intl.NumberFormat("en-PH", {
-            style: "currency",
-            currency: "PHP",
-          }).format(Number(row.original.amount)),
+          formatCurrency(row.original.amount),
       },
       {
         accessorKey: "received_at",
         header: () => (
           <SortableHeader
-            label="Received"
+            label="Received at"
             id="received_at"
             setSortBy={setSortBy}
           />
         ),
-        cell: ({ row }) =>
-          new Intl.DateTimeFormat("en-PH", {
+        cell: ({ row }) => {
+          if (
+            Number(row.original.gross_received) <= 0 ||
+            !row.original.received_at
+          ) {
+            return "—";
+          }
+
+          const receivedAt = new Date(row.original.received_at);
+          if (!Number.isFinite(receivedAt.getTime())) return "Date unavailable";
+
+          return new Intl.DateTimeFormat("en-PH", {
             dateStyle: "medium",
             timeStyle: "short",
-          }).format(new Date(row.original.received_at)),
+            timeZone: "Asia/Manila",
+          }).format(receivedAt);
+        },
       },
       {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => {
           return (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <RefundControl payment={row.original} />
               <Button
                 type="button"
                 variant="outline"
@@ -126,13 +149,12 @@ export default function DataTable() {
                     order_id: row.original.order_id,
                     payment_number: row.original.payment_number,
                     version: row.original.version,
+                    payment: row.original,
                   });
-                  openModal(DialogMode.CUSTOM, {
-                    title: "Record Payment",
+                  openModal(DialogMode.VIEW, {
+                    title: "Payment details",
                     description:
-                      row.original.payment_status === "UNPAID"
-                        ? "Record a partial or full payment for this order."
-                        : "Record the remaining balance for this order.",
+                      "Review the amounts received, refunds and remaining order balance.",
                     action: "Record Payment",
                   });
                 }}
@@ -140,8 +162,7 @@ export default function DataTable() {
                 <Info className="size-4" />
                 Details
               </Button>
-              {row.original.payment_status === "UNPAID" ||
-              row.original.payment_status === "PARTIALLY_PAID" ? (
+              {row.original.order_status !== "CANCELLED" && row.original.payment_status !== "UNVERIFIED" && row.original.remaining_amount !== null && Number.isFinite(Number(row.original.remaining_amount)) && Number(row.original.remaining_amount) > 0 ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -151,9 +172,10 @@ export default function DataTable() {
                       order_id: row.original.order_id,
                       payment_number: row.original.payment_number,
                       version: row.original.version,
+                      payment: row.original,
                     });
                     openModal(DialogMode.CUSTOM, {
-                      title: "Record Payment",
+                      title: "Add payment",
                       description:
                         row.original.payment_status === "UNPAID"
                           ? "Record a partial or full payment for this order."
@@ -163,7 +185,7 @@ export default function DataTable() {
                   }}
                 >
                   <CreditCard className="size-4" />
-                  Pay
+                  Add payment
                 </Button>
               ) : null}
             </div>
@@ -187,6 +209,11 @@ export default function DataTable() {
     manualPagination: true,
   });
 
+  useEffect(() => subscribe(REQUESTS.PAYMENT_UPDATED, () => {
+    // Reload the current filtered page; fully paid records stay in payment history.
+    void queryClient.invalidateQueries({ queryKey: ["payments"] });
+  }), [queryClient, subscribe]);
+
   return (
     <div className="space-y-4">
       <div className="relative max-w-sm">
@@ -204,7 +231,8 @@ export default function DataTable() {
         />
       </div>
       <div className="rounded-md border">
-        <Table>
+        <QueryFeedback query={paymentsQuery} label="payments" />
+            <Table>
           <TableHeader>
             <TableRow>
               {table.getHeaderGroups()[0].headers.map((header) => (

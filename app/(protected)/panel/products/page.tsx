@@ -4,6 +4,7 @@ import DialogPage from "./components/dialog";
 import { ProductProvider } from "./provider";
 import { ModalProvider } from "@/components/providers/modal-provider";
 import VariantDialog from "./components/variant-dialog";
+import { MotionPage } from "@/components/page-motion";
 
 export const metadata: Metadata = {
   title: "HyOps Products",
@@ -12,14 +13,14 @@ export const metadata: Metadata = {
 
 export default function Page() {
   return (
-    <div className="py-4 md:py-6 px-4 lg:px-6">
-      <ProductProvider>
-        <ModalProvider>
+    <MotionPage className="py-4 md:py-6 px-4 lg:px-6">
+      <ModalProvider>
+        <ProductProvider>
           <DialogPage />
           <ProductPage />
-        </ModalProvider>
         <VariantDialog />
-      </ProductProvider>
-    </div>
+        </ProductProvider>
+      </ModalProvider>
+    </MotionPage>
   );
 }

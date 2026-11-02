@@ -4,10 +4,11 @@ import { ModalProvider } from "@/components/providers/modal-provider";
 import { UserProvider } from "./provider";
 import UserPage from "./components/user-page";
 import UserDialog from "./components/dialog";
+import { MotionPage } from "@/components/page-motion";
 
 export default function Page() {
   return (
-    <div className="flex flex-col gap-4 md:gap-6 py-4 md:py-6 px-4 lg:px-6">
+    <MotionPage className="flex flex-col gap-4 md:gap-6 py-4 md:py-6 px-4 lg:px-6">
       <ModalProvider>
         <UserProvider>
           <section className="space-y-5">
@@ -22,6 +23,6 @@ export default function Page() {
           </section>
         </UserProvider>
       </ModalProvider>
-    </div>
+    </MotionPage>
   );
 }

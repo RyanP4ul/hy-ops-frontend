@@ -19,10 +19,10 @@ export default function UserPage() {
   return (
     <section>
       <Card>
-        <CardHeader>
-          <CardTitle className="leading-none">Warehouses</CardTitle>
+        <CardHeader className="max-sm:flex max-sm:flex-col max-sm:items-start max-sm:gap-2">
+          <CardTitle className="leading-none">Users</CardTitle>
           <CardDescription>
-            Manage your inventory and their variants. Click on an item to view
+            Manage accounts, access, and account status.
           </CardDescription>
           <CardAction>
             <div className="flex items-center gap-2">
@@ -34,13 +34,13 @@ export default function UserPage() {
                 onClick={() => {
                   openModal(DialogMode.INSERT, {
                     title: "Add User",
-                    description: "Add a new user below.",
+                    description: "Create a user account.",
                     action: "Add User",
                   });
                 }}
               >
                 <Plus className="h-3 w-3" />
-                <span>Add Inventory</span>
+                <span>Add User</span>
               </Button>
             </div>
           </CardAction>

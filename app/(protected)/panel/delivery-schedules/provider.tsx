@@ -13,8 +13,9 @@ import {
   WsLogsTableSchemaType,
 } from "@/schema/s&l";
 import { DialogMode } from "@/types/dialog";
+import { EstimateResponse } from "@/types/estimate";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, UseQueryResult } from "@tanstack/react-query";
 import {
   createContext,
   Dispatch,
@@ -23,6 +24,7 @@ import {
   useState,
 } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 type SubType = {
   id?: number;
@@ -45,9 +47,15 @@ type DeliveryScheduleType = {
   step: number;
   setStep: Dispatch<SetStateAction<number>>;
 
+  warehouseCB: ReturnType<typeof useComboBoxPagination>;
   orderCB: ReturnType<typeof useComboBoxPagination>;
   driverCB: ReturnType<typeof useComboBoxPagination>;
   vehicleCB: ReturnType<typeof useComboBoxPagination>;
+
+  warehouseQuery: UseQueryResult<{
+    rows: { id: number; name: string }[];
+    total: number;
+  }>;
 
   orderQuery: ReturnType<
     typeof useQuery<{
@@ -85,6 +93,10 @@ type DeliveryScheduleType = {
 
   sub: SubType;
   setSub: Dispatch<SetStateAction<SubType>>;
+
+  sortDistanceMutation: ReturnType<typeof useMutation<EstimateResponse>>;
+
+  driverExpensesMutation: ReturnType<typeof useMutation<EstimateResponse>>;
 };
 
 export const DeliveryScheduleContext =
@@ -117,6 +129,7 @@ export function DeliveryScheduleProvider({
     mode: DialogMode.DEFAULT,
   });
 
+  const warehouseCB = useComboBoxPagination();
   const orderCB = useComboBoxPagination();
   const driverCB = useComboBoxPagination();
   const vehicleCB = useComboBoxPagination();
@@ -124,16 +137,29 @@ export function DeliveryScheduleProvider({
   const form = useForm<DeliveryScheduleFormData>({
     resolver: zodResolver(deliveryScheduleSchema),
     defaultValues: {
+      warehouse_id: -1,
       order_ids: [],
       scheduled_date: undefined,
       scheduled_time: "",
       delivery_type: "INTERNAL",
       driver_id: -1,
       vehicle_id: -1,
+      delivery_allowance: 0,
+      fuel: 0,
+      toll: 0,
     },
   });
 
   const order_ids = form.watch("order_ids");
+  const warehouseId = form.watch("warehouse_id");
+
+  const warehouseQuery = useQuery({
+    queryKey: ["warehouses", warehouseCB.searchQuery],
+    queryFn: async () => {
+      const response = await fetch("/api/warehouses/names");
+      return await response.json();
+    },
+  });
 
   const deliveryScheduleQuery = useQuery({
     queryKey: ["deliveryScheduleQuery", page.pageIndex, page.pageSize, search],
@@ -164,7 +190,7 @@ export function DeliveryScheduleProvider({
   });
 
   const orderQuery = useQuery({
-    queryKey: ["order", orderCB.page],
+    queryKey: ["order", "scheduling", warehouseId, orderCB.page, orderCB.searchQuery],
     queryFn: async () => {
       const url_params = new URLSearchParams();
 
@@ -175,10 +201,15 @@ export function DeliveryScheduleProvider({
         url_params.append("search", orderCB.searchQuery);
       }
 
-      const response = await fetch(`/api/orders/cb?${url_params.toString()}`);
+      url_params.append(
+        "warehouse_id",
+        warehouseId.toString(),
+      );
+
+      const response = await request("GET", `/api/orders/cb?${url_params.toString()}`);
 
       if (!response.ok) {
-        throw new Error("Failed to fetch drivers");
+        throw new Error("Unable to load ready orders. Please retry.");
       }
 
       const result = await response.json();
@@ -188,7 +219,7 @@ export function DeliveryScheduleProvider({
       return result;
     },
 
-    enabled: step === 0 && orderCB.open,
+    enabled: step === 2 && warehouseId > 0,
   });
 
   const orderDetailQuery = useQuery({
@@ -201,7 +232,7 @@ export function DeliveryScheduleProvider({
         `/api/orders/details?ids=${order_ids.join(",")}`,
       );
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Unable to load selected orders. Please retry.");
 
       const rows = (await response.json()) as DeliveryScheduleOrderDetail[];
       const rowsById = new Map(rows.map((row) => [row.id, row]));
@@ -214,10 +245,12 @@ export function DeliveryScheduleProvider({
   });
 
   const availableDateQuery = useQuery({
-    queryKey: ["availableDateQuery"],
+    queryKey: ["availableDateQuery", warehouseId],
 
     queryFn: async () => {
-      const response = await fetch(`/api/delivery-schedules`);
+      const response = await fetch(
+        `/api/delivery-schedules/available-dates?warehouse_id=${warehouseId}`,
+      );
 
       if (!response.ok) {
         throw new Error("Failed to fetch");
@@ -225,10 +258,12 @@ export function DeliveryScheduleProvider({
 
       return await response.json();
     },
+
+    enabled: step === 1 && warehouseId > 0,
   });
 
   const driverQuery = useQuery({
-    queryKey: ["drivers", driverCB.page],
+    queryKey: ["drivers", "scheduling", warehouseId, driverCB.page, driverCB.searchQuery],
     queryFn: async () => {
       const url_params = new URLSearchParams();
 
@@ -238,6 +273,11 @@ export function DeliveryScheduleProvider({
       if (driverCB.searchQuery.trim().length > 0) {
         url_params.append("search", driverCB.searchQuery);
       }
+
+      url_params.append(
+        "warehouse_id",
+        warehouseId.toString(),
+      );
 
       const response = await fetch(
         `/api/users/drivers?${url_params.toString()}`,
@@ -254,11 +294,11 @@ export function DeliveryScheduleProvider({
       return result;
     },
 
-    enabled: step === 2,
+    enabled: step === 3 && warehouseId > 0,
   });
 
   const vehicleQuery = useQuery({
-    queryKey: ["vehicles", vehicleCB.page],
+    queryKey: ["vehicles", "scheduling", warehouseId, vehicleCB.page, vehicleCB.searchQuery],
     queryFn: async () => {
       const url_params = new URLSearchParams();
 
@@ -269,6 +309,11 @@ export function DeliveryScheduleProvider({
         url_params.append("search", vehicleCB.searchQuery);
       }
 
+      url_params.append(
+        "warehouse_id",
+        warehouseId.toString(),
+      );
+
       const response = await fetch(`/api/vehicles/cb?${url_params.toString()}`);
 
       if (!response.ok) {
@@ -277,12 +322,147 @@ export function DeliveryScheduleProvider({
 
       const result = await response.json();
 
-      driverCB.setTotalPages(Math.ceil(result.total / 10));
+      vehicleCB.setTotalPages(Math.ceil(result.total / 10));
 
       return result;
     },
 
-    enabled: step === 2,
+    enabled: step === 3 && warehouseId > 0,
+  });
+
+  const sortDistanceMutation = useMutation({
+    mutationFn: async () => {
+      const warehouse_id = form.getValues("warehouse_id");
+
+      const warehouse_data = warehouseQuery.data?.rows.find(
+        (warehouse: any) => warehouse.id === warehouse_id,
+      );
+
+      const locations: {
+        id: string;
+        name: string;
+        lat: number;
+        lng: number;
+      }[] = [];
+
+      for (const order_id of order_ids) {
+        const orderDetail = orderDetailQuery.data?.find(
+          (order: any) => order.id === order_id,
+        );
+
+        if (orderDetail) {
+          locations.push({
+            id: String(orderDetail.id),
+            name: String(orderDetail.order_number),
+            lat: Number(orderDetail.shipping_latitude),
+            lng: Number(orderDetail.shipping_longitude),
+          });
+        }
+      }
+
+      const response = await fetch("/api/fleet/coordinates/sort", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          origin: {
+            lat: Number(warehouse_data?.latitude) || 0,
+            lng: Number(warehouse_data?.longitude) || 0,
+          },
+          locations: locations,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (result?.errors) {
+          throw new Error(JSON.stringify(result));
+        }
+
+        throw new Error("Unable to calculate the route. Please retry.");
+      }
+
+      return result;
+    },
+
+    onError: (error) => toast.error(error.message),
+    onSuccess: async (result: any) => {
+      const new_order_ids: number[] = result.locations.map((location: any) =>
+        Number(location.id),
+      );
+
+      toast.success(
+        `Sorted ${result.locations.map((location: any) => location.name).join(", ")} orders by distance from warehouse`,
+        {
+          duration: 4000,
+        },
+      );
+
+      form.setValue("order_ids", new_order_ids);
+
+      orderQuery.refetch();
+    },
+  });
+
+  const driverExpensesMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const points: {
+        latitude: number;
+        longitude: number;
+      }[] = [];
+      for (const order_id of order_ids) {
+        const orderDetail = orderDetailQuery.data?.find(
+          (order: any) => order.id === order_id,
+        );
+
+        if (orderDetail) {
+          points.push({
+            latitude: Number(orderDetail.shipping_latitude),
+            longitude: Number(orderDetail.shipping_longitude),
+          });
+        }
+      }
+
+      const response = await fetch("/api/delivery-estimates", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          points: points,
+          isRoundTrip: false,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (result?.errors) {
+          throw new Error(JSON.stringify(result));
+        }
+
+        throw new Error("Unable to calculate the route. Please retry.");
+      }
+
+      return result;
+    },
+
+    onError: (error) => toast.error(error.message),
+    onSuccess: async (estimate: EstimateResponse) => {
+      form.setValue(
+        "delivery_allowance",
+        Math.round(estimate.expenses.driverAllowance) || 0,
+      );
+      form.setValue(
+        "fuel",
+        Math.round(estimate.expenses.estimatedFuelCost) || 0,
+      );
+      form.setValue("toll", 0);
+    },
   });
 
   return (
@@ -296,9 +476,11 @@ export function DeliveryScheduleProvider({
         setSearch,
         step,
         setStep,
+        warehouseCB,
         orderCB,
         driverCB,
         vehicleCB,
+        warehouseQuery,
         orderQuery,
         orderDetailQuery,
         availableDateQuery,
@@ -306,6 +488,8 @@ export function DeliveryScheduleProvider({
         vehicleQuery,
         sub,
         setSub,
+        sortDistanceMutation,
+        driverExpensesMutation,
       }}
     >
       {children}

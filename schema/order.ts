@@ -3,44 +3,45 @@ import { z } from "zod";
 export const orderItemSchema = z.object({
   id: z.number().optional(),
   order_id: z.number().optional(),
-  inventory_id: z.number().nonnegative("Required to select a item"),
-  quantity: z.number().min(1, "Quantity must be at least 1"),
+  inventory_id: z.number().int().positive("Select an item"),
+  quantity: z.number().int("Quantity must be a whole number").min(1, "Quantity must be at least 1"),
 });
 
 export type OrderItem = z.infer<typeof orderItemSchema>;
 
 export const OrderItemDetailSchema = z.object({
-  inventory_id: z.number().nonnegative("Inventory ID is required"),
+  inventory_id: z.number().int().positive("Inventory ID is required"),
   product_id: z.number().min(1, "Product is required"),
   product_variant_name: z.string().min(1, "Variant name is required"),
   product_variant_sku: z.string().min(1, "Variant SKU is required"),
-  quantity: z.number().min(1, "Quantity must be at least 1"),
-  price: z.number().nonnegative("Price must be a non-negative number"),
+  quantity: z.number().int("Quantity must be a whole number").min(1, "Quantity must be at least 1"),
+  price: z.number().nonnegative("Price must be a non-negative number").optional(),
   description: z.string(),
 });
 
 export const orderSchema = z
   .object({
+    warehouse_id: z.number().min(1, "Warehouse is required"),
     customer_id: z.number().min(1, "Customer is required"),
     delivery_type: z.string().min(1, "Delivery type is required"),
     payment_arrangement: z.string().min(1, "Payment arrangement is required"),
-    notes: z.string().optional(),
+    notes: z.string().max(2000, "Notes must be 2000 characters or fewer").optional(),
     is_custom_shipping: z.boolean(),
+    customer_address_id: z.number().int().positive().optional(),
     shipping_recipient: z
       .string()
-      .min(1, "Shipping recipient is required")
       .max(60, "Shipping recipient is too long")
       .optional(),
     shipping_phone: z
       .string()
-      .min(1, "Shipping phone is required")
       .max(20, "Shipping phone is too long")
       .optional(),
     shipping_address: z
       .string()
-      .min(1, "Shipping address is required")
-      .max(100, "Shipping address is too long")
+      .max(255, "Shipping address is too long")
       .optional(),
+    shipping_latitude: z.number().min(-90).max(90).optional(),
+    shipping_longitude: z.number().min(-180).max(180).optional(),
     items: z
       .array(OrderItemDetailSchema)
       .min(1, "At least one item is required"),
@@ -50,6 +51,10 @@ export const orderSchema = z
       .nonnegative("Amount paid must be a non-negative number"),
   })
   .superRefine((data, ctx) => {
+    if ((data.shipping_latitude === undefined) !== (data.shipping_longitude === undefined)) {
+      ctx.addIssue({ code: "custom", path: ["shipping_latitude"], message: "Provide both latitude and longitude, or leave both blank." });
+    }
+    if (data.shipping_latitude === 0 && data.shipping_longitude === 0) ctx.addIssue({ code: "custom", path: ["shipping_latitude"], message: "Confirm the destination; (0, 0) is not a verified location." });
     if (data.is_custom_shipping) {
       if (!data.shipping_recipient?.trim()) {
         ctx.addIssue({
@@ -74,6 +79,12 @@ export const orderSchema = z
           message: "Shipping address is required",
         });
       }
+    } else if (!data.customer_address_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["customer_address_id"],
+        message: "Select a saved shipping address",
+      });
     }
   });
 
@@ -97,16 +108,22 @@ export type OrderRow = {
   status: string;
   item_count: number;
   total_quantity: number;
-  total: number;
+  total: number | null;
   items?: OrderItemDetail[];
 };
 
 export type OrderForm = z.infer<typeof orderSchema>;
 
-export type OrderDetail = OrderForm & {
+export type OrderItemDetailView = Omit<OrderItemDetail, "price"> & {
+  price: number | null;
+};
+
+export type OrderDetail = Omit<OrderForm, "items"> & {
   id: number;
+  order_number: string;
+  version: number;
   customer_name: string;
-  items: OrderItemDetail[];
+  items: OrderItemDetailView[];
 };
 
 export type OrderFormWithItems = OrderForm & {

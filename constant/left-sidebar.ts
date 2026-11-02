@@ -15,12 +15,15 @@ import {
   CreditCardIcon,
   MapIcon,
   SettingsIcon,
+  WorkflowIcon,
   ShoppingCartIcon,
   TruckIcon,
   UserRoundIcon,
   UsersIcon,
   WarehouseIcon,
   MessageSquareIcon,
+  MessagesSquareIcon,
+  Calculator,
 } from "lucide-react";
 
 type SidebarGroupItem = {
@@ -76,7 +79,7 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       title: "Delivery Schedules",
       url: "/panel/delivery-schedules",
       icon: TruckIcon,
-      role: ["admin"],
+      role: ["admin", "staff"],
       isDisabled: false,
     },
   ],
@@ -96,6 +99,15 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       isDisabled: false,
     },
   ],
+  Communications: [
+    {
+      title: "Communications",
+      url: "/panel/communications",
+      icon: MessagesSquareIcon,
+      role: ["admin", "staff"],
+      isDisabled: false,
+    },
+  ],
   "Logistics & Tracking": [
     {
       title: "Deliveries",
@@ -106,7 +118,7 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
     },
     {
       title: "Fleet Map",
-      url: "/panel/map",
+      url: "/panel/fleet-map",
       icon: MapIcon,
       role: ["admin", "staff"],
       isDisabled: false,
@@ -125,6 +137,24 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       url: "/panel/users",
       icon: UsersIcon,
       role: ["admin"],
+      isDisabled: false,
+    },
+  ],
+  Tools: [
+    {
+      title: "Delivery Expenses Calculator",
+      url: "/panel/delivery-expenses",
+      icon: Calculator,
+      role: ["admin", "staff"],
+      isDisabled: false,
+    },
+  ],
+  "Analysis & Reports": [
+    {
+      title: "Analysis & Reports",
+      url: "/panel/analysis-reports",
+      icon: LayoutDashboardIcon,
+      role: ["admin", "staff"],
       isDisabled: false,
     },
   ],
@@ -154,6 +184,13 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       title: "Settings",
       url: "/panel/settings",
       icon: SettingsIcon,
+      role: ["admin"],
+      isDisabled: false,
+    },
+    {
+      title: "Automations",
+      url: "/panel/automations",
+      icon: WorkflowIcon,
       role: ["admin"],
       isDisabled: false,
     },

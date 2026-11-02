@@ -12,7 +12,7 @@ export default function OrdersPage() {
   async function handleCreateOrder(data: {
     customer: string;
     product: string;
-    quantity: string;
+    quantity: number;
     deliveryMethod: string;
     driver: string;
     vehicle: string;
@@ -20,7 +20,6 @@ export default function OrdersPage() {
     paymentMethod: string;
   }) {
     // Replace with your actual API request.
-    console.log("Order payload:", data);
   }
 
   return (

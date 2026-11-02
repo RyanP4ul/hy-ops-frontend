@@ -1,24 +1,24 @@
 "use client";
 
-import { useMutation, useQuery, UseQueryResult } from "@tanstack/react-query";
-import { createContext, useContext, useRef, useState } from "react";
-import {
-  WarehouseForm,
-  WarehouseRow,
-  warehouseSchema,
-} from "@/schema/warehouse";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { createContext, useContext } from "react";
+import type { DeliveryCalendarEntry } from "@/schema/delivery-calendar";
 import { request } from "@/components/http";
-import { useForm, UseFormReturn } from "react-hook-form";
-import { useModal } from "@/components/providers/modal-provider";
-import { toast } from "sonner";
-import { useSetting } from "@/components/providers/setting-provider";
-import { GeocodeResult } from "@/types/geocode";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { DialogMode } from "@/types/dialog";
-import { MapRef } from "@/components/ui/map";
+
+type DashboardData = {
+  revenue: number;
+  monthly_revenue: { month: string; revenue: number }[];
+  daily_sales: { day: string; sales: number }[];
+  active_deliveries: { run: string; customer: string; destination: string; driver: string; status: string; progress: string }[];
+  upcoming_deliveries: { run: string; date: string; time: string; customer: string; destination: string; driver: string }[];
+  delivery_calendar: DeliveryCalendarEntry[];
+  top_selling_products: { name: string; sku: string; sold: number; revenue: number | null; percent: number }[];
+  top_customers: { name: string; location: string; orders: number; amount: number | null; percent: number }[];
+  total_orders: number; total_active_deliveries: number; total_pending: number;
+};
 
 type DashboardContext = {
-  dashboardQuery: UseQueryResult<any, unknown>;
+  dashboardQuery: UseQueryResult<DashboardData, Error>;
 };
 
 const DashboardContext = createContext<DashboardContext | null>(null);
@@ -35,12 +35,12 @@ export function DashboardProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const dashboardQuery = useQuery({
+  const dashboardQuery = useQuery<DashboardData>({
     queryKey: ["dashboard_query"],
     queryFn: async () => {
       const response = await request("GET", `/api/dashboard/stats`);
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Dashboard statistics unavailable");
 
       const result = await response.json();
 

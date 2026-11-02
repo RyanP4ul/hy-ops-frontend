@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 import { X, Minus, Plus, Locate, Maximize, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 if (typeof window !== "undefined" && !MapLibreGL.getWorkerUrl()) {
   MapLibreGL.setWorkerUrl(
@@ -253,6 +254,7 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapInstance, setMapInstance] = useState<MapLibreGL.Map | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [mapError, setMapError] = useState(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [pendingStyle, setPendingStyle] = useState<MapStyleOption | null>(null);
   const currentStyleRef = useRef<MapStyleOption | null>(null);
@@ -307,8 +309,10 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
     const styleLoadHandler = () => {
       styleSwapInFlightRef.current = false;
       setIsStyleLoaded(true);
+      setMapError(false);
     };
-    const loadHandler = () => setIsLoaded(true);
+    const loadHandler = () => { setIsLoaded(true); setMapError(false); };
+    const errorHandler = () => { if (!map.isStyleLoaded()) setMapError(true); };
 
     // Viewport change handler - skip if triggered by internal update
     const handleMove = () => {
@@ -317,12 +321,14 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
     };
 
     map.on("load", loadHandler);
+    map.on("error", errorHandler);
     map.on("style.load", styleLoadHandler);
     map.on("move", handleMove);
     setMapInstance(map);
 
     return () => {
       map.off("load", loadHandler);
+      map.off("error", errorHandler);
       map.off("style.load", styleLoadHandler);
       map.off("move", handleMove);
       map.remove();
@@ -408,7 +414,11 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
         ref={containerRef}
         className={cn("relative h-full w-full", className)}
       >
-        {(!isLoaded || loading) && <DefaultLoader />}
+        {!mapError && (!isLoaded || loading) && <DefaultLoader />}
+        {mapError && <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/95 p-4 text-center text-sm">
+          <p>Map preview unavailable. You can still enter the address and coordinates manually.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => { if (mapInstance && currentStyleRef.current) { setMapError(false); mapInstance.setStyle(currentStyleRef.current); } }}>Retry map</Button>
+        </div>}
         {/* SSR-safe: children render only when map is loaded on client */}
         {mapInstance && children}
       </div>

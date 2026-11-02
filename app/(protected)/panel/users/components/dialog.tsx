@@ -12,19 +12,23 @@ import {
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useUser } from "../provider";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import Form from "./form";
+import ChangePasswordForm from "./change-password-form";
 
 export default function UserDialog() {
   const { state, dispatch } = useModal();
   const { send } = useWebSocket();
-  const { form, userQuery, selected } = useUser();
+  const { form, userQuery, userDetailQuery, selected } = useUser();
+
+  const [pending, setPending] = useState(false);
+  useEffect(() => { if (state.isOpen) form.clearErrors(); }, [state.isOpen, state.mode, selected.id, form]);
 
   async function onDelete() {
-    requestWithErrorHandling(
+    await requestWithErrorHandling(
       await request(
         "DELETE",
         `/api/users/${selected.id}?version=${selected.version}`,
@@ -46,7 +50,7 @@ export default function UserDialog() {
   }
 
   async function onArchive() {
-    requestWithErrorHandling(
+    await requestWithErrorHandling(
       await request(
         "POST",
         `/api/users/${selected.id}/archive?version=${selected.version}`,
@@ -91,6 +95,8 @@ export default function UserDialog() {
             className="mx-auto size-6 animate-spin"
             aria-label="Loading"
           />
+        ) : state.mode === DialogMode.CHANGE_PASSWORD ? (
+          <ChangePasswordForm />
         ) : ![DialogMode.ARCHIVE, DialogMode.DELETE].includes(state.mode) &&
           state.isOpen ? (
           <Form />
@@ -104,9 +110,13 @@ export default function UserDialog() {
                   event.preventDefault();
 
                   if (state.mode === DialogMode.DELETE) {
-                    onDelete();
+                    if (pending) return;
+                    setPending(true);
+                    void onDelete().finally(() => setPending(false));
                   } else {
-                    onArchive();
+                    if (pending) return;
+                    setPending(true);
+                    void onArchive().finally(() => setPending(false));
                   }
                 }}
               ></form>
@@ -114,6 +124,7 @@ export default function UserDialog() {
           )
         )}
 
+        {form.formState.errors.root?.message && <p role="alert" className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
         <DialogFooter>
           <DialogClose
             render={
@@ -122,19 +133,19 @@ export default function UserDialog() {
               </Button>
             }
           />
-          <Button
+          {state.mode !== DialogMode.CHANGE_PASSWORD && <Button
             variant={
               state.mode === DialogMode.DELETE ||
               state.mode === DialogMode.ARCHIVE
                 ? "destructive"
                 : "default"
             }
-            disabled={!state.isOpen}
+            disabled={(state.mode === DialogMode.EDIT && (userDetailQuery.isFetching || userDetailQuery.isError || !userDetailQuery.data)) || !state.isOpen || pending || form.formState.isSubmitting}
             type="submit"
             form="form"
           >
-            {state.action}
-          </Button>
+            {pending || form.formState.isSubmitting ? "Saving..." : state.action}
+          </Button>}
         </DialogFooter>
       </DialogContent>
     </>

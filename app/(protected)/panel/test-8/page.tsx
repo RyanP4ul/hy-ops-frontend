@@ -463,7 +463,7 @@ export default function CalendarView() {
                   selected={selectedDate}
                   defaultMonth={selectedDate}
                   weekStartsOn={1}
-                  initialFocus
+                  autoFocus
                   onSelect={(date) => {
                     if (!date) return;
                     setSelectedDate(date);
@@ -833,7 +833,7 @@ export default function CalendarView() {
                         : selectedDate
                     }
                     weekStartsOn={1}
-                    initialFocus
+                    autoFocus
                     onSelect={(date) => {
                       if (!date) return;
                       setDraft((current) => ({

@@ -4,10 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -16,17 +13,13 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { useAuthStore } from "@/stores/auth-store";
 import {
   EllipsisVerticalIcon,
-  CircleUserRoundIcon,
-  CreditCardIcon,
-  BellIcon,
   LogOutIcon,
 } from "lucide-react";
 import { useAuth } from "./providers/auth-provider";
 import { request, requestWithErrorHandling } from "./http";
-import { redirect, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export function NavUser() {
   const { userQuery } = useAuth();
@@ -67,7 +60,6 @@ export function NavUser() {
                   await request("POST", `/api/auth/logout`),
                   null,
                   () => {
-                    console.log("Logged out");
                     router.refresh();
                   },
                 );

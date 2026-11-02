@@ -21,7 +21,7 @@ import {
 import { debounce } from "@/utils/debounce";
 
 import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInventory } from "../provider";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
@@ -30,6 +30,7 @@ import { Calendar } from "@/components/ui/calendar";
 export default function Filter() {
   const {
     warehouseQuery,
+    setPagination,
     setSearchQuery,
     setStockStatus,
     warehouseId,
@@ -50,10 +51,13 @@ export default function Filter() {
   const debouncedSearch = useMemo(
     () =>
       debounce((value: string) => {
+        setPagination(current => ({ ...current, pageIndex: 0 }));
         setSearchQuery(value);
       }, 500),
-    [],
+    [setSearchQuery, setPagination],
   );
+
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
   return (
     <div className="flex flex-wrap items-end gap-4 py-6">
@@ -80,10 +84,11 @@ export default function Filter() {
         <Select
           defaultValue="All"
           onValueChange={(value) => {
-            setStockStatus(value as any);
+            if (value === "All" || value === "High" || value === "Low" || value === "Out") setStockStatus(value);
+            setPagination(current => ({ ...current, pageIndex: 0 }));
           }}
         >
-          <SelectTrigger id="stock-status" className="w-full sm:w-55">
+          <SelectTrigger id="stock-status" aria-label="Filter by stock status" className="w-full sm:w-55">
             <SelectValue placeholder="Filter by stock status" />
           </SelectTrigger>
 
@@ -118,11 +123,9 @@ export default function Filter() {
       <div className="flex flex-col gap-2">
         {warehouseQuery.isFetched ? (
           <Select
-            onValueChange={(value) =>
-              setWarehouseId(value ? parseInt(value as string) : null)
-            }
+            onValueChange={(value) => { setWarehouseId(value && value !== "All" ? parseInt(value as string) : null); setPagination(current => ({ ...current, pageIndex: 0 })); }}
           >
-            <SelectTrigger id="warehouse" className="w-full sm:w-55">
+            <SelectTrigger id="warehouse" aria-label="Filter by warehouse" className="w-full sm:w-55">
               <SelectValue placeholder="Filter by warehouse">
                 {
                   warehouseQuery.data?.rows?.find(
@@ -179,7 +182,7 @@ export default function Filter() {
               mode="range"
               defaultMonth={dateRange?.from}
               selected={dateRange}
-              onSelect={setDateRange}
+              onSelect={(range) => { setDateRange(range); setPagination(current => ({ ...current, pageIndex: 0 })); }}
               numberOfMonths={2}
               className="rounded-lg border"
             />

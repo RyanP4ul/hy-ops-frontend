@@ -18,7 +18,7 @@ export default function VehiclePage() {
   const { openModal } = useModal();
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="max-sm:flex max-sm:flex-col max-sm:items-start max-sm:gap-2">
         <CardTitle className="leading-none">Vehicles</CardTitle>
         <CardDescription>Manage your delivery vehicles.</CardDescription>
         <CardAction>

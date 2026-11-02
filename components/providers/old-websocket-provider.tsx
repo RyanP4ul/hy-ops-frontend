@@ -1,63 +1,57 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-const WebSocketContext = createContext<any>(null);
+type WebSocketContextValue = {
+  socket: WebSocket | null;
+  send: (data: unknown) => void;
+};
+
+const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<NodeJS.Timeout | null>(null);
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldReconnect = useRef(true);
-  const is_first_connection = useRef(true);
-  const reconnect_attempt = useRef(0);
-  const max_reconnect_attempts = 5;
-  const reconnect_interval = 3000;
+  const reconnectAttempt = useRef(0);
+  const maxReconnectAttempts = 5;
+  const reconnectInterval = 3_000;
 
-  let is_connected = false;
-
-  const connect = () => {
+  const connect = useCallback(function connectSocket() {
     const ws = new WebSocket("ws://localhost:5173/ws");
-
     socketRef.current = ws;
+    setSocket(ws);
 
     ws.onopen = () => {
-      console.log("Connected");
-
-      is_connected = true;
-      is_first_connection.current = false;
-
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
       }
     };
 
-    ws.onmessage = (event) => {
-      console.log(JSON.parse(event.data));
-    };
-
-    ws.onerror = (error) => {
-      console.error(error);
+    ws.onerror = () => {
+      // Connection errors are surfaced through app-level status state.
     };
 
     ws.onclose = () => {
-      console.log("Disconnected");
-
-      is_connected = false;
-
       if (!shouldReconnect.current) return;
 
-      if (reconnect_attempt.current < max_reconnect_attempts) {
-        console.log(`Reconnecting in ${reconnect_interval / 1000} seconds...`);
-        reconnect_attempt.current++;
+      if (reconnectAttempt.current < maxReconnectAttempts) {
+        reconnectAttempt.current += 1;
         reconnectTimer.current = setTimeout(() => {
-          connect();
-        }, reconnect_interval);
-      } else {
-        console.log("Max reconnect attempts reached. Giving up.");
+          connectSocket();
+        }, reconnectInterval);
       }
     };
-  };
+  }, [maxReconnectAttempts, reconnectInterval]);
 
   useEffect(() => {
     connect();
@@ -71,22 +65,20 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
       socketRef.current?.close();
     };
-  }, []);
+  }, [connect]);
 
-  const send = (data: unknown) => {
+  const send = useCallback((data: unknown) => {
     const ws = socketRef.current;
 
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(data));
-    } else {
-      console.warn("Socket is not connected.");
     }
-  };
+  }, []);
 
   return (
     <WebSocketContext.Provider
       value={{
-        socket: socketRef.current,
+        socket,
         send,
       }}
     >
@@ -95,4 +87,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export const useWebSocket = () => useContext(WebSocketContext);
+export function useWebSocket() {
+  const context = useContext(WebSocketContext);
+
+  if (!context) {
+    throw new Error("useWebSocket must be used inside WebSocketProvider");
+  }
+
+  return context;
+}

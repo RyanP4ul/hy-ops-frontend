@@ -16,6 +16,7 @@ type Selected = {
   order_id: number;
   payment_number: string;
   version: number;
+  payment?: PaymentRowType;
 };
 
 type PaymentsContext = {

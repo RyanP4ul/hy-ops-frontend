@@ -13,6 +13,8 @@ import { DialogMode } from "@/types/dialog";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useModal } from "@/components/providers/modal-provider";
+import { StockTools } from "./stock-tools";
+import { StockSummary } from "./stock-summary";
 
 export default function InventoryPage() {
   const { openModal } = useModal();
@@ -20,10 +22,10 @@ export default function InventoryPage() {
   return (
     <section>
       <Card>
-        <CardHeader>
+        <CardHeader className="max-sm:flex max-sm:flex-col max-sm:items-start max-sm:gap-2">
           <CardTitle className="leading-none">Inventory</CardTitle>
           <CardDescription>
-            Manage your inventory and their variants. Click on an item to view
+            Track stock levels, reserved quantities, and warehouse availability.
           </CardDescription>
           <CardAction>
             <div className="flex items-center gap-2">
@@ -34,19 +36,21 @@ export default function InventoryPage() {
                 className="cursor-pointer"
                 onClick={() => {
                   openModal(DialogMode.INSERT, {
-                    title: "Add Inventory",
-                    description: "Add a new inventory item below.",
-                    action: "Add Item",
+                    title: "Add Inventory Item",
+                    description: "Create a new inventory record below.",
+                    action: "Add Inventory Item",
                   });
                 }}
               >
                 <Plus className="h-3 w-3" />
-                <span>Add Inventory</span>
+                <span>Add Inventory Item</span>
               </Button>
             </div>
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 px-0">
+          <StockSummary />
+          <StockTools />
           <DataTable />
         </CardContent>
       </Card>

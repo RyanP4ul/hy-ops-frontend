@@ -1,4 +1,8 @@
 "use client";
+import { formatCurrency } from "@/utils/date-util";
+
+import { QueryFeedback } from "@/components/query-feedback";
+
 
 import { ModalProvider, useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
@@ -31,6 +35,7 @@ import {
   Edit,
   Eye,
   Loader2Icon,
+  NotepadText,
   Plus,
   Search,
   Trash2,
@@ -61,6 +66,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+type OrdersQueryData = {
+  rows: (OrderRow & { version: number })[];
+  total: number;
+};
+
 export default function DataTable() {
   const { subscribe } = useWebSocket();
   const {
@@ -74,6 +84,7 @@ export default function DataTable() {
     setSortBy,
     deliveryType,
     setDeliveryType,
+    startOrder,
   } = useOrders();
   const { openModal } = useModal();
   const { viewOrder } = useOrders();
@@ -81,9 +92,11 @@ export default function DataTable() {
   const debouncedSearch = useMemo(() => debounce(setSearch, 500), [setSearch]);
 
   const sortableHeader = (id: string, label: string) => (
-    <div
-      className="flex items-center gap-2 cursor-pointer"
+    <button
+      type="button"
+      className="flex items-center gap-2 cursor-pointer text-left"
       onClick={() => {
+        setPage(current => ({ ...current, pageIndex: 0 }));
         setSortBy((current) => {
           if (current.id === id) {
             return {
@@ -101,14 +114,18 @@ export default function DataTable() {
     >
       {label}
       <ArrowDownUp className="size-3 text-muted-foreground" />
-    </div>
+    </button>
   );
 
   const columns = useMemo<ColumnDef<OrderRow & { version: number }>[]>(
     () => [
       {
         accessorKey: "product_number",
-        header: () => sortableHeader("product_number", "Product Number"),
+        header: () => sortableHeader("product_number", "Order Number"),
+      },
+      {
+        accessorKey: "warehouse_name",
+        header: () => sortableHeader("warehouse_name", "Warehouse"),
       },
       {
         accessorKey: "customer_name",
@@ -157,6 +174,8 @@ export default function DataTable() {
           const statusLabels: Record<string, string> = {
             PENDING: "Pending",
             PROCESSING: "Processing",
+            SCHEDULING: "Scheduling",
+            SCHEDULED: "Scheduled",
             IN_TRANSIT: "In Transit",
             COMPLETED: "Completed",
             CANCELLED: "Cancelled",
@@ -189,11 +208,9 @@ export default function DataTable() {
         header: () => sortableHeader("total", "Total"),
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-right font-medium">
-            {new Intl.NumberFormat("en-PH", {
-              style: "currency",
-              currency: "PHP",
-              maximumFractionDigits: 2,
-            }).format(row.original.total)}
+            {row.original.total === null
+              ? "Unverified"
+              : formatCurrency(row.original.total)}
           </span>
         ),
       },
@@ -213,7 +230,7 @@ export default function DataTable() {
                     onClick={() => {
                       setSelected({
                         id: row.original.id,
-                        version: 1,
+                        version: row.original.version,
                       });
 
                       viewOrder(row.original.id);
@@ -244,10 +261,11 @@ export default function DataTable() {
                       variant="outline"
                       size="icon"
                       aria-label="Edit order"
+                      disabled={ordersQuery.isFetching}
                       onClick={() => {
                         setSelected({
                           id: row.original.id,
-                          version: 1,
+                          version: row.original.version,
                         });
 
                         openModal(DialogMode.EDIT, {
@@ -276,6 +294,7 @@ export default function DataTable() {
                       variant="outline"
                       size="icon"
                       aria-label="Process order"
+                      disabled={ordersQuery.isFetching}
                       className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                       onClick={() => {
                         setSelected(row.original);
@@ -305,15 +324,16 @@ export default function DataTable() {
                     <Button
                       variant="outline"
                       size="icon"
-                      aria-label="Ready for delivery"
+                      aria-label="Mark ready for delivery"
+                      disabled={ordersQuery.isFetching}
                       className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
                       onClick={() => {
                         setSelected(row.original);
 
                         openModal(DialogMode.CUSTOM, {
                           title: "Ready for Delivery",
-                          description: `Have you finished checking and preparing all items for order #${row.original.id}?`,
-                          action: "Mark as Ready",
+                          description: `Mark order #${row.original.id} ready for scheduling? A delivery run is assigned from Delivery Schedules.`,
+                          action: "Mark ready for delivery",
                         });
                       }}
                     >
@@ -322,7 +342,40 @@ export default function DataTable() {
                   }
                 />
                 <TooltipContent>
-                  <p>Mark as Ready for Delivery</p>
+                  <p>Mark ready for delivery</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {(row.original.status === "SCHEDULING" ||
+              row.original.status === "SCHEDULED" ||
+              row.original.status === "IN_TRANSIT" ||
+              row.original.status === "COMPLETED") && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Invoice"
+                      onClick={() => {
+                        setSelected({
+                          id: row.original.id,
+                          version: row.original.version,
+                        });
+                        openModal(DialogMode.CUSTOM, {
+                          title: `Invoice`,
+                          description: `Invoice for order #${row.original.id}.`,
+                          action: "Generate PDF",
+                        });
+                      }}
+                    >
+                      <NotepadText className="size-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>
+                  <p>Invoice</p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -337,6 +390,7 @@ export default function DataTable() {
                       variant="outline"
                       size="icon"
                       aria-label="Cancel order"
+                      disabled={ordersQuery.isFetching}
                       className="text-destructive hover:text-destructive"
                       onClick={() => {
                         setSelected(row.original);
@@ -361,7 +415,7 @@ export default function DataTable() {
         ),
       },
     ],
-    [openModal, setSelected],
+    [openModal, setSelected, viewOrder, sortBy, setSortBy, setPage, ordersQuery.isFetching],
   );
 
   const table = useReactTable({
@@ -374,77 +428,7 @@ export default function DataTable() {
     manualPagination: true,
   });
 
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    return subscribe(
-      [REQUESTS.ORDER_ADDED, REQUESTS.ORDER_DELETED, REQUESTS.ORDER_UPDATED],
-      (message) => {
-        const query_key = [
-          "orders",
-          table.getState().pagination.pageIndex,
-          table.getState().pagination.pageSize,
-          search,
-          deliveryType,
-          sortBy,
-        ];
-        switch (message.type) {
-          case REQUESTS.ORDER_ADDED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) {
-                return {
-                  rows: [message.payload],
-                  total: 1,
-                };
-              }
-
-              return {
-                rows: [message.payload, ...oldData.rows].slice(
-                  0,
-                  page.pageSize,
-                ),
-                total: oldData.total + 1,
-              };
-            });
-            break;
-          case REQUESTS.ORDER_DELETED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) {
-                return {
-                  rows: [],
-                  total: 0,
-                };
-              }
-              return {
-                rows: oldData.rows.filter(
-                  (row: any) => row.id !== message.payload.id,
-                ),
-                total: oldData.total - 1,
-              };
-            });
-            break;
-          case REQUESTS.ORDER_UPDATED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) {
-                return {
-                  rows: [message.payload],
-                  total: 1,
-                };
-              }
-              return {
-                rows: oldData.rows
-                  .map((row: any) =>
-                    row.id === message.payload.id ? message.payload : row,
-                  )
-                  .slice(0, page.pageSize),
-                total: oldData.total,
-              };
-            });
-            break;
-        }
-      },
-    );
-  }, [subscribe]);
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
   return (
     <>
@@ -476,7 +460,7 @@ export default function DataTable() {
               }
             }}
           >
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-48" aria-label="Filter by delivery method">
               <SelectValue placeholder="Delivery method" />
             </SelectTrigger>
             <SelectContent align="start">
@@ -489,9 +473,9 @@ export default function DataTable() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => { setSortBy({ id: "id", type: sortBy.id === "id" && sortBy.type === "desc" ? "asc" : "desc" }); setPage(current => ({ ...current, pageIndex: 0 })); }}>
             <ArrowDownUp className="mr-2 size-4" />
-            Newest first
+            {sortBy.id === "id" && sortBy.type === "asc" ? "Oldest first" : "Newest first"}
             {/* {sortOrder === "newest" ? "Newest first" : "Oldest first"} */}
           </Button>
         </div>
@@ -501,6 +485,7 @@ export default function DataTable() {
           size="lg"
           className="cursor-pointer"
           onClick={() => {
+            startOrder();
             openModal(DialogMode.INSERT, {
               title: "Create Order",
               description: "Add a new order below.",
@@ -514,7 +499,8 @@ export default function DataTable() {
       </div>
 
       <div className="rounded-md border overflow-hidden">
-        <Table>
+        <QueryFeedback query={ordersQuery} label="orders" />
+            <Table>
           <TableHeader className="bg-muted sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -534,7 +520,7 @@ export default function DataTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {ordersQuery.isFetching ? (
+            {ordersQuery.isPending ? (
               <TableRow>
                 <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex items-center justify-center">
@@ -550,11 +536,7 @@ export default function DataTable() {
                     <TableRow key={row.id}>
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>
-                          {cell.column.columnDef.cell
-                            ? (cell.column.columnDef.cell as any)(
-                                cell.getContext(),
-                              )
-                            : cell.getValue()}
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
                       ))}
                     </TableRow>

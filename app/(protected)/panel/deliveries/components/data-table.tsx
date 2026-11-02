@@ -1,6 +1,13 @@
 "use client";
 
-import { ModalProvider, useModal } from "@/components/providers/modal-provider";
+import { OrderDetailsAction } from "./order-details-action";
+import { RefundPickupAction } from "./refund-pickup-action";
+import { RunActions } from "./run-actions";
+import { QueryFeedback } from "@/components/query-feedback";
+
+
+import { useRouter } from "next/navigation";
+import { useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -19,28 +26,18 @@ import { DialogMode } from "@/types/dialog";
 import {
   flexRender,
   getCoreRowModel,
-  SortingState,
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
 import {
-  ArrowDownUp,
-  Calendar,
-  Check,
-  CircleX,
-  Edit,
-  Eye,
   Loader2Icon,
   PencilLine,
   Plus,
   Search,
-  Trash2,
   Truck,
-  X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { debounce } from "@/utils/debounce";
-import { OrderRow } from "@/schema/order";
 import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Select,
@@ -63,10 +60,24 @@ import { useDeliveries } from "../provider";
 import { DeliveriesRow } from "@/schema/deliveries";
 import { formatDate, formatTime } from "@/utils/time";
 
+type DeliveriesQueryData = {
+  rows: DeliveriesRow[];
+  total: number;
+};
+
 export default function DataTable() {
+  const router = useRouter();
   const { subscribe } = useWebSocket();
-  const { deliveriesQuery, event_form, page, setPage, search, setSearch } =
-    useDeliveries();
+  const {
+    deliveriesQuery,
+    event_form,
+    assignment_form,
+    setAssignmentWarehouseId,
+    page,
+    setPage,
+    search,
+    setSearch,
+  } = useDeliveries();
   const { openModal } = useModal();
   const [searchInput, setSearchInput] = useState(search);
   const debouncedSearch = useMemo(() => debounce(setSearch, 500), [setSearch]);
@@ -120,20 +131,15 @@ export default function DataTable() {
         header: () => "Items",
         cell: ({ row }) => (
           <div className="flex flex-col gap-1">
+            {row.original.pickups?.map(pickup => <p key={`pickup-${pickup.id}`} className="text-sm text-rose-600">Pickup: {pickup.orderNumber} / {pickup.status}</p>)}
             {row.original.orders.map((order) => (
               <div key={order.order_id} className="flex items-center gap-2">
                 <div className="flex items-center gap-2">
-                  <p className="font-medium">{order.order_number}</p>
+                  <p className="font-medium">{order.order_number}{order.return_status && <span className="ml-2 text-rose-600">Refunded / {order.return_status}</span>}</p>
                   <Badge variant={"ghost"}>{order.status}</Badge>
+                  {order.failure_reason && <span className="max-w-48 text-xs text-destructive">{order.failure_reason}</span>}
                 </div>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Eye className="size-4 text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View order details</p>
-                  </TooltipContent>
-                </Tooltip>
+                <OrderDetailsAction orderId={order.order_id} orderNumber={order.order_number} />
               </div>
             ))}
           </div>
@@ -142,20 +148,21 @@ export default function DataTable() {
       {
         accessorKey: "status",
         header: () => "Status",
-        cell: ({ row }) => (
-          <div className="flex flex-col gap-1">
-            <Badge
-              variant={
-                row.original.status.toLocaleLowerCase() === "cancelled"
-                  ? "destructive"
-                  : "outline"
-              }
-              className="uppercase"
-            >
-              {row.original.status}
-            </Badge>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const status = row.original.status?.toUpperCase?.() ?? "";
+
+          return (
+            <div className="flex flex-col gap-1">
+              <Badge
+                variant={status === "CANCELLED" ? "destructive" : "outline"}
+                className="uppercase"
+              >
+                {row.original.status}
+              </Badge>
+              {row.original.is_overdue && <span className="text-xs text-destructive">Overdue: Reschedule before dispatch</span>}
+            </div>
+          );
+        },
       },
 
       // {
@@ -173,46 +180,87 @@ export default function DataTable() {
       {
         id: "actions",
         header: "Actions",
-        cell: ({ row }) => (
-          <div className="flex gap-2">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Delivery Event"
-                    disabled={row.original.status !== "SCHEDULED"}
-                    onClick={() => {
-                      event_form.setValue(
-                        "delivery_id",
-                        row.original.delivery_id,
-                      );
-                      event_form.setValue(
-                        "delivery_version",
-                        row.original.version,
-                      );
-                      openModal(DialogMode.CUSTOM, {
-                        title: "Delivery Event",
-                        description:
-                          "Please provide the reason for cancelling or rescheduling the delivery.",
-                        action: "Submit",
-                      });
-                    }}
-                  >
-                    <PencilLine className="size-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>
-                <p>Delivery Event</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const status = row.original.status?.toUpperCase?.() ?? "";
+
+          return (
+            <div className="flex flex-wrap gap-2">
+              <RefundPickupAction orders={row.original.orders} />
+              <RunActions id={row.original.delivery_id} status={row.original.status} overdue={row.original.is_overdue} />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Delivery Event"
+                      disabled={status !== "SCHEDULED"}
+                      onClick={() => {
+                        event_form.setValue(
+                          "delivery_id",
+                          row.original.delivery_id,
+                        );
+                        event_form.setValue(
+                          "delivery_version",
+                          row.original.version,
+                        );
+                        openModal(DialogMode.CUSTOM, {
+                          title: "Delivery Event",
+                          description:
+                            "Please provide the reason for cancelling or rescheduling the delivery.",
+                          action: "Submit",
+                        });
+                      }}
+                    >
+                      <PencilLine className="size-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>
+                  <p>Delivery Event</p>
+                </TooltipContent>
+              </Tooltip>
+              {status === "SCHEDULED" && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label="Change Driver and Vehicle"
+                        onClick={() => {
+                          assignment_form.reset({
+                            delivery_id: row.original.delivery_id,
+                            driver_id: -1,
+                            vehicle_id: -1,
+                            delivery_version: row.original.version,
+                          });
+                          setAssignmentWarehouseId(
+                            row.original.warehouse?.id ?? -1,
+                          );
+                          openModal(DialogMode.CHANGE_ASSIGNMENT, {
+                            title: "Change Driver and Vehicle",
+                            description:
+                              "Select a new driver and vehicle for this scheduled delivery.",
+                            action: "Save",
+                          });
+                        }}
+                      >
+                        <Truck className="size-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    <p>Change Driver and Vehicle</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          );
+        },
       },
     ],
-    [openModal],
+    [assignment_form, openModal, setAssignmentWarehouseId, event_form],
   );
 
   const table = useReactTable({
@@ -225,6 +273,39 @@ export default function DataTable() {
     manualPagination: true,
   });
 
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const queryKey = ["deliveries", page.pageIndex, page.pageSize, search];
+
+    return subscribe(
+      [REQUESTS.DELIVERY_CREATED, REQUESTS.DELIVERY_UPDATED],
+      (message) => {
+        const delivery = message.payload as DeliveriesRow;
+
+        queryClient.setQueryData(
+          queryKey,
+          (oldData: DeliveriesQueryData | undefined) => {
+            if (!oldData) return { rows: [delivery], total: 1 };
+
+            const exists = oldData.rows.some(
+              (row) => row.delivery_id === delivery.delivery_id,
+            );
+
+            return {
+              rows: exists
+                ? oldData.rows.map((row) =>
+                    row.delivery_id === delivery.delivery_id ? delivery : row,
+                  )
+                : [delivery, ...oldData.rows].slice(0, page.pageSize),
+              total: exists ? oldData.total : oldData.total + 1,
+            };
+          },
+        );
+      },
+    );
+  }, [page.pageIndex, page.pageSize, queryClient, search, subscribe]);
+
   return (
     <>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -235,7 +316,7 @@ export default function DataTable() {
                 <Search />
               </InputGroupAddon>
               <InputGroupInput
-                placeholder="Search orders..."
+                placeholder="Search deliveries or customers..."
                 value={searchInput}
                 onChange={(event) => {
                   setSearchInput(event.target.value);
@@ -251,21 +332,16 @@ export default function DataTable() {
           variant="default"
           size="lg"
           className="cursor-pointer"
-          onClick={() => {
-            openModal(DialogMode.INSERT, {
-              title: "Create Order",
-              description: "Add a new order below.",
-              action: "Create Order",
-            });
-          }}
+          onClick={() => router.push("/panel/delivery-schedules")}
         >
           <Plus className="h-3 w-3" />
-          <span>Add Order</span>
+          <span>Schedule Delivery</span>
         </Button>
       </div>
 
       <div className="rounded-md border overflow-hidden">
-        <Table>
+        <QueryFeedback query={deliveriesQuery} label="deliveries" />
+            <Table>
           <TableHeader className="bg-muted sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -285,7 +361,7 @@ export default function DataTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {deliveriesQuery.isFetching ? (
+            {deliveriesQuery.isPending ? (
               <TableRow>
                 <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex items-center justify-center">
@@ -299,15 +375,15 @@ export default function DataTable() {
                 {table.getRowModel().rows.length ? (
                   table.getRowModel().rows.map((row) => (
                     <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {cell.column.columnDef.cell
-                            ? (cell.column.columnDef.cell as any)(
-                                cell.getContext(),
-                              )
-                            : cell.getValue()}
-                        </TableCell>
-                      ))}
+                      {row.getVisibleCells().map((cell) => {
+                        const renderedCell = cell.column.columnDef.cell
+                          ? flexRender(cell.column.columnDef.cell, cell.getContext())
+                          : cell.getValue();
+
+                        return (
+                          <TableCell key={cell.id}>{renderedCell as ReactNode}</TableCell>
+                        );
+                      })}
                     </TableRow>
                   ))
                 ) : (

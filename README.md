@@ -75,6 +75,34 @@ Protected dashboard pages are under
 `/panel/warehouses`, `/panel/vehicles`, `/panel/users`, `/panel/calendar`,
 `/panel/archives`, `/panel/audit-logs`, and `/panel/sessions-and-logs`.
 
+## Fleet map road routing
+
+The fleet map requests road geometry from OSRM through the authenticated
+`/panel/fleet-map/road-route` endpoint. Delivery stop order, per-stop route colors,
+the return to the warehouse, and scheduled trip previews are preserved. Simulated
+vehicles move along this geometry; real GPS fixes are displayed as received.
+Routes are cached for one hour by their ordered coordinates. Failed routes show
+a retry control and are omitted instead of drawing straight lines.
+
+Set the server environment variable `OSRM_ROUTING_URL` to the base URL of your
+self-hosted or managed OSRM-compatible driving service, for example:
+
+```env
+OSRM_ROUTING_URL=http://localhost:5000
+```
+
+The service must expose `/route/v1/driving/{coordinates}` and have road data for
+your delivery region. Requests include warehouse/stop coordinates, use full
+GeoJSON geometry and maneuver steps, and allow snapping within 1,000 metres.
+Coordinates farther from a routable road produce a routing error. The driving
+profile does not account for vehicle-specific height/weight limits or live traffic.
+
+Development falls back to the [public OSRM demo](https://github.com/Project-OSRM/osrm-backend/wiki/Demo-server),
+with requests spaced at least 1.1 seconds apart per server process. That demo is
+restricted to reasonable non-commercial use; production requires an explicit
+`OSRM_ROUTING_URL`. See the [OSRM API documentation](https://project-osrm.org/docs/v5.24.0/api/)
+for the provider response format.
+
 ## Production
 
 Set `API_URL` to the reachable backend origin, build the application, and run:

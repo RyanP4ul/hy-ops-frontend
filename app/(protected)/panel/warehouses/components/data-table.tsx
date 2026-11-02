@@ -1,5 +1,8 @@
 "use client";
 
+import { QueryFeedback } from "@/components/query-feedback";
+
+
 import { ModalProvider, useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -179,107 +182,7 @@ export default function DataTable() {
 
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    console.log("Setting up WebSocket subscriptions for warehouse updates");
-    return subscribe(
-      [
-        REQUESTS.WAREHOUSE_ADDED,
-        REQUESTS.WAREHOUSE_ARCHIVED,
-        REQUESTS.WAREHOUSE_DELETED,
-        REQUESTS.WAREHOUSE_UPDATED,
-        REQUESTS.WAREHOUSE_RESTORED,
-      ],
-      (message) => {
-        const query_key = [
-          "warehouses",
-          table.getState().pagination.pageIndex,
-          table.getState().pagination.pageSize,
-          search,
-          sortBy,
-        ];
-        switch (message.type) {
-          case REQUESTS.WAREHOUSE_ADDED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) {
-                return {
-                  rows: [message.payload],
-                  total: 1,
-                };
-              }
-
-              return {
-                rows: [message.payload, ...oldData.rows].slice(
-                  0,
-                  page.pageSize,
-                ),
-                total: oldData.total + 1,
-              };
-            });
-            break;
-          case REQUESTS.WAREHOUSE_ARCHIVED:
-          case REQUESTS.WAREHOUSE_DELETED:
-            console.log(
-              "Received WAREHOUSE_ARCHIVED or WAREHOUSE_DELETED message:",
-              message,
-            );
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) {
-                return {
-                  rows: [],
-                  total: 0,
-                };
-              }
-              return {
-                rows: oldData.rows.filter(
-                  (row: any) => row.id !== message.payload.id,
-                ),
-                total: oldData.total - 1,
-              };
-            });
-            break;
-          case REQUESTS.WAREHOUSE_UPDATED:
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              console.log("oldData", oldData);
-              if (!oldData) {
-                console.log("oldData is null");
-                return {
-                  rows: [message.payload],
-                  total: 1,
-                };
-              }
-              console.log("oldData is not null");
-              return {
-                rows: oldData.rows
-                  .map((row: any) =>
-                    row.id === message.payload.id ? message.payload : row,
-                  )
-                  .slice(0, page.pageSize),
-                total: oldData.total,
-              };
-            });
-            break;
-          case REQUESTS.WAREHOUSE_RESTORED:
-            console.log("Received WAREHOUSE_RESTORED message:", message);
-            queryClient.setQueryData(query_key, (oldData: any) => {
-              if (!oldData) {
-                return {
-                  rows: [message.payload],
-                  total: 1,
-                };
-              }
-              return {
-                rows: [message.payload, ...oldData.rows].slice(
-                  0,
-                  page.pageSize,
-                ),
-                total: oldData.total + 1,
-              };
-            });
-            break;
-        }
-      },
-    );
-  }, [subscribe]);
+  useEffect(() => subscribe([REQUESTS.WAREHOUSE_ADDED, REQUESTS.WAREHOUSE_ARCHIVED, REQUESTS.WAREHOUSE_DELETED, REQUESTS.WAREHOUSE_UPDATED, REQUESTS.WAREHOUSE_RESTORED], () => { void warehouseQuery.refetch(); }), [subscribe, warehouseQuery.refetch]);
 
   return (
     <>
@@ -303,7 +206,8 @@ export default function DataTable() {
       </div>
 
       <div className="rounded-md border overflow-hidden">
-        <Table>
+        <QueryFeedback query={warehouseQuery} label="warehouses" />
+            <Table>
           <TableHeader className="bg-muted sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -323,7 +227,7 @@ export default function DataTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {warehouseQuery.isFetching ? (
+            {warehouseQuery.isPending ? (
               <TableRow>
                 <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex items-center justify-center">
@@ -339,11 +243,7 @@ export default function DataTable() {
                     <TableRow key={row.id}>
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>
-                          {cell.column.columnDef.cell
-                            ? (cell.column.columnDef.cell as any)(
-                                cell.getContext(),
-                              )
-                            : cell.getValue()}
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
                       ))}
                     </TableRow>
@@ -351,7 +251,7 @@ export default function DataTable() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={10} className="h-24 text-center">
-                      No Results Found
+                      {warehouseQuery.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
                     </TableCell>
                   </TableRow>
                 )}

@@ -1,6 +1,7 @@
 "use client";
+import { useSearchParams } from "next/navigation";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, UseQueryResult } from "@tanstack/react-query";
 import { createContext, useContext, useState } from "react";
 import {
   OrderDetail,
@@ -10,7 +11,7 @@ import {
   orderSchema,
 } from "@/schema/order";
 import { request } from "@/components/http";
-import { useForm, UseFormReturn } from "react-hook-form";
+import { useForm, useWatch, UseFormReturn } from "react-hook-form";
 import { useModal } from "@/components/providers/modal-provider";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,10 +31,36 @@ type SubType = {
 };
 
 type InventoryItem = { inventory_id: number; quantity: number };
+type CustomerAddress = {
+  id: number;
+  customer_id: number;
+  address_line: string;
+  barangay: string;
+  city_municipality: string;
+  province: string;
+  postal_code: string | null;
+};
+type CustomerOption = {
+  id: number;
+  name: string;
+  company_name: string;
+  phone_number: string;
+  addresses: CustomerAddress[];
+};
+
+export type CustomerOrderEligibility = {
+  eligible: boolean;
+  reasonCode: "CUSTOMER_ORDER_LIMIT_REACHED" | null;
+  activeOrderCount: number;
+  maxActiveOrders: number;
+  checkedAt: string;
+  message: string | null;
+};
 
 type OrdersContext = {
+  startOrder: () => void;
   send: (data: unknown) => void;
-  form: UseFormReturn<OrderForm, any>;
+  form: UseFormReturn<OrderForm>;
   step: number;
   setStep: React.Dispatch<React.SetStateAction<number>>;
   ordersQuery: ReturnType<
@@ -49,7 +76,7 @@ type OrdersContext = {
       total: number;
     }>
   >;
-  orderViewQuery: ReturnType<typeof useQuery<OrderRow | null>>;
+  orderViewQuery: ReturnType<typeof useQuery<OrderDetail | null>>;
   productVariantsQuery: ReturnType<
     typeof useQuery<{
       rows: {
@@ -77,19 +104,22 @@ type OrdersContext = {
   viewOrder: (orderId: number) => void;
   viewOrderId: number;
 
+  warehouseCB: ReturnType<typeof useComboBoxPagination>;
   customerCB: ReturnType<typeof useComboBoxPagination>;
   inventoryCB: ReturnType<typeof useComboBoxPagination>;
+
+  warehouseQuery: UseQueryResult<{
+    rows: { id: number; name: string }[];
+    total: number;
+  }>;
+
   customerQuery: ReturnType<
     typeof useQuery<{
-      rows: {
-        id: number;
-        name: string;
-        address: string;
-        company_name: string;
-      }[];
+      rows: CustomerOption[];
       total: number;
     }>
   >;
+  customerOrderEligibility: UseQueryResult<CustomerOrderEligibility>;
   sub: SubType;
   setSub: React.Dispatch<React.SetStateAction<SubType>>;
   orderItemDetailQuery: ReturnType<
@@ -108,7 +138,9 @@ export function useOrders() {
 }
 
 export function OrdersProvider({ children }: { children: React.ReactNode }) {
+  const { state } = useModal();
   const { settingQuery } = useSetting();
+  const filters = useSearchParams();
   const { send } = useWebSocket();
   const [step, setStep] = useState<number>(0);
   const [selected, setSelected] = useState<FormSelected>({
@@ -130,6 +162,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     mode: DialogMode.DEFAULT,
   });
 
+  const warehouseCB = useComboBoxPagination();
   const customerCB = useComboBoxPagination();
   const inventoryCB = useComboBoxPagination();
 
@@ -142,16 +175,20 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   >({
     resolver: zodResolver(orderSchema),
     defaultValues: {
-      customer_id: 0,
+      warehouse_id: -1,
+      customer_id: -1,
       delivery_type: "INTERNAL",
       payment_arrangement: "NET_30",
       payment_method: "BANK_TRANSFER",
       notes: "",
       is_custom_shipping: false,
+      customer_address_id: undefined,
       items: [],
       amount_paid: 0,
     },
   });
+
+  const selectedWarehouseId = useWatch({ control: form.control, name: "warehouse_id" });
 
   const ordersQuery = useQuery({
     queryKey: [
@@ -160,6 +197,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       page.pageSize,
       search,
       deliveryType,
+      filters.get("status"),
       sortBy,
     ],
     queryFn: async () => {
@@ -169,6 +207,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (search.trim()) params.set("search", search);
+      if (filters.get("status")) params.set("status", filters.get("status")!);
       if (deliveryType && deliveryType !== "ALL")
         params.set("delivery_type", deliveryType);
       if (sortBy) params.set("sort_by", `${sortBy.id}:${sortBy.type}`);
@@ -183,7 +222,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       };
     },
     refetchInterval: () =>
-      Number(settingQuery.data?.refresh_interval_ms.value) ?? 5000,
+      Number(settingQuery.data?.refresh_interval_ms.value) || 5000,
     refetchIntervalInBackground: false,
   });
 
@@ -194,11 +233,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
       const response = await request("GET", `/api/orders/${selected.id}`);
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Unable to load this order. Close the dialog and try again.");
 
       return (await response.json()) as OrderDetail;
     },
-    enabled: selected.id !== -1,
+    enabled: state.isOpen && state.mode !== DialogMode.INSERT && selected.id > 0,
   });
 
   const orderItemDetailQuery = useQuery({
@@ -211,7 +250,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         `/api/inventory/details?ids=${inventoryItem.map((item) => item.inventory_id).join(",")}`,
       );
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Unable to load available item details.");
 
       return (await response.json()) as (OrderItemDetail & {
         inventory_id: number;
@@ -220,12 +259,25 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     enabled: inventoryItem.length > 0,
   });
 
-  const inventoryQuery = useQuery({
-    queryKey: ["inventory_query"],
+  const warehouseQuery = useQuery({
+    queryKey: ["warehouses", "order-options", warehouseCB.page],
     queryFn: async () => {
-      const response = await fetch("/api/inventory/names");
-      return await response.json();
+      const response = await request("GET", `/api/warehouses/names?page=${warehouseCB.page}&limit=10`);
+      if (!response.ok) throw new Error("Unable to load warehouses.");
+      const result = await response.json(); warehouseCB.setTotalPages(Math.max(1, Math.ceil(result.total / 10)));
+      return result;
     },
+  });
+
+  const inventoryQuery = useQuery({
+    queryKey: ["inventory_query", selectedWarehouseId, inventoryCB.page],
+    queryFn: async () => {
+      const response = await request("GET", `/api/inventory/names?warehouse_id=${selectedWarehouseId}&page=${inventoryCB.page}&limit=10`);
+      if (!response.ok) throw new Error("Unable to load available stock.");
+      const result = await response.json(); inventoryCB.setTotalPages(Math.max(1, Math.ceil(result.total / 10)));
+      return result;
+    },
+    enabled: selectedWarehouseId > 0,
   });
 
   const orderViewQuery = useQuery({
@@ -235,11 +287,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
       const response = await request("GET", `/api/orders/${viewOrderId}`);
 
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error("Unable to load this order. Close the dialog and try again.");
 
-      return (await response.json()) as OrderRow;
+      return (await response.json()) as OrderDetail;
     },
-    enabled: viewOrderId > 0,
+    enabled: state.isOpen && state.mode === DialogMode.VIEW && viewOrderId > 0,
   });
 
   const productVariantsQuery = useQuery({
@@ -293,17 +345,47 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
       customerCB.setTotalPages(Math.ceil(result.total / 10));
 
+      return result as { rows: CustomerOption[]; total: number };
+    },
+  });
+
+  const selectedCustomerId = form.watch("customer_id");
+  const customerOrderEligibility = useQuery({
+    queryKey: ["customer-order-eligibility", selectedCustomerId],
+    queryFn: async () => {
+      const response = await request(
+        "GET",
+        `/api/orders/eligibility/${selectedCustomerId}`,
+      );
+      const result =
+        (await response.json()) as CustomerOrderEligibility & {
+          message?: string;
+        };
+
+      if (!response.ok) {
+        throw new Error(result.message || "Unable to check customer eligibility.");
+      }
+
       return result;
     },
+    enabled: Number.isSafeInteger(selectedCustomerId) && selectedCustomerId > 0,
+    staleTime: 15_000,
   });
 
   const viewOrder = (orderId: number) => {
     setViewOrderId(orderId);
   };
 
+  const startOrder = () => {
+    form.reset({ warehouse_id: -1, customer_id: -1, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "BANK_TRANSFER", notes: "", is_custom_shipping: false, customer_address_id: undefined, shipping_recipient: undefined, shipping_phone: undefined, shipping_address: undefined, shipping_latitude: undefined, shipping_longitude: undefined, items: [], amount_paid: 0 });
+    setStep(0); setSelected({ id: -1, version: 0 }); setInventoryItem([]); setSub({ is_open: false, mode: DialogMode.DEFAULT });
+    for (const combo of [warehouseCB, customerCB, inventoryCB]) { combo.setInputValue(""); combo.setPage(0); combo.setOpen(false); }
+  };
+
   return (
     <OrdersContext.Provider
       value={{
+        startOrder,
         send,
         form,
         step,
@@ -325,9 +407,12 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         setSortBy,
         deliveryType,
         setDeliveryType,
+        warehouseCB,
         customerCB,
         inventoryCB,
+        warehouseQuery,
         customerQuery,
+        customerOrderEligibility,
         sub,
         setSub,
         orderItemDetailQuery,
@@ -335,6 +420,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         setInventoryItem,
       }}
     >
+      {(filters.get("status") || filters.get("stock_status") || filters.get("overdue")) && <p className="rounded-lg border p-3 text-sm">Dashboard filter: {filters.get("overdue") === "true" ? "Overdue scheduled deliveries" : filters.get("status") ?? filters.get("stock_status")} ? <a href="/panel/orders" className="underline">Clear filter</a></p>}
       {children}
     </OrdersContext.Provider>
   );

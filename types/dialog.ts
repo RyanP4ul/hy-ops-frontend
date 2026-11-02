@@ -7,4 +7,6 @@ export enum DialogMode {
   ARCHIVE = "archive",
   VIEW = "view",
   CUSTOM = "custom",
+  CHANGE_PASSWORD = "change_password",
+  CHANGE_ASSIGNMENT = "change_assignment",
 }

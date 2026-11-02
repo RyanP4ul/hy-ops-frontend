@@ -1,7 +1,12 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useModal } from "@/components/providers/modal-provider";
+import { DialogMode } from "@/types/dialog";
 import { format } from "date-fns";
+import { addDays, addMonths, addWeeks } from "date-fns";
 import {
   CalendarDays,
   ChevronDown,
@@ -9,8 +14,33 @@ import {
   ChevronRight,
   Plus,
 } from "lucide-react";
+import { useState } from "react";
+import { useCalendar } from "../provider";
 
 export default function Control() {
+  const { view, setView, selectedDate, setSelectedDate, filteredEvents } =
+    useCalendar();
+  const { openModal } = useModal();
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  const visibleEventCount = filteredEvents.length;
+
+  function navigateDate(direction: -1 | 1) {
+    setSelectedDate((current) => {
+      if (view === "Day") return addDays(current, direction);
+      if (view === "Week") return addWeeks(current, direction);
+      return addMonths(current, direction);
+    });
+  }
+
+  function openCreateDialog() {
+    openModal(DialogMode.INSERT, {
+      title: "Create calendar event",
+      description: "Add a new delivery, maintenance, or planning item.",
+      action: "Create",
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-end xl:justify-between">
       <div className="flex items-start gap-3">

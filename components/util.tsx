@@ -1,9 +1,11 @@
 import { FieldErrors } from "react-hook-form";
 import { toast } from "sonner";
 
-const isDebugMode = process.env.NEXT_PUBLIC_DEBUG === "true";
+const isDebugMode =
+  process.env.NODE_ENV === "development" &&
+  process.env.NEXT_PUBLIC_DEBUG === "true";
 
-export function ToastSubmit(data: any) {
+export function ToastSubmit(data: unknown) {
   if (!isDebugMode) return;
 
   toast("You submitted the following values:", {

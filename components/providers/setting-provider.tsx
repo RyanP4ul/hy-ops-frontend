@@ -2,13 +2,15 @@
 
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
 import React, { createContext, useContext } from "react";
-import { SettingSchema } from "@/schema/setting";
 
 type Result = Record<
   | "low_stock_threshold"
   | "high_stock_threshold"
   | "refresh_interval_ms"
-  | "is_form_validation_debug_enabled",
+  | "is_form_validation_debug_enabled"
+  | "order_limit_per_day"
+  | "customer_order_limit"
+  | "max_order_per_vehicle",
   {
     id: number;
     name: string;

@@ -1,15 +1,18 @@
 import { z } from "zod";
 
 export const vehicleSchema = z.object({
-  plate_number: z.string().min(1, "Plate number is required"),
+  warehouse_id: z.number().min(1, "Warehouse ID must be greater than 0"),
+  plate_number: z.string().trim().min(1, "Plate number is required"),
   status: z.enum(["available", "unavailable", "maintenance", "on_delivery"]),
   type: z.enum(["truck", "van", "other"]),
-  image: z.string().min(1, "Image path is required"),
+  image: z.string().max(255),
 });
 
 export type VehicleForm = z.infer<typeof vehicleSchema>;
 export type VehicleRow = VehicleForm & {
   id: number;
+  warehouse_id: number;
+  warehouse_name: string;
   version: number;
   created_at: number;
   updated_at: number;

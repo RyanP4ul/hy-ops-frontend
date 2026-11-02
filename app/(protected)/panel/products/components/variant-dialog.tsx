@@ -37,7 +37,7 @@ import { DialogMode } from "@/types/dialog";
 import { useEffect, useState } from "react";
 
 export default function VariantDialog() {
-  const { form, variant, setVariant, variantDetailQuery } = useProducts();
+  const { form, variant, setVariant } = useProducts();
 
   const variant_form = useForm<ProductVariantType>({
     resolver: zodResolver(productVariantSchema),
@@ -80,19 +80,12 @@ export default function VariantDialog() {
   });
 
   async function onSubmit(data: ProductVariantType) {
-    const existingVariant = form
-      .getValues("variants")
-      .find((variant) => variant.sku === data.sku);
-
-    if (existingVariant) {
-      variant_form.setError("sku", {
-        type: "manual",
-        message: "Duplicate SKU found. Please use a unique SKU.",
-      });
-      return;
+    const variants = form.getValues("variants");
+    if (variants.some((item, index) => item.sku.trim().toLowerCase() === data.sku.trim().toLowerCase() && !(variant.mode === DialogMode.EDIT && index === variant.id))) {
+      variant_form.setError("sku", { type: "manual", message: "Duplicate SKU found. Please use a unique SKU." }); return;
     }
-
-    fieldArray.append(data);
+    if (variant.mode === DialogMode.EDIT && variant.id !== undefined) fieldArray.update(variant.id, { ...variants[variant.id], ...data });
+    else fieldArray.append(data);
     variant_form.reset();
     setVariant({ is_open: false, mode: DialogMode.DEFAULT });
   }
@@ -109,7 +102,7 @@ export default function VariantDialog() {
     }
   };
 
-  function Form() {
+  function renderForm() {
     return (
       <form
         id="variant-form"
@@ -146,7 +139,7 @@ export default function VariantDialog() {
                 control={variant_form.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="name">
+                    <FieldLabel htmlFor="sku">
                       SKU<span className="text-destructive">*</span>
                     </FieldLabel>
                     <Input
@@ -179,6 +172,7 @@ export default function VariantDialog() {
                   <Input
                     {...field}
                     id="price"
+                    min="0" step="0.01"
                     aria-invalid={fieldState.invalid}
                     type="number"
                     placeholder="Enter price"
@@ -205,7 +199,7 @@ export default function VariantDialog() {
                     value={field.value}
                     onValueChange={field.onChange}
                   >
-                    <SelectTrigger
+                    <SelectTrigger id="unit"
                       aria-invalid={fieldState.invalid}
                       className="w-full max-w-48"
                       onBlur={field.onBlur}
@@ -235,7 +229,7 @@ export default function VariantDialog() {
             control={variant_form.control}
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
-                <FieldLabel htmlFor="name">
+                <FieldLabel htmlFor="description">
                   Description<span className="text-destructive">*</span>
                 </FieldLabel>
                 <Textarea
@@ -260,7 +254,7 @@ export default function VariantDialog() {
                   control={variant_form.control}
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="name">
+                      <FieldLabel htmlFor="width_value">
                         Width<span className="text-destructive">*</span>
                       </FieldLabel>
                       <Input
@@ -288,16 +282,16 @@ export default function VariantDialog() {
                       <Select
                         name={field.name}
                         items={dimension_units}
-                        defaultValue={field.value}
+                        value={field.value}
                         onValueChange={field.onChange}
                       >
-                        <SelectTrigger className="w-full max-w-48">
+                        <SelectTrigger id="width_unit" className="w-full max-w-48">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
                             <SelectLabel>Width Unit</SelectLabel>
-                            {product_units.map((item) => (
+                            {dimension_units.map((item) => (
                               <SelectItem key={item.value} value={item.value}>
                                 {item.label}
                               </SelectItem>
@@ -319,7 +313,7 @@ export default function VariantDialog() {
                   control={variant_form.control}
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="name">
+                      <FieldLabel htmlFor="length_value">
                         Length<span className="text-destructive">*</span>
                       </FieldLabel>
                       <Input
@@ -341,21 +335,21 @@ export default function VariantDialog() {
                   control={variant_form.control}
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="name">
+                      <FieldLabel htmlFor="length_unit">
                         Unit<span className="text-destructive">*</span>
                       </FieldLabel>
                       <Select
                         items={dimension_units}
-                        defaultValue={field.value}
+                        value={field.value}
                         onValueChange={field.onChange}
                       >
-                        <SelectTrigger className="w-full max-w-48">
+                        <SelectTrigger id="length_unit" className="w-full max-w-48">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
                             <SelectLabel>Length Unit</SelectLabel>
-                            {product_units.map((item) => (
+                            {dimension_units.map((item) => (
                               <SelectItem key={item.value} value={item.value}>
                                 {item.label}
                               </SelectItem>
@@ -371,40 +365,11 @@ export default function VariantDialog() {
                 />
               </div>
 
-              <div className="grid grid-cols-[minmax(0,1fr)_82px] gap-2">
-                <Field>
-                  <FieldLabel htmlFor="name">
-                    Length<span className="text-destructive">*</span>
-                  </FieldLabel>
-                  <Input
-                    id="length_value"
-                    type="number"
-                    placeholder="Enter length value"
-                    autoComplete="off"
-                  />
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="name">
-                    Thickness<span className="text-destructive">*</span>
-                  </FieldLabel>
-                  <Select items={dimension_units} defaultValue="cm">
-                    <SelectTrigger className="w-full max-w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectLabel>Thickness Unit</SelectLabel>
-                        {product_units.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
+              <Controller name="weight_kg" control={variant_form.control} render={({ field, fieldState }) => <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="weight_kg">Weight (kg)</FieldLabel>
+                <Input {...field} id="weight_kg" type="number" min="0" step="0.01" aria-invalid={fieldState.invalid} />
+                {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+              </Field>} />
             </div>
           </div>
         </FieldGroup>
@@ -434,23 +399,10 @@ export default function VariantDialog() {
   }
 
   useEffect(() => {
-    if (variant.mode === DialogMode.EDIT && variantDetailQuery.data) {
-      variant_form.reset(variantDetailQuery.data);
-    } else {
-      variant_form.reset({
-        name: "",
-        sku: "HY-",
-        description: "",
-        price: "0.00",
-        unit: "box",
-        weight_kg: "0.00",
-        width_value: "0",
-        width_unit: "m",
-        length_value: "0.00",
-        length_unit: "m",
-      });
-    }
-  }, [variant.mode, variantDetailQuery.isFetched]);
+    if (!variant.is_open) return;
+    const current = variant.mode === DialogMode.EDIT && variant.id !== undefined ? form.getValues("variants")[variant.id] : undefined;
+    variant_form.reset(current ?? { name: "", sku: "HY-", description: "", price: "0.00", unit: "box", weight_kg: "0.00", width_value: "0", width_unit: "m", length_value: "0.00", length_unit: "m" });
+  }, [variant.is_open, variant.mode, variant.id, form, variant_form]);
 
   return (
     <>
@@ -478,7 +430,7 @@ export default function VariantDialog() {
 
           {variant.mode === DialogMode.INSERT ||
           variant.mode === DialogMode.EDIT ? (
-            <Form />
+            renderForm()
           ) : (
             <DeleteConfirmation />
           )}

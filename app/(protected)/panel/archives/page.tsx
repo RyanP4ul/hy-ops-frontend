@@ -2,10 +2,11 @@ import { ModalProvider } from "@/components/providers/modal-provider";
 import { ArchiveProvider } from "./provider";
 import ArchivePage from "./components/archve-page";
 import ArchiveDialog from "./components/dialog";
+import { MotionPage } from "@/components/page-motion";
 
 export default function Page() {
   return (
-    <div className="flex flex-col gap-4 md:gap-6 py-4 md:py-6 px-4 lg:px-6">
+    <MotionPage className="flex flex-col gap-4 md:gap-6 py-4 md:py-6 px-4 lg:px-6">
       <ModalProvider>
         <ArchiveProvider>
           <section className="space-y-5">
@@ -21,6 +22,6 @@ export default function Page() {
           </section>
         </ArchiveProvider>
       </ModalProvider>
-    </div>
+    </MotionPage>
   );
 }
