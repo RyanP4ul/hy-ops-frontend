@@ -1,7 +1,7 @@
 import { isPrototypeRoute } from "@/lib/prototype-routes";
 import { NextRequest, NextResponse } from "next/server";
 
-const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5173";
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5173";
 
 const protectedRoutes = ["/panel"];
 const publicAuthRoutes = ["/", "/login"];
