@@ -1,6 +1,6 @@
 import type { ReturnPickup } from "./return-pickups";
 import { Check, Truck, Warehouse } from "lucide-react";
-import type { RefObject } from "react";
+import { useEffect, type RefObject } from "react";
 import {
   Map,
   MapControls,
@@ -9,6 +9,7 @@ import {
   MarkerContent,
   MarkerTooltip,
   type MapRef,
+  useMap,
 } from "@/components/ui/map";
 import { cn } from "@/lib/utils";
 import { AT_WAREHOUSE_RADIUS_M, DEFAULT_MAP_CENTER } from "../constants";
@@ -25,6 +26,18 @@ import type {
 
 const PENDING_COLOR = "#94a3b8";
 const PREVIEW_COLOR = "#6366f1";
+
+// Resizing the workspace or revealing a hidden map must update its canvas too.
+function ResizeMap() {
+  const { map } = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const observer = new ResizeObserver(() => map.resize());
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
+  return null;
+}
 
 type FleetMapCanvasProps = {
   returnPickups?: ReturnPickup[];
@@ -121,6 +134,7 @@ export function FleetMapCanvas({
       className="h-full w-full"
     >
       <MapControls position="bottom-right" />
+      <ResizeMap />
       {returnPickups.filter(task => task.coordinates && task.status !== "collected").map(task => <MapMarker key={`return-${task.id}`} longitude={task.coordinates![0]} latitude={task.coordinates![1]}><MarkerContent><div className="flex size-9 items-center justify-center rounded-full border-2 border-white bg-rose-700 font-bold text-white shadow">R</div></MarkerContent><MarkerTooltip>Refunded: {task.orderNumber} / {task.status === "requested" ? "Awaiting retrieval" : "Pickup assigned"}</MarkerTooltip></MapMarker>)}
 
       {segments.map((segment) => (

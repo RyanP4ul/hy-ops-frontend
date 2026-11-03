@@ -63,6 +63,7 @@ export function ViewOrderDetails({
             label="Payment Method"
             value={formatValue(order.payment_method)}
           />
+          {order.payment_type && <ViewOrderItem label="Payment Type" value={order.payment_type} />}
           <ViewOrderItem
             label="Amount Paid"
             value={formatCurrency(order.amount_paid)}

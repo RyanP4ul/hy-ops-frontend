@@ -39,15 +39,25 @@ export default function TabGeneral() {
     defaultValues: {
       is_form_validation_debug_enabled: false,
       refresh_interval_ms: 30000,
+      mobile_automatic_refresh_interval_ms: 30000,
       order_limit_per_day: 10,
       customer_order_limit: 1,
       max_order_per_vehicle: 5,
+      returning_automatic_confirm_ms_interval: 100,
     },
   });
 
   useEffect(() => {
     if (settingQuery.data) {
       form.reset({
+        mobile_automatic_refresh_interval_ms: parseSettingNumber(
+          settingQuery.data?.mobile_automatic_refresh_interval_ms?.value,
+          30000,
+        ),
+        returning_automatic_confirm_ms_interval: parseSettingNumber(
+          settingQuery.data?.returning_automatic_confirm_ms_interval?.value,
+          100,
+        ),
         is_form_validation_debug_enabled:
           settingQuery.data?.is_form_validation_debug_enabled.value === "true",
         refresh_interval_ms: parseSettingNumber(
@@ -72,6 +82,16 @@ export default function TabGeneral() {
 
   async function onSubmit(data: GeneralSettingSchema) {
     const setting_changes = [
+      {
+        name: "mobile_automatic_refresh_interval_ms",
+        value: data.mobile_automatic_refresh_interval_ms.toString(),
+        version: settingQuery.data?.mobile_automatic_refresh_interval_ms?.version ?? 1,
+      },
+      {
+        name: "returning_automatic_confirm_ms_interval",
+        value: data.returning_automatic_confirm_ms_interval.toString(),
+        version: settingQuery.data?.returning_automatic_confirm_ms_interval?.version ?? 1,
+      },
       {
         name: "is_form_validation_debug_enabled",
         value: data.is_form_validation_debug_enabled.toString(),
@@ -124,6 +144,60 @@ export default function TabGeneral() {
         <CardContent>
           <div className="space-y-2">
             <FieldGroup className="grid grid-cols-1 items-center gap-4">
+              <Controller
+                name="mobile_automatic_refresh_interval_ms"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="mobile_automatic_refresh_interval_ms">Mobile Automatic Refresh Interval (milliseconds)</FieldLabel>
+                    <Input
+                      id="mobile_automatic_refresh_interval_ms"
+                      type="number"
+                      min={1}
+                      max={2147483647}
+                      step={1}
+                      value={field.value}
+                      onChange={(event) => {
+                        field.onChange(event.target.valueAsNumber);
+                        setIsModified(true);
+                      }}
+                      aria-invalid={fieldState.invalid}
+                      aria-describedby="mobile-refresh-description"
+                    />
+                    <FieldDescription id="mobile-refresh-description">
+                      Controls how often the driver app refreshes its data. Default: 30000 milliseconds (30 seconds). Enter a positive whole number. Restart the driver app or sign in again to load a saved change.
+                    </FieldDescription>
+                    {fieldState.error && <p role="alert" className="text-sm text-destructive">Enter a whole number from 1 to 2147483647 milliseconds.</p>}
+                  </Field>
+                )}
+              />
+              <Controller
+                name="returning_automatic_confirm_ms_interval"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="returning_automatic_confirm_ms_interval">Automatic Return Confirmation Distance (metres)</FieldLabel>
+                    <Input
+                      id="returning_automatic_confirm_ms_interval"
+                      type="number"
+                      min={50}
+                      max={1000}
+                      step={1}
+                      value={field.value}
+                      onChange={(event) => {
+                        field.onChange(event.target.valueAsNumber);
+                        setIsModified(true);
+                      }}
+                      aria-invalid={fieldState.invalid}
+                      aria-describedby="return-distance-description"
+                    />
+                    <FieldDescription id="return-distance-description">
+                      Recommended: 100 metres. The vehicle distance plus GPS accuracy margin must fit inside this radius of its assigned warehouse. Allowed: 50–1000 metres. Changes apply to the next GPS update. Failed deliveries require manual confirmation.
+                    </FieldDescription>
+                    {fieldState.error && <p role="alert" className="text-sm text-destructive">Enter a whole number from 50 to 1000 metres.</p>}
+                  </Field>
+                )}
+              />
               <Controller
                 name="is_form_validation_debug_enabled"
                 control={form.control}

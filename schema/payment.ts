@@ -7,6 +7,7 @@ export const paymentRowSchema = z.object({
   customer_id: z.number().int().min(1, "Customer is required"),
   customer_name: z.string().max(100).nullable(),
   payment_method: z.enum(["CASH", "BANK_TRANSFER", "CARD"]),
+  payment_type: z.string().max(100).nullable().optional(),
   payment_status: z.enum(["UNPAID", "PARTIALLY_PAID", "PAID", "OVERDUE", "UNVERIFIED"]),
   amount: z.number().nonnegative("Amount must be a non-negative number"),
   refunded_amount: z.number().nonnegative(),

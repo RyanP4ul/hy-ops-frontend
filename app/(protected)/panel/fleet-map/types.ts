@@ -34,6 +34,7 @@ export type OrderDetails = {
   paymentArrangement: PaymentArrangement;
   /** Method of the latest payment; null until something has been paid. */
   paymentMethod: PaymentMethod | null;
+  paymentType?: string | null;
   totalAmount: number | null;
   amountPaid: number;
   /** ISO date (YYYY-MM-DD), NET_30 orders only. */

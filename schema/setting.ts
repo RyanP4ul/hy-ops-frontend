@@ -9,9 +9,11 @@ export const settingSchema = z.object({
 export const generalSettingSchema = z.object({
   is_form_validation_debug_enabled: z.boolean(),
   refresh_interval_ms: z.number().nonnegative(),
+  mobile_automatic_refresh_interval_ms: z.number().int().positive().max(2147483647),
   order_limit_per_day: z.number().nonnegative(),
   customer_order_limit: z.number().nonnegative(),
   max_order_per_vehicle: z.number().nonnegative(),
+  returning_automatic_confirm_ms_interval: z.number().int().min(50).max(1000),
 });
 
 export const stockStatusSchema = z.object({

@@ -61,7 +61,7 @@ export function VehicleList({
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="@container flex min-h-0 flex-1 flex-col">
       <div className="space-y-3 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -98,9 +98,9 @@ export function VehicleList({
         </div>
       </div>
 
-      <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-3">
+      <ul className="grid min-h-0 flex-1 auto-rows-max grid-cols-1 items-start gap-2 overflow-y-auto px-3 pb-3 @2xl:grid-cols-2 @5xl:grid-cols-3">
         {visible.length === 0 ? (
-          <li>
+          <li className="col-span-full">
             <EmptyState icon={Truck} title="No vehicles found">
               {vehicles.length === 0
                 ? "There are no vehicles in the system yet."

@@ -57,6 +57,7 @@ import {
 import { formatCurrency } from "@/utils/date-util";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { PaymentTypeCombobox } from "@/components/payment-type-combobox";
 
 function formatCustomerAddress(address: {
   address_line: string;
@@ -115,6 +116,7 @@ export default function Form() {
     name: "delivery_type",
     control: form.control,
   });
+  const paymentMethod = useWatch({ name: "payment_method", control: form.control });
 
   const items = useWatch({
     control: form.control,
@@ -157,9 +159,10 @@ export default function Form() {
   };
 
   async function onSubmit(data: OrderForm) {
+    const payload = { ...data, payment_type: data.payment_method === "CASH" ? undefined : data.payment_type?.trim() };
 
     if (state.mode === DialogMode.EDIT && selected.id > 0) {
-      const response = await request("PUT", `/api/orders/${selected.id}`, data);
+      const response = await request("PUT", `/api/orders/${selected.id}`, payload);
 
       await requestWithErrorHandling(response, form, (result) => {
         onSuccess();
@@ -169,7 +172,7 @@ export default function Form() {
         });
       });
     } else {
-      const response = await request("POST", "/api/orders", data);
+      const response = await request("POST", "/api/orders", payload);
 
       if (response.status === 409) {
         void customerOrderEligibility.refetch();
@@ -943,7 +946,11 @@ export default function Form() {
                       </FieldLabel>
                       <Select
                         value={field.value}
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          form.setValue("payment_type", "", { shouldDirty: true });
+                          form.clearErrors("payment_type");
+                        }}
                       >
                         <SelectTrigger id="payment_method">
                           <SelectValue />
@@ -962,6 +969,17 @@ export default function Form() {
                   )}
                 />
               </div>
+
+              {paymentMethod !== "CASH" && (
+                <Controller name="payment_type" control={form.control} render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="payment_type">Payment Type <span className="text-destructive">*</span></FieldLabel>
+                    <PaymentTypeCombobox key={paymentMethod} method={paymentMethod} value={field.value ?? ""} onChange={field.onChange} onBlur={field.onBlur} invalid={fieldState.invalid} />
+                    <FieldDescription id="payment-type-help">Choose a {paymentMethod === "BANK_TRANSFER" ? "bank" : "card type"}, or type a name and select “Use custom”.</FieldDescription>
+                    {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  </Field>
+                )} />
+              )}
 
               <Controller
                 name="amount_paid"
@@ -1145,6 +1163,7 @@ export default function Form() {
                     label="Payment Method"
                     value={formatReviewValue(reviewPaymentMethod)}
                   />
+                  {reviewPaymentMethod !== "CASH" && <ReviewItem label="Payment Type" value={reviewValues.payment_type ?? ""} />}
                   <ReviewItem
                     label="Amount Paid"
                     value={formatCurrency(reviewAmountPaid ?? 0)}

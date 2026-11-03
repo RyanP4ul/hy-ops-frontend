@@ -41,7 +41,6 @@ export function Sidebar({
   return (
     <Tabs value={tab} onValueChange={value => onTabChange(value as SidebarTab)} className="h-full min-h-0 gap-0 bg-background">
       <div className="border-b p-3">
-        <h1 className="mb-3 text-base font-semibold leading-none">Fleet tracking</h1>
         <TabsList className="grid w-full grid-cols-3" aria-label="Fleet lists">
           <TabsTrigger value="vehicles" className="gap-1 text-xs"><Truck className="size-3.5" />Vehicles ({vehicles.length})</TabsTrigger>
           <TabsTrigger value="warehouses" className="gap-1 text-xs"><Warehouse className="size-3.5" />Warehouses ({warehouses.length})</TabsTrigger>

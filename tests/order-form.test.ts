@@ -14,3 +14,17 @@ test("manual shipping still requires recipient, phone and address", () => {
 test("draft items require a selected inventory record and whole positive quantities", () => {
   for (const item of [{ ...draft.items[0], inventory_id: 0 }, { ...draft.items[0], quantity: 1.5 }, { ...draft.items[0], quantity: 0 }]) expect(orderSchema.safeParse({ ...draft, items: [item] }).success).toBe(false);
 });
+
+test("bank and card payments require a type and preserve custom names", () => {
+  for (const payment_method of ["BANK_TRANSFER", "CARD"]) {
+    for (const payment_type of [undefined, "", "   ", "x".repeat(101)]) {
+      const result = orderSchema.safeParse({ ...draft, payment_method, payment_type });
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues.some(issue => issue.path[0] === "payment_type")).toBe(true);
+    }
+    for (const payment_type of ["BDO", "Visa", " My custom provider "]) {
+      const result = orderSchema.parse({ ...draft, payment_method, payment_type });
+      expect(result.payment_type).toBe(payment_type.trim());
+    }
+  }
+});

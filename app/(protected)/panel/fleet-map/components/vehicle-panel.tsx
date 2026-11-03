@@ -9,11 +9,12 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { WarehouseReturnDialog } from "@/components/warehouse-return-dialog";
+import { resourceQueryRoots } from "@/lib/realtime";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { fleetApi } from "../api/fleet.api";
-import { fleetKeys } from "../hooks/use-fleet-query";
 import { cn } from "@/lib/utils";
 import { formatSchedule, formatSpeed } from "../lib/format";
 import { getNextPendingStop, isAvailableVehicle } from "../lib/vehicle";
@@ -73,16 +74,17 @@ export function VehiclePanel({
   onPaymentChange,
 }: VehiclePanelProps) {
   const [saving, setSaving] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   async function completeAction() {
     if (saving || simulationOn || !vehicle.trip) return;
-    if (vehicle.status === "returning" && !window.confirm("Confirm the vehicle and ALL collected customer returns are physically back at the warehouse. Customer returns will be marked received without automatic restocking. Any failed-delivery goods must also have returned in full and be suitable for resale.")) return;
     setSaving(true); setActionError(null);
     try {
       if (vehicle.status === "returning") await fleetApi.completeDelivery(vehicle.trip.id);
       else if (nextStop) await fleetApi.markStopDelivered(nextStop.id);
-      await queryClient.invalidateQueries({ queryKey: fleetKeys.all });
+      setReturnOpen(false);
+      await Promise.all(resourceQueryRoots.deliveries.map(root => queryClient.invalidateQueries({ queryKey: [root] })));
     } catch (error) { setActionError(error instanceof Error ? error.message : "Action failed. Retry after refreshing."); }
     finally { setSaving(false); }
   }
@@ -261,7 +263,13 @@ export function VehiclePanel({
                 </p>
               </div>
 
-              {!simulationOn && vehicle.status !== "available" && <div className="space-y-2"><Button type="button" size="sm" disabled={saving || (vehicle.status !== "returning" && !nextStop)} onClick={() => void completeAction()}>{saving ? "Saving?" : vehicle.status === "returning" ? "Confirm return to warehouse" : "Mark next stop delivered"}</Button>{actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}</div>}
+              {!simulationOn && vehicle.status !== "available" && <div className="space-y-2">
+                {vehicle.status === "returning" ? <>
+                  <WarehouseReturnDialog key={vehicle.trip?.id} open={returnOpen} onOpenChange={setReturnOpen} busy={saving} onConfirm={completeAction} error={actionError} warehouseName={warehouse.name} label="Confirm return to warehouse" />
+                  <p className="text-xs text-muted-foreground">Automatically confirms near {warehouse.name} using the configured return distance and fresh, accurate GPS. Failed deliveries need manual confirmation.</p>
+                </> : <Button type="button" size="sm" disabled={saving || !nextStop} onClick={() => void completeAction()}>{saving ? "Saving…" : "Mark next stop delivered"}</Button>}
+                {actionError && !returnOpen && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
+              </div>}
               {vehicle.pickups?.map(pickup => <div key={pickup.id} className="rounded-md border border-rose-500/30 p-3 text-sm"><strong>Refunded / {pickup.orderNumber}</strong><p>{pickup.customer}</p><p>{pickup.address}</p><p>{pickup.status === "assigned" ? "Driver to confirm collection" : "Collected / awaiting warehouse receipt"}</p></div>)}
               <StopTimeline
                 stops={vehicle.stops}

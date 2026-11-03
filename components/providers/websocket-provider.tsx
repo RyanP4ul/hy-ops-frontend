@@ -99,7 +99,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       else setReconnecting(true);
 
       // Revalidate before upgrade too: an offline socket may miss its expiry close.
-      const session = await request("GET", "/api/auth/me");
+      const session = await request("POST", "/api/auth/ws-ticket");
       if (disposed || currentGeneration !== generation) return;
       if (!session.ok) {
         setConnected(false);
@@ -114,7 +114,18 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         process.env.NEXT_PUBLIC_WS_URL ??
         `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:5173/ws`;
       const isDuplicate = createEventDeduplicator();
-      const ws = new WebSocket(wsUrl);
+      const result = await session.json().catch(() => null);
+      if (disposed || currentGeneration !== generation) return;
+      if (!result || typeof result.ticket !== "string") {
+        setConnected(false);
+        setReconnecting(true);
+        const delay = Math.min(1_000 * 2 ** Math.min(attempts++, 5), 30_000);
+        reconnectTimeout = setTimeout(() => void connect(), delay);
+        return;
+      }
+      const socketUrl = new URL(wsUrl);
+      socketUrl.searchParams.set("ticket", result.ticket);
+      const ws = new WebSocket(socketUrl);
       activeSocket = ws;
       socketRef.current = ws;
 

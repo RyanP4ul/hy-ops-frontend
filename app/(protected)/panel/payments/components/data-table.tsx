@@ -85,6 +85,7 @@ export default function DataTable() {
         cell: ({ row }) =>
           labels[row.original.payment_method] ?? row.original.payment_method,
       },
+      { accessorKey: "payment_type", header: "Payment type", cell: ({ row }) => row.original.payment_type || "—" },
       {
         accessorKey: "payment_status",
         header: "Status",

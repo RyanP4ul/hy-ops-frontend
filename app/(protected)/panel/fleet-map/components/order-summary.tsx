@@ -54,6 +54,7 @@ export function OrderSummary({
       </ul>
 
       <dl className="space-y-1">
+        {order.paymentType && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Payment type</dt><dd className="break-words text-right">{order.paymentType}</dd></div>}
         <div className="flex justify-between">
           <dt className="text-muted-foreground">Total</dt>
           <dd className="tabular-nums">{formatCurrency(order.totalAmount)}</dd>

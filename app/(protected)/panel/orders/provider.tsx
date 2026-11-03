@@ -180,6 +180,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       delivery_type: "INTERNAL",
       payment_arrangement: "NET_30",
       payment_method: "BANK_TRANSFER",
+      payment_type: "",
       notes: "",
       is_custom_shipping: false,
       customer_address_id: undefined,
@@ -377,7 +378,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   };
 
   const startOrder = () => {
-    form.reset({ warehouse_id: -1, customer_id: -1, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "BANK_TRANSFER", notes: "", is_custom_shipping: false, customer_address_id: undefined, shipping_recipient: undefined, shipping_phone: undefined, shipping_address: undefined, shipping_latitude: undefined, shipping_longitude: undefined, items: [], amount_paid: 0 });
+    form.reset({ warehouse_id: -1, customer_id: -1, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "BANK_TRANSFER", payment_type: "", notes: "", is_custom_shipping: false, customer_address_id: undefined, shipping_recipient: undefined, shipping_phone: undefined, shipping_address: undefined, shipping_latitude: undefined, shipping_longitude: undefined, items: [], amount_paid: 0 });
     setStep(0); setSelected({ id: -1, version: 0 }); setInventoryItem([]); setSub({ is_open: false, mode: DialogMode.DEFAULT });
     for (const combo of [warehouseCB, customerCB, inventoryCB]) { combo.setInputValue(""); combo.setPage(0); combo.setOpen(false); }
   };

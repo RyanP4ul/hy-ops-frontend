@@ -46,11 +46,15 @@ export const orderSchema = z
       .array(OrderItemDetailSchema)
       .min(1, "At least one item is required"),
     payment_method: z.string(),
+    payment_type: z.string().trim().max(100, "Payment type must be 100 characters or fewer").optional(),
     amount_paid: z
       .number()
       .nonnegative("Amount paid must be a non-negative number"),
   })
   .superRefine((data, ctx) => {
+    if (data.payment_method !== "CASH" && !data.payment_type?.trim()) {
+      ctx.addIssue({ code: "custom", path: ["payment_type"], message: "Select or enter a payment type" });
+    }
     if ((data.shipping_latitude === undefined) !== (data.shipping_longitude === undefined)) {
       ctx.addIssue({ code: "custom", path: ["shipping_latitude"], message: "Provide both latitude and longitude, or leave both blank." });
     }
@@ -118,7 +122,8 @@ export type OrderItemDetailView = Omit<OrderItemDetail, "price"> & {
   price: number | null;
 };
 
-export type OrderDetail = Omit<OrderForm, "items"> & {
+export type OrderDetail = Omit<OrderForm, "items" | "payment_type"> & {
+  payment_type?: string | null;
   id: number;
   order_number: string;
   version: number;

@@ -1,6 +1,10 @@
 import {
   AlertTriangle,
+  Columns2,
   List,
+  Map as MapIcon,
+  Maximize2,
+  Minimize2,
   Radio,
   RefreshCw,
   Wifi,
@@ -17,6 +21,8 @@ export type FleetCounts = {
   returning: number;
   available: number;
 };
+
+export type FleetView = "split" | "map" | "list";
 
 export type RealtimeStatus =
   | "connected"
@@ -36,6 +42,10 @@ type TopbarProps = {
   now: number;
   counts: FleetCounts;
   onOpenList: () => void;
+  view: FleetView;
+  onViewChange: (view: FleetView) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   onRetry: () => void;
   onReconnect: () => void;
   /** The testing-tools control, rendered on the right. */
@@ -55,21 +65,48 @@ export function Topbar({
   now,
   counts,
   onOpenList,
+  view,
+  onViewChange,
+  expanded,
+  onToggleExpanded,
   onRetry,
   onReconnect,
   tools,
 }: TopbarProps) {
   return (
-    <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-center gap-2">
+    <header className="shrink-0 space-y-3 border-b bg-background p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="mr-auto">
+          <h1 className="text-base font-semibold">Fleet tracking</h1>
+          <p className="hidden text-xs text-muted-foreground sm:block">Track vehicles, review trips, and manage return pickups.</p>
+        </div>
+        <div role="group" aria-label="Fleet view" className="flex items-center gap-1 rounded-lg border p-1">
+          {([
+            { value: "split", label: "Map & list", icon: Columns2 },
+            { value: "map", label: "Map only", icon: MapIcon },
+            { value: "list", label: "List only", icon: List },
+          ] as const).map(({ value, label, icon: Icon }) => (
+            <Button key={value} type="button" size="sm" variant={view === value ? "secondary" : "ghost"} className="h-8 gap-1.5 px-2 text-xs" aria-pressed={view === value} onClick={() => onViewChange(value)}>
+              <Icon className="size-3.5" aria-hidden="true" />{label}
+            </Button>
+          ))}
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={onToggleExpanded} aria-pressed={expanded} aria-label={expanded ? "Exit expanded workspace" : "Expand workspace"} title={expanded ? "Exit expanded workspace (Esc)" : "Expand workspace"}>
+          {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+          <span className="hidden sm:inline">{expanded ? "Exit expanded" : "Expand"}</span>
+        </Button>
+        {tools}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
       <Button
         type="button"
         size="sm"
         variant="outline"
         onClick={onOpenList}
-        className="pointer-events-auto gap-1.5 bg-background/95 shadow-sm backdrop-blur lg:hidden"
+        className={cn("gap-1.5 lg:hidden", view !== "split" && "hidden")}
       >
         <List className="size-4" />
-        List
+        Browse fleet
       </Button>
 
       <div className="pointer-events-auto">
@@ -86,7 +123,7 @@ export function Topbar({
         />
       </div>
 
-      <div className="pointer-events-auto hidden items-center gap-2 md:flex">
+      <div className="ml-auto hidden flex-wrap items-center gap-2 xl:flex">
         <span className={PILL}>
           <span className="size-2 rounded-full bg-blue-500" />
           {counts.delivering} on route
@@ -101,8 +138,8 @@ export function Topbar({
         </span>
       </div>
 
-      <div className="pointer-events-auto ml-auto">{tools}</div>
-    </div>
+      </div>
+    </header>
   );
 }
 

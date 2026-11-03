@@ -1,6 +1,7 @@
 "use client";
 
 import { OrderDetailsAction } from "./order-details-action";
+import { ProofOfDeliveryAction } from "./proof-of-delivery-action";
 import { RefundPickupAction } from "./refund-pickup-action";
 import { RunActions } from "./run-actions";
 import { QueryFeedback } from "@/components/query-feedback";
@@ -140,6 +141,7 @@ export default function DataTable() {
                   {order.failure_reason && <span className="max-w-48 text-xs text-destructive">{order.failure_reason}</span>}
                 </div>
                 <OrderDetailsAction orderId={order.order_id} orderNumber={order.order_number} />
+                {order.stop_id != null && <ProofOfDeliveryAction stopId={order.stop_id} orderNumber={order.order_number} />}
               </div>
             ))}
           </div>

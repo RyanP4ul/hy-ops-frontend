@@ -30,6 +30,8 @@ type InvoiceItem = {
 };
 
 type Invoice = {
+  paymentMethod?: string | null;
+  paymentType?: string | null;
   invoiceNumber: string;
   status: "DRAFT" | "ISSUED" | "VOID";
   issueDate: string;
@@ -61,6 +63,8 @@ type Invoice = {
 };
 
 type InvoiceResponse = {
+  payment_method?: string | null;
+  payment_type?: string | null;
   invoice_number: string;
   status: Invoice["status"];
   issue_date: string;
@@ -202,6 +206,8 @@ export default function Invoice({ orderId }: { orderId: number }) {
   }
 
   const invoice: Invoice = {
+    paymentMethod: invoiceQuery.data.payment_method,
+    paymentType: invoiceQuery.data.payment_type,
     invoiceNumber: invoiceQuery.data.invoice_number,
     status: invoiceQuery.data.status,
     issueDate: invoiceQuery.data.issue_date,
@@ -333,7 +339,9 @@ export default function Invoice({ orderId }: { orderId: number }) {
       );
       doc.text(`Balance due: ${formatPdfCurrency(balanceDue)}`, 120, 88);
 
-      const tableStartY = Math.max(customerY + 12, 102);
+      const paymentLines = doc.splitTextToSize(`Method: ${invoice.paymentMethod?.replaceAll("_", " ") || "Not specified"}${invoice.paymentType ? ` / ${invoice.paymentType}` : ""}`, pageWidth - 120 - margin);
+      doc.text(paymentLines, 120, 94);
+      const tableStartY = Math.max(customerY + 12, 98 + paymentLines.length * 4);
       autoTable(doc, {
         startY: tableStartY,
         margin: { left: margin, right: margin },
@@ -542,6 +550,9 @@ export default function Invoice({ orderId }: { orderId: number }) {
           <span className="text-right text-sm font-medium">
             {invoice.paymentArrangement.replaceAll("_", " ")}
           </span>
+          <span className="text-sm text-muted-foreground">Payment method</span>
+          <span className="text-right text-sm font-medium">{invoice.paymentMethod?.replaceAll("_", " ") || "Not specified"}</span>
+          {invoice.paymentType && <><span className="text-sm text-muted-foreground">Payment type</span><span className="max-w-64 break-words text-right text-sm font-medium">{invoice.paymentType}</span></>}
         </section>
       </div>
 

@@ -13,7 +13,7 @@ import { useReturnPickups } from "./components/return-pickups";
 import { FleetMapCanvas } from "./components/map-canvas";
 import { SimulationControls } from "./components/simulation-controls";
 import { Sidebar, type SidebarTab } from "./components/sidebar";
-import { Topbar } from "./components/topbar";
+import { Topbar, type FleetView } from "./components/topbar";
 import { VehiclePanel, type PanelTab } from "./components/vehicle-panel";
 import { EMPTY_WAREHOUSES, FLEET_POLL_MS } from "./constants";
 import { useFleetMutations } from "./hooks/use-fleet-mutations";
@@ -101,7 +101,25 @@ export default function Page() {
   );
   const [follow, setFollow] = useState(false);
   const [mobileListOpen, setMobileListOpen] = useState(false);
+  const [view, setView] = useState<FleetView>("split");
+  const [expanded, setExpanded] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      setExpanded(false);
+      requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-label="Expand workspace"]')?.focus());
+    }
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [expanded]);
 
   const selectedVehicle = vehicles.find((v) => v.id === selectedId) ?? null;
   const previewTrip =
@@ -205,13 +223,14 @@ export default function Page() {
   }
 
   function focusWarehouse(warehouse: WarehouseLocation) {
+    setView(current => current === "list" ? "split" : current);
     setFocusedWarehouseId(warehouse.id);
     setMobileListOpen(false);
-    mapRef.current?.easeTo({
+    requestAnimationFrame(() => mapRef.current?.easeTo({
       center: warehouse.coordinates,
       zoom: 14,
       duration: 800,
-    });
+    }));
   }
 
   function fitPoints(points: [number, number][]) {
@@ -219,22 +238,22 @@ export default function Page() {
     const bounds = getBounds(points);
     if (!map || !bounds) return;
 
-    const wide = map.getContainer().clientWidth > 900;
     setFollow(false);
-    map.fitBounds(bounds, {
+    requestAnimationFrame(() => map.fitBounds(bounds, {
       padding: {
         top: 90,
         bottom: 90,
         left: 60,
-        right: wide ? 460 : 60, // keep clear of the details panel
+        right: 60,
       },
       maxZoom: 14,
       duration: 800,
-    });
+    }));
   }
 
   function fitSelectedRoute() {
     if (!selectedVehicle) return;
+    setView(current => current === "list" ? "split" : current);
     const points = [
       ...(vehicleRoadRoutes.get(selectedVehicle.id)?.coordinates ?? []),
       ...(simulationOn
@@ -247,6 +266,7 @@ export default function Page() {
   }
 
   function previewTripOnMap(tripId: string | null) {
+    if (tripId) setView(current => current === "list" ? "split" : current);
     setPreviewTripId(tripId);
     const trip = selectedVehicle?.scheduledTrips.find((t) => t.id === tripId);
     if (selectedVehicle && trip) {
@@ -345,7 +365,12 @@ export default function Page() {
       returnsLoading={returns.isPending}
       returnsError={returns.isError}
       onRetryReturns={() => { void returns.refetch(); }}
-      onFocusReturn={point => { closePanel(); mapRef.current?.flyTo({ center: point, zoom: 14 }); }}
+      onFocusReturn={point => {
+        closePanel();
+        setMobileListOpen(false);
+        setView(current => current === "list" ? "split" : current);
+        requestAnimationFrame(() => mapRef.current?.flyTo({ center: point, zoom: 14 }));
+      }}
       simulationOn={simulationOn}
       tab={sidebarTab}
       onTabChange={setSidebarTab}
@@ -360,63 +385,17 @@ export default function Page() {
   );
 
   return (
-    <div className="relative flex h-full min-h-[560px] w-full overflow-hidden rounded-xl border bg-background text-foreground">
-      {/* Desktop sidebar */}
-      <aside className="hidden w-[360px] shrink-0 border-r lg:block">
-        {sidebar}
-      </aside>
-
-      {/* Mobile list overlay */}
-      {mobileListOpen ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-background lg:hidden">
-          <div className="flex justify-end border-b p-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => setMobileListOpen(false)}
-              className="gap-1.5"
-            >
-              <X className="size-4" />
-              Close
-            </Button>
-          </div>
-          <div className="min-h-0 flex-1">{sidebar}</div>
-        </div>
-      ) : null}
-
-      <main className="relative min-w-0 flex-1">
-        <FleetMapCanvas
-          returnPickups={simulationOn ? [] : returns.data ?? []}
-          mapRef={mapRef}
-          vehicles={vehicles}
-          warehouses={warehouses}
-          positions={positions}
-          selectedId={selectedId}
-          previewTrip={previewTrip}
-          roadRoutes={vehicleRoadRoutes}
-          previewRoute={roadRoutes.preview}
-          simulationOn={simulationOn}
-          focusedWarehouseId={focusedWarehouseId}
-          onSelectVehicle={selectVehicle}
-          onFocusWarehouse={focusWarehouse}
-        />
-
-        {!simulationOn && selectedVehicle && selectedPosition?.signal === "none" && (
-          <div role="status" className="absolute bottom-16 left-3 z-10 max-w-[75%] rounded-md border bg-background/95 px-3 py-2 text-sm shadow-sm">
-            Waiting for vehicle GPS to draw a route.
-          </div>
-        )}
-        {roadRoutes.isPending || roadRoutes.isError ? (
-          <div role="status" className="absolute bottom-4 left-3 z-10 flex max-w-[75%] items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs shadow-sm">
-            {roadRoutes.isError ? "Some road routes are unavailable." : "Loading road routes..."}
-            {roadRoutes.isError ? (
-              <button type="button" className="font-semibold underline" onClick={roadRoutes.retry}>Retry</button>
-            ) : null}
-          </div>
-        ) : null}
-
+    <div
+      aria-label="Fleet workspace"
+      role="region"
+      className="relative flex h-[calc(100dvh-var(--header-height)-1rem)] min-h-[480px] w-full flex-col overflow-hidden rounded-xl border bg-background text-foreground"
+      style={expanded ? { position: "fixed", inset: 0, zIndex: 50, height: "100dvh", minHeight: 0, maxWidth: "none", borderRadius: 0 } : undefined}
+    >
         <Topbar
+          view={view}
+          onViewChange={(nextView) => { setView(nextView); setMobileListOpen(false); }}
+          expanded={expanded}
+          onToggleExpanded={() => setExpanded(current => !current)}
           simulationOn={simulationOn}
           feedError={fleet.isError}
           gpsError={live.isError}
@@ -451,8 +430,64 @@ export default function Page() {
           }
         />
 
+      <div className="@container relative flex min-h-0 flex-1 overflow-hidden">
+      {/* Desktop sidebar */}
+      <aside aria-label="Fleet list" className={cn("min-h-0 border-r", view === "list" ? "min-w-0 flex-1" : view === "map" ? "hidden" : "hidden w-[320px] shrink-0 lg:block xl:w-[360px]")}>
+        {sidebar}
+      </aside>
+
+      {/* Mobile list overlay */}
+      {mobileListOpen && view === "split" ? (
+        <div className="absolute inset-0 z-30 flex flex-col bg-background lg:hidden">
+          <div className="flex justify-end border-b p-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setMobileListOpen(false)}
+              className="gap-1.5"
+            >
+              <X className="size-4" />
+              Close
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1">{sidebar}</div>
+        </div>
+      ) : null}
+
+      <div aria-label="Fleet map" className={cn("relative min-w-0 flex-1", view === "list" && "hidden")}>
+        <FleetMapCanvas
+          returnPickups={simulationOn ? [] : returns.data ?? []}
+          mapRef={mapRef}
+          vehicles={vehicles}
+          warehouses={warehouses}
+          positions={positions}
+          selectedId={selectedId}
+          previewTrip={previewTrip}
+          roadRoutes={vehicleRoadRoutes}
+          previewRoute={roadRoutes.preview}
+          simulationOn={simulationOn}
+          focusedWarehouseId={focusedWarehouseId}
+          onSelectVehicle={selectVehicle}
+          onFocusWarehouse={focusWarehouse}
+        />
+
+        {!simulationOn && selectedVehicle && selectedPosition?.signal === "none" && (
+          <div role="status" className="absolute bottom-16 left-3 z-10 max-w-[75%] rounded-md border bg-background/95 px-3 py-2 text-sm shadow-sm">
+            Waiting for vehicle GPS to draw a route.
+          </div>
+        )}
+        {roadRoutes.isPending || roadRoutes.isError ? (
+          <div role="status" className="absolute bottom-4 left-3 z-10 flex max-w-[75%] items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs shadow-sm">
+            {roadRoutes.isError ? "Some road routes are unavailable." : "Loading road routes..."}
+            {roadRoutes.isError ? (
+              <button type="button" className="font-semibold underline" onClick={roadRoutes.retry}>Retry</button>
+            ) : null}
+          </div>
+        ) : null}
+
         {simulationOn ? (
-          <div className="absolute left-1/2 top-16 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-800 shadow-sm backdrop-blur dark:text-violet-200">
+          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-800 shadow-sm backdrop-blur dark:text-violet-200">
             <FlaskConical className="size-3.5" />
             Simulation: vehicle positions are not real
             <button
@@ -465,8 +500,9 @@ export default function Page() {
           </div>
         ) : null}
 
+      </div>
         {selectedVehicle && selectedPosition ? (
-          <div className="absolute z-20 max-lg:inset-x-2 max-lg:bottom-2 max-lg:h-[62%] lg:bottom-3 lg:right-3 lg:top-16 lg:w-[400px]">
+          <div className="absolute inset-x-2 bottom-2 z-20 h-[70%] min-h-0 shrink-0 @3xl:inset-y-2 @3xl:left-auto @3xl:h-auto @3xl:w-[360px] @5xl:relative @5xl:inset-auto @5xl:h-full @5xl:border-l @5xl:p-2">
             <VehiclePanel
               vehicle={selectedVehicle}
               warehouse={getWarehouse(selectedVehicle, warehouses)}
@@ -484,7 +520,7 @@ export default function Page() {
               previewTripId={previewTripId}
               onPreviewTrip={previewTripOnMap}
               follow={follow}
-              onFollowChange={setFollow}
+              onFollowChange={(nextFollow) => { setFollow(nextFollow); if (nextFollow) setView(current => current === "list" ? "split" : current); }}
               onFitTrip={fitSelectedRoute}
               onClose={closePanel}
               onDispatch={(tripId) => dispatchTrip(selectedVehicle, tripId)}
@@ -522,7 +558,7 @@ export default function Page() {
             </button>
           </div>
         ) : null}
-      </main>
+      </div>
     </div>
   );
 }

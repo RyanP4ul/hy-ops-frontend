@@ -141,7 +141,7 @@ export default function OrderDialog() {
       "customer_address_id",
     ],
     ["items"],
-    ["payment_arrangement", "payment_method", "amount_paid"],
+    ["payment_arrangement", "payment_method", "payment_type", "amount_paid"],
   ];
 
   async function performAction(path: string, data?: object, method = "POST") {
@@ -580,6 +580,7 @@ function OrderActionDetails({
             label="Payment Method"
             value={formatValue(order.payment_method)}
           />
+          {order.payment_type && <ViewOrderItem label="Payment Type" value={order.payment_type} />}
           <ViewOrderItem
             label="Order Total"
             value={total === null ? "Unverified" : formatCurrency(total)}

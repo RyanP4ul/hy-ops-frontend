@@ -15,16 +15,18 @@ import {
 import { request } from "@/components/http";
 import { resourceQueryRoots } from "@/lib/realtime";
 import { toast } from "sonner";
+import { WarehouseReturnDialog } from "@/components/warehouse-return-dialog";
 
 export function RunActions({ id, status, overdue }: { id: number; status: string; overdue?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const cache = useQueryClient();
   if (status !== "scheduled" && status !== "returning") return null;
   async function act() {
     if (busy || (status === "scheduled" && overdue)) return;
     const completing = status === "returning";
-    if (completing && !window.confirm("Confirm the vehicle is back and ALL collected customer returns have physically reached the warehouse. Customer returns are recorded as received, without automatic restocking. Also confirm ALL goods from failed stops have physically returned in full and are suitable for resale. This restores and reserves those goods for rescheduling. If goods are missing or damaged, cancel and contact an administrator.")) return;
+    setActionError(null);
     setBusy(true);
     try {
       const response = await request("POST", `/api/deliveries/${id}/${completing ? "complete" : "dispatch"}`);
@@ -32,7 +34,11 @@ export function RunActions({ id, status, overdue }: { id: number; status: string
       if (!response.ok) throw new Error(payload.message ?? "Unable to confirm delivery action. Refresh before retrying.");
       toast.success(completing ? "Warehouse return confirmed" : "Delivery dispatched");
       setOpen(false);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to confirm delivery action"); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to confirm delivery action";
+      setActionError(message);
+      toast.error(message);
+    }
     finally {
       await Promise.all(resourceQueryRoots.deliveries.map(root => cache.invalidateQueries({ queryKey: [root] })));
       setBusy(false);
@@ -40,9 +46,7 @@ export function RunActions({ id, status, overdue }: { id: number; status: string
   }
   if (status === "returning") {
     return (
-      <Button variant="outline" disabled={busy} onClick={act}>
-        {busy ? "Confirming…" : "Confirm warehouse return"}
-      </Button>
+      <WarehouseReturnDialog open={open} onOpenChange={setOpen} busy={busy} onConfirm={act} error={actionError} />
     );
   }
 
