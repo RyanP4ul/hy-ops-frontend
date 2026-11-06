@@ -11,14 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
   Table,
   TableBody,
   TableCell,
@@ -32,43 +24,26 @@ import { useModal } from "@/components/providers/modal-provider";
 import { useOrders } from "../provider";
 import {
   Loader2,
-  Eye,
-  Truck,
-  Package,
-  Pencil,
-  Trash2,
+  ShoppingBag,
   Plus,
-  CreditCard,
-  ClipboardCheck,
   ArrowLeft,
   ArrowRight,
 } from "lucide-react";
 import { request, requestWithErrorHandling } from "@/components/http";
-import { useWebSocket } from "@/components/providers/websocket-provider";
 import Form from "./form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useEffect, useRef, useState } from "react";
 import { OrderDetail, OrderForm, OrderItemDetail } from "@/schema/order";
-import { toast } from "sonner";
-import { REQUESTS } from "@/constant/request";
 import { formatCurrency } from "@/utils/date-util";
 import Invoice from "./invoice";
 import OrderItemDialog from "./item-dialog";
 import { QueryFeedback } from "@/components/query-feedback";
-import { WorkflowStepper, WorkflowSummary, type WorkflowStep } from "@/components/workflow-stepper";
+import { CreateOrderWorkspace, OrderSubmissionStatus } from "./create-order-workspace";
+import { orderBatchFormSchema, draftForPaymentMode } from "@/schema/order-batch";
 
 export default function OrderDialog() {
   const { state, dispatch } = useModal();
-  const { send } = useWebSocket();
   const [actionPending, setActionPending] = useState(false);
   const [nextPending, setNextPending] = useState(false);
   const initializedEdit = useRef<object | null>(null);
@@ -81,9 +56,11 @@ export default function OrderDialog() {
     orderDetailQuery,
     orderViewQuery,
     selected,
-    customerOrderEligibility,
-    warehouseCB,
-    customerCB,
+    draftOrders,
+    activeDraftIndex,
+    orderCount,
+    addAnotherOrder,
+    paymentMode,
   } = useOrders();
 
   useEffect(() => {
@@ -111,21 +88,8 @@ export default function OrderDialog() {
     form,
   ]);
 
-  const steps: WorkflowStep[] = [
-    { title: "Customer & address", description: "Choose the warehouse, customer and delivery address for this order.", icon: Package,
-      details: ["Start with the warehouse that will supply the stock.", "Choose a saved customer address or enter a custom recipient and destination."] },
-    { title: "Order items", description: "Add products and confirm the quantities the customer needs.", icon: ClipboardCheck,
-      details: ["Check each product variant, quantity and unit price.", "Stock and current prices are checked again when you continue."] },
-    { title: "Payment", description: "Record the payment arrangement, method and amount received.", icon: CreditCard,
-      details: ["Use the amount actually received, not the outstanding balance.", "The paid amount must match the selected payment arrangement."] },
-    { title: "Review & create", description: "Check the complete order before creating it.", icon: ClipboardCheck,
-      details: ["Return to an earlier step if the customer, address, items or payment needs changing.", "The order is submitted only when you select Create order."] },
-  ];
-  const draftItems = form.watch("items") ?? [];
-  const draftWarehouse = form.watch("warehouse_id");
-  const draftCustomer = form.watch("customer_id");
-  const draftPricesKnown = draftItems.every(item => typeof item.price === "number" && Number.isFinite(item.price));
-  const draftTotal = draftItems.reduce((sum, item) => sum + (item.price ?? 0) * item.quantity, 0);
+  const steps = [{ title: "Customer & address" }, { title: "Order items" }, { title: "Payment" }, { title: "Review & create" }];
+  const creating = state.mode === DialogMode.INSERT;
 
   const fieldsByStep: (keyof (OrderForm & { items: OrderItemDetail[] }))[][] = [
     [
@@ -183,21 +147,6 @@ export default function OrderDialog() {
         return;
       }
 
-      if (state.mode === DialogMode.INSERT && step === 0) {
-        const customerId = form.getValues("customer_id");
-        if (customerId > 0) {
-          const eligibility = await customerOrderEligibility.refetch();
-          if (eligibility.isError || !eligibility.data) return;
-          if (!eligibility.data.eligible) {
-            toast.error(
-              eligibility.data.message ??
-                "This customer has reached the active order limit.",
-            );
-            return;
-          }
-        }
-      }
-
       if (step === 1) {
         const items = form.getValues("items");
         const response = await request(
@@ -216,12 +165,14 @@ export default function OrderDialog() {
           price: string;
         }[];
         for (const item of items) {
+          const otherQuantity = draftOrders.reduce((sum, draft, index) => index === activeDraftIndex ? sum :
+            sum + draft.data.items.filter(other => other.inventory_id === item.inventory_id).reduce((quantity, other) => quantity + other.quantity, 0), 0);
           const available = stock.find(
             (row) => row.inventory_id === item.inventory_id,
           );
-          if (!available || item.quantity > available.quantity) {
+          if (!available || item.quantity + otherQuantity > available.quantity) {
             form.setError("root", {
-              message: `Stock changed for ${item.product_variant_sku}. Adjust the quantity before continuing.`,
+              message: `Stock changed for ${item.product_variant_sku}. Adjust the quantity before continuing; stock is shared across all orders in this submission.`,
             });
             return;
           }
@@ -237,7 +188,7 @@ export default function OrderDialog() {
           })),
         );
       }
-      if (step === 2) {
+      if (step === 2 && paymentMode === "SEPARATE") {
         const total = Math.round(
           form
             .getValues("items")
@@ -281,17 +232,18 @@ export default function OrderDialog() {
 
   return (
     <>
-      <DialogContent className={getModalSize()}>
-        <DialogHeader>
-          <DialogTitle>{state.title}</DialogTitle>
-          <DialogDescription>{state.description}</DialogDescription>
+      <DialogContent className={creating ? "grid max-h-none max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl p-0 transition-none sm:max-w-none" : getModalSize()}
+        style={creating ? { width: "min(1180px, calc(100vw - 2rem))", maxWidth: "calc(100vw - 2rem)", height: "min(900px, calc(100dvh - 2rem))", maxHeight: "calc(100dvh - 2rem)" } : undefined}>
+        <DialogHeader className={creating ? "flex-row items-center gap-3 border-b px-4 py-5 pr-12 sm:px-7 sm:pr-12" : undefined}>
+          {creating && <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background"><ShoppingBag className="size-5" aria-hidden="true" /></div>}
+          <div className="min-w-0 flex-1">
+            <DialogTitle className={creating ? "text-xl font-semibold tracking-tight" : undefined}>{state.title}</DialogTitle>
+            <DialogDescription className={creating ? "mt-1.5 text-xs sm:text-sm" : undefined}>{creating ? "Prepare one order or several destinations for the same customer." : state.description}</DialogDescription>
+          </div>
+          {creating && <span className="hidden shrink-0 rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium sm:inline-flex">{orderCount} {orderCount === 1 ? "order" : "orders"}</span>}
         </DialogHeader>
 
-        {form.formState.errors.root && (
-          <p role="alert" className="text-sm text-destructive">
-            {form.formState.errors.root.message}
-          </p>
-        )}
+        {!creating && form.formState.errors.root && <p role="alert" className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
         {state.mode === DialogMode.VIEW && (
           <QueryFeedback query={orderViewQuery} label="order details" />
         )}
@@ -333,19 +285,9 @@ export default function OrderDialog() {
             aria-label="Loading"
           />
         ) : [DialogMode.INSERT].includes(state.mode) && state.isOpen ? (
-          <>
-            <WorkflowStepper label="Order creation progress" steps={steps} current={step}
-              disabled={nextPending || form.formState.isSubmitting}
-              onBackToStep={setStep}
-              summary={<WorkflowSummary items={[
-                { label: "Warehouse", value: warehouseCB.inputValue || (draftWarehouse > 0 ? `Warehouse #${draftWarehouse}` : "Choose a warehouse") },
-                { label: "Customer", value: customerCB.inputValue || (draftCustomer > 0 ? `Customer #${draftCustomer}` : "Choose a customer") },
-                { label: "Items", value: `${draftItems.length} ${draftItems.length === 1 ? "line item" : "line items"}` },
-                { label: "Order total", value: draftItems.length ? (draftPricesKnown ? formatCurrency(draftTotal) : "Prices not confirmed") : "Add items to calculate" },
-              ]} />}
-            />
-            <Form />
-          </>
+          <CreateOrderWorkspace disabled={nextPending || form.formState.isSubmitting} error={form.formState.errors.root?.message}>
+            <Form key={`${activeDraftIndex}:${orderCount}`} />
+          </CreateOrderWorkspace>
         ) : state.mode === DialogMode.VIEW && state.isOpen ? (
           <ViewOrderDetails
             order={orderViewQuery.data || null}
@@ -414,13 +356,14 @@ export default function OrderDialog() {
           )
         )}
 
-        <DialogFooter className={state.mode === DialogMode.INSERT ? "sticky -bottom-4 z-20 flex-wrap items-center rounded-lg border bg-background/95 p-3 backdrop-blur-sm" : ""}>
+        <DialogFooter className={creating ? "mx-0 mb-0 flex-row flex-wrap items-center gap-2 rounded-none border-t bg-background px-4 py-4 sm:px-7" : ""}>
           {state.mode === DialogMode.INSERT ? (
             <>
-              <p className="w-full text-xs text-muted-foreground sm:mr-auto sm:w-auto">{step === steps.length - 1 ? "Ready to create? Check the details above." : `Step ${step + 1} of ${steps.length} / Changes are not saved yet.`}</p>
+              <OrderSubmissionStatus />
               <Button
                 type="button"
                 variant="outline"
+                className="min-h-10 flex-1 sm:flex-none"
                 onClick={() => setStep((current) => Math.max(current - 1, 0))}
                 disabled={
                   step === 0 || nextPending || form.formState.isSubmitting
@@ -433,15 +376,10 @@ export default function OrderDialog() {
               {step < steps.length - 1 && (
                 <Button
                   type="button"
-                  className="h-auto min-h-10 min-w-0 whitespace-normal text-left"
+                  className="h-auto min-h-10 min-w-0 flex-1 whitespace-normal py-2 text-left sm:flex-none"
                   onClick={handleNext}
                   disabled={
-                    nextPending ||
-                    (step === 0 &&
-                      form.getValues("customer_id") > 0 &&
-                      (customerOrderEligibility.isFetching ||
-                        customerOrderEligibility.isError ||
-                        customerOrderEligibility.data?.eligible === false))
+                    nextPending
                   }
                 >
                   {nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}
@@ -450,8 +388,19 @@ export default function OrderDialog() {
               )}
 
               {step === steps.length - 1 && (
+                <Button type="button" variant="outline" className="h-auto min-h-10 flex-1 whitespace-normal py-2 sm:flex-none" disabled={form.formState.isSubmitting || nextPending || orderCount >= 25} onClick={() => {
+                  const result = orderBatchFormSchema.safeParse({ customer_id: form.getValues("customer_id"), orders: [draftForPaymentMode(form.getValues(), paymentMode)] });
+                  if (!result.success) {
+                    form.setError("root", { message: result.error.issues[0]?.message ?? "Complete this order before adding another." });
+                    return;
+                  }
+                  addAnotherOrder();
+                }}><Plus className="size-4 shrink-0" aria-hidden="true" />Add another order</Button>
+              )}
+              {step === steps.length - 1 && (
                 <Button
                   variant={"default"}
+                  className="h-auto min-h-10 flex-1 whitespace-normal py-2 sm:flex-none"
                   disabled={
                     !state.isOpen ||
                     form.formState.isSubmitting ||
@@ -463,7 +412,7 @@ export default function OrderDialog() {
                   {form.formState.isSubmitting && (
                     <Loader2 className="mr-2 size-4 animate-spin" />
                   )}
-                  {form.formState.isSubmitting ? "Creating order..." : "Create order"}
+                  {form.formState.isSubmitting ? (orderCount > 1 ? `Creating ${orderCount} orders...` : "Creating order...") : (orderCount > 1 ? `Create all ${orderCount} orders` : "Create order")}
                 </Button>
               )}
             </>

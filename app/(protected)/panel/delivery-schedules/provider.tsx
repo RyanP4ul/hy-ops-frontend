@@ -4,8 +4,10 @@ import { useComboBoxPagination } from "@/components/base-pagination";
 import { request } from "@/components/http";
 import {
   DeliveryScheduleFormData,
+  OrderGroupFields,
   DeliveryScheduleOrderDetail,
   DeliveryScheduleRow,
+  SchedulingEntry,
   deliveryScheduleSchema,
 } from "@/schema/delivery-schedule";
 import {
@@ -26,6 +28,11 @@ import {
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+type WarehouseOption = { id: number; name: string; latitude?: string | null; longitude?: string | null };
+type DriverOption = { id: number; name: string; phone_number: string | null };
+type VehicleOption = { id: number; plate_number: string; type: string };
+type SortedRoute = { locations: { id: string; name: string }[] };
+
 type SubType = {
   id?: number;
   is_open: boolean;
@@ -33,9 +40,13 @@ type SubType = {
 };
 
 type DeliveryScheduleType = {
+  removeSelection: (orderId: number) => void;
+  startSchedule: (warehouseId?: number, orderIds?: number[]) => void;
+  addReadyGroup: (groupId: string) => Promise<boolean>;
+  groupPending: boolean;
   deliveryScheduleQuery: ReturnType<
     typeof useQuery<{
-      rows: DeliveryScheduleRow[];
+      rows: SchedulingEntry[];
       total: number;
     }>
   >;
@@ -53,13 +64,13 @@ type DeliveryScheduleType = {
   vehicleCB: ReturnType<typeof useComboBoxPagination>;
 
   warehouseQuery: UseQueryResult<{
-    rows: { id: number; name: string }[];
+    rows: WarehouseOption[];
     total: number;
   }>;
 
   orderQuery: ReturnType<
     typeof useQuery<{
-      rows: any[];
+      rows: SchedulingEntry[];
       total: number;
     }>
   >;
@@ -79,14 +90,14 @@ type DeliveryScheduleType = {
 
   driverQuery: ReturnType<
     typeof useQuery<{
-      rows: any[];
+      rows: DriverOption[];
       total: number;
     }>
   >;
 
   vehicleQuery: ReturnType<
     typeof useQuery<{
-      rows: any[];
+      rows: VehicleOption[];
       total: number;
     }>
   >;
@@ -94,7 +105,7 @@ type DeliveryScheduleType = {
   sub: SubType;
   setSub: Dispatch<SetStateAction<SubType>>;
 
-  sortDistanceMutation: ReturnType<typeof useMutation<EstimateResponse>>;
+  sortDistanceMutation: ReturnType<typeof useMutation<SortedRoute>>;
 
   driverExpensesMutation: ReturnType<typeof useMutation<EstimateResponse>>;
 };
@@ -119,6 +130,7 @@ export function DeliveryScheduleProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const [groupPending, setGroupPending] = useState(false);
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
   const [step, setStep] = useState(0);
@@ -161,6 +173,17 @@ export function DeliveryScheduleProvider({
     },
   });
 
+  function startSchedule(warehouseId = -1, orderIds: number[] = []) {
+    form.reset({ warehouse_id: warehouseId, order_ids: orderIds, scheduled_date: undefined,
+      scheduled_time: "", delivery_type: "INTERNAL", driver_id: -1, vehicle_id: -1,
+      delivery_allowance: 0, fuel: 0, toll: 0 });
+    setStep(0); setSub({ is_open: false, mode: DialogMode.DEFAULT });
+    warehouseCB.setInputValue(warehouseQuery.data?.rows.find((row: WarehouseOption) => row.id === warehouseId)?.name ?? "");
+    for (const picker of [orderCB, driverCB, vehicleCB]) {
+      picker.setInputValue(""); picker.setSearchQuery(""); picker.setPage(0); picker.setOpen(false);
+    }
+  }
+
   const deliveryScheduleQuery = useQuery({
     queryKey: ["deliveryScheduleQuery", page.pageIndex, page.pageSize, search],
 
@@ -183,7 +206,7 @@ export function DeliveryScheduleProvider({
       }
 
       return {
-        rows: (await response.json()) as DeliveryScheduleRow[],
+        rows: (await response.json()) as SchedulingEntry[],
         total: Number(response.headers.get("X-Total-Count") ?? 0),
       };
     },
@@ -206,13 +229,13 @@ export function DeliveryScheduleProvider({
         warehouseId.toString(),
       );
 
-      const response = await request("GET", `/api/orders/cb?${url_params.toString()}`);
+      const response = await request("GET", `/api/delivery-schedules?${url_params.toString()}`);
 
       if (!response.ok) {
         throw new Error("Unable to load ready orders. Please retry.");
       }
 
-      const result = await response.json();
+      const result = { rows: await response.json(), total: Number(response.headers.get("X-Total-Count") ?? 0) };
 
       orderCB.setTotalPages(Math.ceil(result.total / 10));
 
@@ -259,8 +282,44 @@ export function DeliveryScheduleProvider({
       return await response.json();
     },
 
-    enabled: step === 1 && warehouseId > 0,
+    enabled: warehouseId > 0,
   });
+
+  function removeSelection(orderId: number) {
+    const selected = orderDetailQuery.data?.find(order => order.id === orderId);
+    const groupIds = selected?.order_group_id
+      ? new Set(orderDetailQuery.data?.filter(order => order.order_group_id === selected.order_group_id).map(order => order.id))
+      : new Set([orderId]);
+    form.setValue("order_ids", form.getValues("order_ids").filter(id => !groupIds.has(id)), { shouldDirty: true, shouldValidate: true });
+  }
+
+  async function addReadyGroup(groupId: string) {
+    if (groupPending) return false;
+    setGroupPending(true);
+    try {
+      const warehouse = form.getValues("warehouse_id");
+      const response = await request("GET", `/api/orders/groups/${groupId}/ready?warehouse_id=${warehouse}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Unable to load this order group.");
+      const rows = result.rows as (OrderGroupFields & { id: number; shipping_latitude: string | null; shipping_longitude: string | null })[];
+      if (!rows.length) throw new Error("This group has no ready orders in this warehouse.");
+      if (rows.some(row => row.shipping_latitude == null || row.shipping_longitude == null ||
+        !Number.isFinite(Number(row.shipping_latitude)) || !Number.isFinite(Number(row.shipping_longitude)) ||
+        Math.abs(Number(row.shipping_latitude)) > 90 || Math.abs(Number(row.shipping_longitude)) > 180 ||
+        (Number(row.shipping_latitude) === 0 && Number(row.shipping_longitude) === 0))) {
+        throw new Error("Confirm destination coordinates for every order in this group before adding it.");
+      }
+      if (warehouse !== form.getValues("warehouse_id")) return false;
+      const ids = [...new Set([...form.getValues("order_ids"), ...rows.map(row => row.id)])];
+      form.setValue("order_ids", ids, { shouldDirty: true, shouldValidate: true });
+      form.clearErrors("root");
+      toast.success(`${rows.length} ready orders in ${result.group_number}. Orders already selected are included once.`);
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to add the order group.");
+      return false;
+    } finally { setGroupPending(false); }
+  }
 
   const driverQuery = useQuery({
     queryKey: ["drivers", "scheduling", warehouseId, driverCB.page, driverCB.searchQuery],
@@ -335,7 +394,7 @@ export function DeliveryScheduleProvider({
       const warehouse_id = form.getValues("warehouse_id");
 
       const warehouse_data = warehouseQuery.data?.rows.find(
-        (warehouse: any) => warehouse.id === warehouse_id,
+        (warehouse: WarehouseOption) => warehouse.id === warehouse_id,
       );
 
       const locations: {
@@ -347,7 +406,7 @@ export function DeliveryScheduleProvider({
 
       for (const order_id of order_ids) {
         const orderDetail = orderDetailQuery.data?.find(
-          (order: any) => order.id === order_id,
+          (order: DeliveryScheduleOrderDetail) => order.id === order_id,
         );
 
         if (orderDetail) {
@@ -389,13 +448,13 @@ export function DeliveryScheduleProvider({
     },
 
     onError: (error) => toast.error(error.message),
-    onSuccess: async (result: any) => {
-      const new_order_ids: number[] = result.locations.map((location: any) =>
+    onSuccess: async (result: SortedRoute) => {
+      const new_order_ids: number[] = result.locations.map((location: SortedRoute["locations"][number]) =>
         Number(location.id),
       );
 
       toast.success(
-        `Sorted ${result.locations.map((location: any) => location.name).join(", ")} orders by distance from warehouse`,
+        `Sorted ${result.locations.map((location: SortedRoute["locations"][number]) => location.name).join(", ")} orders by distance from warehouse`,
         {
           duration: 4000,
         },
@@ -408,14 +467,14 @@ export function DeliveryScheduleProvider({
   });
 
   const driverExpensesMutation = useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async () => {
       const points: {
         latitude: number;
         longitude: number;
       }[] = [];
       for (const order_id of order_ids) {
         const orderDetail = orderDetailQuery.data?.find(
-          (order: any) => order.id === order_id,
+          (order: DeliveryScheduleOrderDetail) => order.id === order_id,
         );
 
         if (orderDetail) {
@@ -468,6 +527,7 @@ export function DeliveryScheduleProvider({
   return (
     <DeliveryScheduleContext.Provider
       value={{
+        removeSelection, startSchedule, addReadyGroup, groupPending,
         deliveryScheduleQuery,
         form,
         page,

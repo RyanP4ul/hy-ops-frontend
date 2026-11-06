@@ -47,7 +47,7 @@ test("deduplication cache is bounded", () => {
 
 test("order changes invalidate related finance, stock, calendar and fleet caches", () => {
   const roots = affectedQueryRoots({ type: "RESOURCE_CHANGED", payload: { resource: "orders" } });
-  for (const root of ["orders", "payments", "inventory", "invoice", "fleet", "event_query", "dashboard_query"]) expect(roots).toContain(root);
+  for (const root of ["orders", "customer_query", "payments", "inventory", "invoice", "fleet", "event_query", "dashboard_query"]) expect(roots).toContain(root);
   expect(affectedQueryRoots({ type: "RESOURCE_CHANGED", payload: { resource: "unknown" } })).toEqual([]);
 });
 

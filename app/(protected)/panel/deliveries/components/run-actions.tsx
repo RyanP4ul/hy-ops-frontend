@@ -17,7 +17,7 @@ import { resourceQueryRoots } from "@/lib/realtime";
 import { toast } from "sonner";
 import { WarehouseReturnDialog } from "@/components/warehouse-return-dialog";
 
-export function RunActions({ id, status, overdue }: { id: number; status: string; overdue?: boolean }) {
+export function RunActions({ id, status, overdue, warehouseName }: { id: number; status: string; overdue?: boolean; warehouseName?: string }) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -46,7 +46,17 @@ export function RunActions({ id, status, overdue }: { id: number; status: string
   }
   if (status === "returning") {
     return (
-      <WarehouseReturnDialog open={open} onOpenChange={setOpen} busy={busy} onConfirm={act} error={actionError} />
+      <WarehouseReturnDialog
+        open={open}
+        onOpenChange={(value) => {
+          if (value) setActionError(null);
+          setOpen(value);
+        }}
+        busy={busy}
+        onConfirm={act}
+        error={actionError}
+        warehouseName={warehouseName}
+      />
     );
   }
 

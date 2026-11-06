@@ -61,7 +61,7 @@ import { DestinationEditor } from "./destination-editor";
 import { QueryFeedback } from "@/components/query-feedback";
 
 export default function SubDialog() {
-  const { form, sub, setSub, orderCB, orderQuery } = useDeliverySchedule();
+  const { form, sub, setSub, orderCB, orderQuery, addReadyGroup, groupPending, removeSelection } = useDeliverySchedule();
 
   const item_form = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
@@ -79,6 +79,12 @@ export default function SubDialog() {
       (Number(order.shipping_latitude) !== 0 || Number(order.shipping_longitude) !== 0);
   }
   async function onSubmit(data: OrderFormData) {
+    if (selectedOrder?.order_group_id) {
+      if (await addReadyGroup(selectedOrder.order_group_id)) {
+        item_form.reset(); setSub({ is_open: false, mode: DialogMode.DEFAULT });
+      }
+      return;
+    }
     if (!locationReady(selectedOrder)) { item_form.setError("order_id", { message: "Confirm this order's destination coordinates before adding it." }); return; }
     const currentOrderIds = form.getValues("order_ids") || [];
 
@@ -137,7 +143,7 @@ export default function SubDialog() {
                     (order) => order.id === Number(value),
                   );
 
-                  orderCB.setInputValue(selectedOrder?.order_number ?? "");
+                  orderCB.setInputValue(selectedOrder?.order_group_number || selectedOrder?.order_number || "");
 
                   field.onChange(value ? Number(value) : null);
                 }}
@@ -159,18 +165,18 @@ export default function SubDialog() {
                       {orderQuery.data?.rows?.map((order) => {
                         const order_ids = form.getValues("order_ids") || [];
 
-                        if (order_ids.includes(order.id)) {
+                        if (order.members.every(member => order_ids.includes(member.id))) {
                           return null; // Skip rendering this order if it's already in the array
                         }
 
                         return (
-                          <ComboboxItem key={order.id} value={String(order.id)}>
+                          <ComboboxItem key={order.id} value={String(order.id)} disabled={!!order.order_group_id && order.ready_count !== order.total_members}>
                             <Item size="xs" className="p-0">
                               <ItemContent>
                                 <ItemTitle className="whitespace-nowrap">
-                                  ({order.id}) {order.order_number}
+                                  {order.order_group_number || order.order_number}
                                 </ItemTitle>
-                                <ItemDescription>{order.customer_name}</ItemDescription>
+                                <ItemDescription>{order.customer_name}{order.order_group_id ? ` / ${order.ready_count} of ${order.total_members} orders ready` : ""}</ItemDescription>
                               </ItemContent>
                             </Item>
                           </ComboboxItem>
@@ -230,7 +236,11 @@ export default function SubDialog() {
           />
           {selectedOrder && <div className="space-y-2">
             <p className="text-sm">{selectedOrder.shipping_address}</p>
-            <DestinationEditor order={selectedOrder} />
+            {selectedOrder.order_group_id ? <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+              <p className="text-sm font-medium">{selectedOrder.order_group_number}</p>
+              <p className="text-xs text-muted-foreground">All {selectedOrder.total_members} orders must be in Scheduling and will be added together. Each keeps its own saved destination.</p>
+              {selectedOrder.members.map(member => <div key={member.id} className="space-y-1 border-t pt-2"><p className="text-xs font-medium">{member.order_number}</p><p className="text-xs text-muted-foreground">{member.shipping_address}</p><DestinationEditor order={member} /></div>)}
+            </div> : <DestinationEditor order={selectedOrder} />}
           </div>}
         </FieldGroup>
       </form>
@@ -243,7 +253,8 @@ export default function SubDialog() {
       return;
     }
 
-    form.setValue("order_ids", form.getValues("order_ids").filter((_, index) => index !== sub.id), { shouldDirty: true, shouldValidate: true });
+    const orderId = form.getValues("order_ids")[sub.id];
+    if (orderId !== undefined) removeSelection(orderId);
     setSub({ is_open: false, mode: DialogMode.DEFAULT });
   }
 
@@ -251,8 +262,7 @@ export default function SubDialog() {
     return (
       <div className="grid gap-3">
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to remove this order from the delivery? This action cannot be
-          undone.
+          Remove this selection from the delivery? Group orders are removed together. You can add the selection again before scheduling.
         </p>
       </div>
     );
@@ -304,10 +314,11 @@ export default function SubDialog() {
               }
               onClick={() => sub.mode === DialogMode.DELETE && onDelete()}
               type="submit"
+              disabled={groupPending}
               form="sub-form"
             >
               {sub.mode === DialogMode.INSERT
-                ? "Add Order"
+                ? selectedOrder?.order_group_id ? "Add group" : "Add Order"
                 : sub.mode === DialogMode.EDIT
                   ? "Save Changes"
                   : "Delete"}

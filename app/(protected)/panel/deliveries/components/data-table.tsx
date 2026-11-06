@@ -188,7 +188,12 @@ export default function DataTable() {
           return (
             <div className="flex flex-wrap gap-2">
               <RefundPickupAction orders={row.original.orders} />
-              <RunActions id={row.original.delivery_id} status={row.original.status} overdue={row.original.is_overdue} />
+              <RunActions
+                id={row.original.delivery_id}
+                status={row.original.status}
+                overdue={row.original.is_overdue}
+                warehouseName={row.original.warehouse?.name}
+              />
               <Tooltip>
                 <TooltipTrigger
                   render={

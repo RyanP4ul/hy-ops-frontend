@@ -6,12 +6,14 @@ import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList } 
 const banks = ["BDO", "BPI", "Metrobank", "Land Bank", "PNB", "RCBC", "Security Bank", "UnionBank", "Chinabank", "EastWest"];
 const cards = ["Visa", "Mastercard", "American Express", "JCB", "UnionPay"];
 
-export function PaymentTypeCombobox({ method, value, onChange, onBlur, invalid }: {
+export function PaymentTypeCombobox({ method, value, onChange, onBlur, invalid, id = "payment_type", helpId = "payment-type-help" }: {
   method: string;
   value: string;
   onChange: (value: string) => void;
   onBlur: () => void;
   invalid: boolean;
+  id?: string;
+  helpId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -34,7 +36,7 @@ export function PaymentTypeCombobox({ method, value, onChange, onBlur, invalid }
       onInputValueChange={setSearch}
       onValueChange={(nextValue) => { onChange(nextValue ?? ""); setOpen(false); setSearch(""); }}
     >
-      <ComboboxInput id="payment_type" className="w-full" placeholder={method === "BANK_TRANSFER" ? "Select or enter a bank" : "Select or enter a card type"} maxLength={100} onBlur={onBlur} aria-invalid={invalid} aria-describedby="payment-type-help" />
+      <ComboboxInput id={id} className="w-full" placeholder={method === "BANK_TRANSFER" ? "Select or enter a bank" : "Select or enter a card type"} maxLength={100} onBlur={onBlur} aria-invalid={invalid} aria-describedby={helpId} />
       <ComboboxContent>
         <ComboboxList>
           {matches.map(option => <ComboboxItem key={option} value={option}>{option}</ComboboxItem>)}

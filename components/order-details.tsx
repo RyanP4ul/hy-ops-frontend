@@ -49,6 +49,8 @@ export function ViewOrderDetails({
       <section className="space-y-3">
         <h4 className="text-sm font-medium">Order Information</h4>
         <div className="grid gap-3 sm:grid-cols-2">
+          <ViewOrderItem label="Order number" value={order.order_number} />
+          {order.order_group_number && <ViewOrderItem label="Order group" value={`${order.order_group_number} / Order ${order.order_group_position} of ${order.order_group_size}`} />}
           <ViewOrderItem label="Customer" value={order.customer_name} />
           <ViewOrderItem label="Status" value={formatValue(order.status)} />
           <ViewOrderItem
@@ -71,6 +73,12 @@ export function ViewOrderDetails({
         </div>
       </section>
 
+      {order.combined_payment && <section className="space-y-2 rounded-lg border p-3">
+        <h4 className="text-sm font-medium">Combined payment {order.combined_payment.payment_number}</h4>
+        <p className="text-sm">Original receipt: {formatCurrency(order.combined_payment.amount)} / Originally allocated to this order: {formatCurrency(order.combined_payment.allocated_amount)}</p>
+        {order.combined_payment.reference_number && <p className="text-sm">Payment reference: {order.combined_payment.reference_number}</p>}
+        <p className="text-xs text-muted-foreground">Balances include only this order&rsquo;s allocation and its later receipts or refunds.</p>
+      </section>}
       <Separator />
 
       <section className="space-y-3">

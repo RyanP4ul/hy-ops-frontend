@@ -118,6 +118,7 @@ export default function PaymentDialog() {
         ["Net received", money(selectedPayment.amount)], ["Remaining balance", money(selectedPayment.remaining_amount)],
       ].map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium tabular-nums">{value}</dd></div>)}</dl>
       <p className="text-xs text-muted-foreground">Payment method: {({ CASH: "Cash", BANK_TRANSFER: "Bank transfer", CARD: "Card" })[selectedPayment.payment_method] ?? selectedPayment.payment_method}</p>
+      {selectedPayment.combined_payment_number && <p className="text-xs text-muted-foreground">Combined payment: {selectedPayment.combined_payment_number}. Original combined receipt: {money(selectedPayment.combined_payment_amount ?? null)}. Original allocation to this order: {money(selectedPayment.combined_payment_allocation ?? null)}. {selectedPayment.combined_payment_reference && <>Reference: {selectedPayment.combined_payment_reference}. </>}Receipts and refunds below apply only to this order.</p>}
       {selectedPayment.payment_type && <p className="break-words text-xs text-muted-foreground">Payment type: {selectedPayment.payment_type}</p>}
     </section>}
     {form.formState.errors.root && <p role="alert" className="text-sm text-destructive">{form.formState.errors.root.message}</p>}

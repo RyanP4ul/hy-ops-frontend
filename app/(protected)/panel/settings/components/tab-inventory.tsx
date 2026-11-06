@@ -1,125 +1,45 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
-import React from "react";
-import { useSetting } from "@/components/providers/setting-provider";
-import { Controller, useForm } from "react-hook-form";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Boxes } from "lucide-react";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { stockStatusSchema, StockStatusSchema } from "@/schema/setting";
-import { ToastSubmit, ToastValidationError } from "@/components/util";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { stockStatusSchema, type StockStatusSchema } from "@/schema/setting";
+import { useSetting } from "@/components/providers/setting-provider";
+import { NumberSetting, SettingsActions, SettingsSection, useSettingsForm } from "./settings-form";
+
+function readSettings(data: NonNullable<ReturnType<typeof useSetting>["settingQuery"]["data"]>): StockStatusSchema {
+  return {
+    low_stock_threshold: Number(data.low_stock_threshold?.value ?? 10),
+    high_stock_threshold: Number(data.high_stock_threshold?.value ?? 100),
+  };
+}
 
 export default function TabInventory() {
-  const { settingQuery: query, isModified, setIsModified } = useSetting();
-
+  const { settingQuery } = useSetting();
   const form = useForm<StockStatusSchema>({
     resolver: zodResolver(stockStatusSchema),
-    defaultValues: {
-      low_stock_threshold: 10,
-      high_stock_threshold: 100,
-    },
+    defaultValues: settingQuery.data ? readSettings(settingQuery.data) : undefined,
   });
-
-  React.useEffect(() => {
-    if (!query.data) return;
-
-    form.reset({
-      low_stock_threshold: Number(query.data.low_stock_threshold.value),
-      high_stock_threshold: Number(query.data.high_stock_threshold.value),
-    });
-  }, [query.data, form]);
-
-  const onSubmit = (data: StockStatusSchema) => {
-    ToastSubmit(data);
-  };
+  const { save, discard } = useSettingsForm(form, readSettings);
+  const { isDirty, isSubmitting, errors } = form.formState;
 
   return (
-    <form
-      id="form"
-      onSubmit={form.handleSubmit(onSubmit, (error) =>
-        ToastValidationError(error),
-      )}
-    >
-      <Card>
-        <CardHeader>
-          <CardTitle>Inventory</CardTitle>
-          <CardDescription>Manage your inventory settings</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <FieldGroup className="grid grid-cols-1 items-center gap-4">
-              <Controller
-                name="low_stock_threshold"
-                control={form.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel>Low Stock Threshold</FieldLabel>
-
-                    <Input
-                      type="number"
-                      value={field.value}
-                      onChange={(event) => {
-                        field.onChange(event.target.valueAsNumber);
-                        setIsModified(true);
-                      }}
-                      aria-invalid={fieldState.invalid}
-                    />
-
-                    <FieldDescription>
-                      Items at or below this amount are considered low stock.
-                    </FieldDescription>
-                  </Field>
-                )}
-              />
-
-              <Controller
-                name="high_stock_threshold"
-                control={form.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel>High Stock Threshold</FieldLabel>
-
-                    <Input
-                      type="number"
-                      value={field.value}
-                      onChange={(event) => {
-                        field.onChange(event.target.valueAsNumber);
-                        setIsModified(true);
-                      }}
-                      aria-invalid={fieldState.invalid}
-                    />
-
-                    <FieldDescription>
-                      Items at or above this amount are considered high stock.
-                    </FieldDescription>
-                  </Field>
-                )}
-              />
-            </FieldGroup>
+    <form id="inventory-settings-form" onSubmit={form.handleSubmit(save)} className="space-y-6" noValidate>
+      <div><h2 className="text-lg font-semibold">Inventory settings</h2><p className="mt-1 text-sm text-muted-foreground">Define the stock levels that matter to your team.</p></div>
+      <fieldset disabled={isSubmitting} className="min-w-0 disabled:opacity-70">
+        <SettingsSection title="Stock thresholds" description="Choose when an item is classified as low or high stock." icon={Boxes}>
+          <div className="grid gap-8 sm:grid-cols-2">
+            <NumberSetting control={form.control} name="low_stock_threshold" label="Low stock threshold" description="Items at or below this quantity are considered low stock." unit="items" />
+            <NumberSetting control={form.control} name="high_stock_threshold" label="High stock threshold" description="Items at or above this quantity are considered high stock." unit="items" />
           </div>
-        </CardContent>
-        {isModified && (
-          <CardFooter className="flex justify-end">
-            <Button type="submit" variant="default" disabled={query.isFetching}>
-              Save changes
-            </Button>
-          </CardFooter>
-        )}
-      </Card>
+          <div role="group" className="mt-6 grid gap-3 rounded-lg bg-muted/60 p-4 text-xs sm:grid-cols-3" aria-label="Stock level guide">
+            <p className="flex items-center gap-2"><span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />Low: at or below the low threshold</p>
+            <p className="flex items-center gap-2"><span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />Normal: between thresholds</p>
+            <p className="flex items-center gap-2"><span className="size-2 rounded-full bg-sky-500" aria-hidden="true" />High: at or above the high threshold</p>
+          </div>
+        </SettingsSection>
+      </fieldset>
+      <SettingsActions dirty={isDirty} saving={isSubmitting} error={errors.root?.message} onDiscard={discard} />
     </form>
   );
 }

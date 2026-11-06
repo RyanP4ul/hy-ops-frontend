@@ -73,6 +73,9 @@ export default function DataTable() {
         ),
       },
       { accessorKey: "order_id", header: "Order" },
+      { accessorKey: "combined_payment_number", header: "Combined payment", cell: ({ row }) => row.original.combined_payment_number
+        ? <div className="max-w-64 whitespace-normal text-xs"><p>{row.original.combined_payment_number}</p><p>Original allocation: {formatCurrency(Number(row.original.combined_payment_allocation))}</p></div>
+        : "Separate payment" },
       {
         accessorKey: "customer_name",
         header: "Customer",

@@ -1,4 +1,5 @@
 "use client";
+import type { CombinedPaymentInfo } from "@/schema/order";
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -30,6 +31,7 @@ type InvoiceItem = {
 };
 
 type Invoice = {
+  combinedPayment?: CombinedPaymentInfo | null;
   paymentMethod?: string | null;
   paymentType?: string | null;
   invoiceNumber: string;
@@ -63,6 +65,7 @@ type Invoice = {
 };
 
 type InvoiceResponse = {
+  combined_payment?: CombinedPaymentInfo | null;
   payment_method?: string | null;
   payment_type?: string | null;
   invoice_number: string;
@@ -206,6 +209,7 @@ export default function Invoice({ orderId }: { orderId: number }) {
   }
 
   const invoice: Invoice = {
+    combinedPayment: invoiceQuery.data.combined_payment,
     paymentMethod: invoiceQuery.data.payment_method,
     paymentType: invoiceQuery.data.payment_type,
     invoiceNumber: invoiceQuery.data.invoice_number,
@@ -440,6 +444,20 @@ export default function Invoice({ orderId }: { orderId: number }) {
         align: "right",
       });
 
+      if (invoice.combinedPayment) {
+        totalsY += 12;
+        if (totalsY > pageHeight - 35) { doc.addPage(); totalsY = 25; }
+        doc.setFontSize(9);
+        doc.text(`Combined payment: ${invoice.combinedPayment.payment_number}`, margin, totalsY);
+        totalsY += 5;
+        doc.text(`Original allocation to this order: ${formatPdfCurrency(invoice.combinedPayment.allocated_amount)}`, margin, totalsY);
+        if (invoice.combinedPayment.reference_number) {
+          totalsY += 5;
+          const referenceLines = doc.splitTextToSize(`Payment reference: ${invoice.combinedPayment.reference_number}`, pageWidth - margin * 2);
+          doc.text(referenceLines, margin, totalsY);
+          totalsY += referenceLines.length * 5;
+        }
+      }
       if (invoice.notes) {
         totalsY += 15;
         if (totalsY > pageHeight - 20) {
@@ -552,6 +570,8 @@ export default function Invoice({ orderId }: { orderId: number }) {
           </span>
           <span className="text-sm text-muted-foreground">Payment method</span>
           <span className="text-right text-sm font-medium">{invoice.paymentMethod?.replaceAll("_", " ") || "Not specified"}</span>
+          {invoice.combinedPayment && <><span className="text-sm text-muted-foreground">Combined payment</span><span className="max-w-64 break-all text-right text-sm font-medium">{invoice.combinedPayment.payment_number}</span><span className="text-sm text-muted-foreground">Original allocation</span><span className="text-right text-sm font-medium">{formatCurrency(invoice.combinedPayment.allocated_amount)}</span></>}
+          {invoice.combinedPayment?.reference_number && <><span className="text-sm text-muted-foreground">Payment reference</span><span className="max-w-64 break-words text-right text-sm font-medium">{invoice.combinedPayment.reference_number}</span></>}
           {invoice.paymentType && <><span className="text-sm text-muted-foreground">Payment type</span><span className="max-w-64 break-words text-right text-sm font-medium">{invoice.paymentType}</span></>}
         </section>
       </div>

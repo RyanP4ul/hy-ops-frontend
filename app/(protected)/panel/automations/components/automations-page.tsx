@@ -137,7 +137,7 @@ export default function AutomationsPage() {
     queryFn: async () => {
       const response = await request("GET", "/api/automations");
       if (!response.ok) throw new Error("Failed to load automations");
-      return (await response.json() as AutomationRecord[]).map(toTask);
+      return (await response.json() as AutomationRecord[]).filter(record => record.name !== "Supabase Database Backup").map(toTask);
     },
   });
   const tasks = useMemo(() => automationsQuery.data ?? [], [automationsQuery.data]);
@@ -215,7 +215,7 @@ export default function AutomationsPage() {
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Total Tasks" value={tasks.length} description="Registered database tasks" icon={ListChecks} />
+        <SummaryCard title="System Tasks" value={tasks.length} description="Recurring operational tasks" icon={ListChecks} />
         <SummaryCard title="Enabled" value={enabledCount} description="Currently active" icon={CheckCircle2} />
         <SummaryCard title="Failed Runs" value={failedCount} description="Current failed status" icon={XCircle} />
         <SummaryCard title="Last Run" value={lastRun} description="Most recent execution" icon={History} />

@@ -6,11 +6,12 @@ const draft = { warehouse_id: 1, customer_id: 1, delivery_type: "INTERNAL", paym
 test("saved address checkout accepts unused blank manual address fields", () => {
   expect(orderSchema.safeParse(draft).success).toBe(true);
 });
-test("manual shipping still requires recipient, phone and address", () => {
-  const result = orderSchema.safeParse({ ...draft, is_custom_shipping: true });
-  expect(result.success).toBe(false);
-  if (!result.success) expect(result.error.issues.map(issue => issue.path[0])).toEqual(expect.arrayContaining(["shipping_recipient", "shipping_phone", "shipping_address"]));
+test("new orders require saved shipping addresses", () => {
+  expect(orderSchema.safeParse({ ...draft, customer_address_id: undefined }).success).toBe(false);
+  expect(orderSchema.safeParse({ ...draft, is_custom_shipping: true, shipping_recipient: "Recipient", shipping_phone: "09000000000", shipping_address: "Manual" }).success).toBe(false);
+  expect(orderSchema.safeParse({ ...draft, customer_address_id: 2 }).success).toBe(true);
 });
+
 test("draft items require a selected inventory record and whole positive quantities", () => {
   for (const item of [{ ...draft.items[0], inventory_id: 0 }, { ...draft.items[0], quantity: 1.5 }, { ...draft.items[0], quantity: 0 }]) expect(orderSchema.safeParse({ ...draft, items: [item] }).success).toBe(false);
 });

@@ -10,7 +10,6 @@ type Result = Record<
   | "mobile_automatic_refresh_interval_ms"
   | "is_form_validation_debug_enabled"
   | "order_limit_per_day"
-  | "customer_order_limit"
   | "max_order_per_vehicle"
   | "returning_automatic_confirm_ms_interval",
   {

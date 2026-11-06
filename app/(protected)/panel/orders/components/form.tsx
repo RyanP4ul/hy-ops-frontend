@@ -6,20 +6,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useOrders } from "../provider";
-import { OrderForm, orderSchema } from "@/schema/order";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useMemo } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
-import { Edit, FileText, Loader2, Plus, Trash2 } from "lucide-react";
-import { ToastSubmit, ToastValidationError } from "@/components/util";
+import { OrderForm } from "@/schema/order";
+import { useEffect, useRef } from "react";
+import { orderBatchFormSchema, toOrderBatchPayload, previewCombinedOrders } from "@/schema/order-batch";
+import { Controller, useWatch } from "react-hook-form";
+import { Edit, FileText, Plus, Trash2, MapPin, Phone, Building2, Package } from "lucide-react";
+import { ToastValidationError } from "@/components/util";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldLabel,
-  FieldLegend,
-  FieldTitle,
 } from "@/components/ui/field";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { useWebSocket } from "@/components/providers/websocket-provider";
@@ -55,9 +52,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/utils/date-util";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { PaymentTypeCombobox } from "@/components/payment-type-combobox";
+import { SavedAddressForm } from "./saved-address-form";
 
 function formatCustomerAddress(address: {
   address_line: string;
@@ -90,6 +87,11 @@ function formatCustomerAddress(address: {
   }
 
 export default function Form() {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const {
     form,
     step,
@@ -103,19 +105,18 @@ export default function Form() {
     warehouseQuery,
     customerQuery,
     customerOrderEligibility,
-    sub,
     setSub,
-    inventoryItem,
     setInventoryItem,
-    inventoryQuery,
     inventoryCB,
+    orderCount,
+    activeDraftIndex,
+    collectDrafts,
+    switchDraft,
+    paymentMode,
+    combinedPayment,
   } = useOrders();
   const { state, dispatch } = useModal();
   const { send } = useWebSocket();
-  const deliveryType = useWatch({
-    name: "delivery_type",
-    control: form.control,
-  });
   const paymentMethod = useWatch({ name: "payment_method", control: form.control });
 
   const items = useWatch({
@@ -123,10 +124,6 @@ export default function Form() {
     name: "items",
   });
 
-  const isCustomShipping = useWatch({
-    control: form.control,
-    name: "is_custom_shipping",
-  });
   const selectedCustomerId = useWatch({
     control: form.control,
     name: "customer_id",
@@ -172,18 +169,30 @@ export default function Form() {
         });
       });
     } else {
-      const response = await request("POST", "/api/orders", payload);
-
-      if (response.status === 409) {
-        void customerOrderEligibility.refetch();
+      const drafts = collectDrafts();
+      const batch = orderBatchFormSchema.safeParse({ customer_id: data.customer_id, payment_mode: paymentMode, combined_payment: combinedPayment, orders: drafts.map(draft => draft.data) });
+      if (!batch.success) {
+        const issue = batch.error.issues[0];
+        if (issue?.path[0] === "combined_payment") {
+          setStep(2);
+          form.setError("root", { message: `Combined payment: ${issue.message}` });
+          return;
+        }
+        const index = typeof issue?.path[1] === "number" ? issue.path[1] : activeDraftIndex;
+        if (index !== activeDraftIndex) switchDraft(index);
+        setStep(0);
+        form.setError("root", { message: `Order ${index + 1}: ${issue?.message ?? "Complete the order details."}` });
+        return;
       }
+      const response = drafts.length > 1 || paymentMode === "COMBINED"
+        ? await request("POST", "/api/orders/batch", toOrderBatchPayload(batch.data))
+        : await request("POST", "/api/orders", payload);
 
       await requestWithErrorHandling(response, form, (result) => {
+        void customerOrderEligibility.refetch();
         onSuccess();
-        send({
-          type: REQUESTS.ORDER_ADDED,
-          payload: [JSON.stringify(result)],
-        });
+        const created = Array.isArray(result.orders) ? result.orders : [result];
+        for (const order of created) send({ type: REQUESTS.ORDER_ADDED, payload: [JSON.stringify(order)] });
       });
     }
   }
@@ -196,13 +205,14 @@ export default function Form() {
           (total, item) => total + (item.price ?? 0) * item.quantity,
           0,
         );
-  const reviewValues = form.getValues();
-  const reviewAmountPaid = form.getValues("amount_paid");
+  const reviewValues = paymentMode === "COMBINED"
+    ? previewCombinedOrders(collectDrafts().map(draft => draft.data), combinedPayment)[activeDraftIndex]
+    : form.getValues();
+  const reviewAmountPaid = reviewValues.amount_paid;
   const reviewWarehouseId = form.getValues("warehouse_id");
   const reviewCustomerId = form.getValues("customer_id");
-  const reviewDeliveryType = form.getValues("delivery_type");
-  const reviewPaymentArrangement = form.getValues("payment_arrangement");
-  const reviewPaymentMethod = form.getValues("payment_method");
+  const reviewPaymentArrangement = reviewValues.payment_arrangement;
+  const reviewPaymentMethod = reviewValues.payment_method;
   const reviewIsCustomShipping = form.getValues("is_custom_shipping");
   const reviewNotes = form.getValues("notes");
 
@@ -225,11 +235,11 @@ export default function Form() {
             if (step !== 3) { event.preventDefault(); return; }
             void form.handleSubmit(onSubmit, (error) => ToastValidationError(error))(event);
           }}
-          className="space-y-4"
+          className="min-w-0 space-y-5"
         >
           {step === 0 && (
             <>
-              <div className="space-y-4">
+              <div className="grid gap-5 sm:grid-cols-2 [&>*]:min-w-0">
                 <Controller
                   name="warehouse_id"
                   control={form.control}
@@ -346,28 +356,31 @@ export default function Form() {
                   control={form.control}
                   render={({ field, fieldState }) => (
                     <Combobox
+                      disabled={orderCount > 1}
                       open={customerCB.open}
                       onOpenChange={(open) => customerCB.setOpen(open)}
                       value={field.value ? String(field.value) : ""}
                       onValueChange={(value) => {
+                        if (orderCount > 1) return;
                         const selectedCustomer = customerQuery.data?.rows?.find(
                           (customer) => customer.id === Number(value),
                         );
 
                         customerCB.setInputValue(selectedCustomer?.name ?? "");
+                        field.onChange(value ? Number(value) : null);
                         const addresses = selectedCustomer?.addresses ?? [];
                         form.setValue(
                           "customer_address_id",
                           addresses.length === 1 ? addresses[0]?.id : undefined,
-                          { shouldValidate: true },
+                          { shouldDirty: true },
                         );
                         form.setValue(
                           "is_custom_shipping",
-                          addresses.length === 0,
-                          { shouldValidate: true },
+                          false,
+                          { shouldDirty: true },
                         );
 
-                        field.onChange(value ? Number(value) : null);
+                        form.clearErrors(["customer_id", "customer_address_id"]);
                       }}
                     >
                       <Field data-invalid={fieldState.invalid}>
@@ -379,7 +392,7 @@ export default function Form() {
                           placeholder="Select customer name..."
                           id="customer-name"
                           value={customerCB.inputValue}
-                          disabled={customerQuery.isFetching}
+                          disabled={customerQuery.isFetching || orderCount > 1}
                           aria-invalid={fieldState.invalid}
                           readOnly
                         />
@@ -464,40 +477,11 @@ export default function Form() {
                                 Checking this customer&rsquo;s active orders…
                               </p>
                             )}
-                            {customerOrderEligibility.isError && (
-                              <div className="flex items-center gap-2 text-destructive">
-                                <span>
-                                  Could not check order eligibility. Try again.
-                                </span>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() =>
-                                    void customerOrderEligibility.refetch()
-                                  }
-                                >
-                                  Retry
-                                </Button>
-                              </div>
-                            )}
-                            {customerOrderEligibility.data?.eligible && (
+                            {customerOrderEligibility.data && (
                               <p className="text-muted-foreground">
-                                Active orders:{" "}
-                                {
-                                  customerOrderEligibility.data.activeOrderCount
-                                }{" "}
-                                of{" "}
-                                {
-                                  customerOrderEligibility.data.maxActiveOrders
-                                }
-                                .
+                                Active orders: {customerOrderEligibility.data.activeOrderCount}.
                               </p>
                             )}
-                            {customerOrderEligibility.data &&
-                              !customerOrderEligibility.data.eligible && (
-                                <div className="space-y-2"><p className="text-destructive">{customerOrderEligibility.data.message}</p><Button type="button" variant="outline" size="sm" disabled={customerOrderEligibility.isFetching} onClick={() => void customerOrderEligibility.refetch()}>Check eligibility again</Button></div>
-                              )}
                           </div>
                         )}
                       </Field>
@@ -506,105 +490,19 @@ export default function Form() {
                 />
 
                 {selectedCustomer && (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Field>
-                      <FieldLabel htmlFor="customer_address">
-                        Customer Phone (Read Only)
-                      </FieldLabel>
-                      <Input
-                        type="text"
-                        value={selectedCustomer.phone_number}
-                        autoComplete="off"
-                        readOnly
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="customer_company_name">
-                        Company Name (Read Only)
-                      </FieldLabel>
-                      <Input
-                        type="text"
-                        value={selectedCustomer.company_name}
-                        autoComplete="off"
-                        readOnly
-                      />
-                    </Field>
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border bg-muted/25 px-4 py-3 sm:col-span-2">
+                    <p className="flex min-w-0 items-center gap-2 text-sm"><Building2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="break-words font-medium">{selectedCustomer.company_name}</span></p>
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground"><Phone className="size-3.5" aria-hidden="true" />{selectedCustomer.phone_number}</p>
+                    {orderCount > 1 && <span className="text-xs text-muted-foreground">Customer shared by all {orderCount} orders</span>}
                   </div>
                 )}
 
-                <Controller
-                  name="is_custom_shipping"
-                  control={form.control}
-                  render={({ field, fieldState }) => (
-                    <RadioGroup
-                      value={
-                        field.value
-                          ? "different-address"
-                          : "same-as-shipping-address"
-                      }
-                      onValueChange={(value) => {
-                        field.onChange(value === "different-address");
-                        if (value === "same-as-shipping-address") {
-                          const savedAddresses =
-                            selectedCustomer?.addresses ?? [];
-                          if (
-                            form.getValues("customer_address_id") === undefined &&
-                            savedAddresses.length === 1
-                          ) {
-                            form.setValue(
-                              "customer_address_id",
-                              savedAddresses[0]?.id,
-                              { shouldValidate: true },
-                            );
-                          }
-                        }
-                      }}
-                      id="is_custom_shipping"
-                      aria-invalid={fieldState.invalid}
-                      className="grid grid-cols-2 gap-2"
-                    >
-                      <FieldLegend variant="label" className="col-span-2">
-                        Shipping Address
-                      </FieldLegend>
-
-                      <FieldLabel htmlFor="same-as-shipping-address">
-                        <Field orientation="horizontal">
-                          <FieldContent>
-                            <FieldTitle>
-                              Use customer&rsquo;s saved address
-                            </FieldTitle>
-                          </FieldContent>
-                          <RadioGroupItem
-                            value="same-as-shipping-address"
-                            id="same-as-shipping-address"
-                            disabled={
-                              (selectedCustomer?.addresses.length ?? 0) === 0
-                            }
-                          />
-                        </Field>
-                      </FieldLabel>
-
-                      <FieldLabel htmlFor="different-address">
-                        <Field orientation="horizontal">
-                          <FieldContent>
-                            <FieldTitle>Enter a different address</FieldTitle>
-                          </FieldContent>
-                          <RadioGroupItem
-                            value="different-address"
-                            id="different-address"
-                          />
-                        </Field>
-                      </FieldLabel>
-                    </RadioGroup>
-                  )}
-                />
-
-                {!isCustomShipping && selectedCustomer && (
+                {selectedCustomer && (
                   <Controller
                     name="customer_address_id"
                     control={form.control}
                     render={({ field, fieldState }) => (
-                      <Field data-invalid={fieldState.invalid}>
+                      <Field className="sm:col-span-2" data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor="customer_address_id">
                           Saved shipping address
                           <span className="text-destructive">*</span>
@@ -613,15 +511,17 @@ export default function Form() {
                           <Select
                             value={field.value ? String(field.value) : ""}
                             onValueChange={(value) => {
-                              if (value !== null) field.onChange(Number(value));
+                              if (value !== null) { field.onChange(Number(value)); form.clearErrors("customer_address_id"); }
                             }}
                           >
                             <SelectTrigger
                               id="customer_address_id"
-                              className="w-full"
+                              className="h-auto min-h-11 w-full [&_[data-slot=select-value]]:whitespace-normal"
                               aria-invalid={fieldState.invalid}
                             >
-                              <SelectValue placeholder="Choose a saved address" />
+                              <SelectValue placeholder="Choose a saved address">
+                                {selectedCustomerAddress ? formatCustomerAddress(selectedCustomerAddress) : undefined}
+                              </SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               <SelectGroup>
@@ -640,118 +540,41 @@ export default function Form() {
                           </Select>
                         ) : (
                           <p className="text-sm text-muted-foreground">
-                            No saved address is available. Choose &ldquo;Enter
-                            a different address&rdquo;.
+                            No saved address is available. Save a shipping address for this customer before creating an order.
                           </p>
                         )}
                         {fieldState.invalid && (
                           <FieldError errors={[fieldState.error]} />
                         )}
                         {savedShippingAddress && (
-                          <p className="text-xs text-muted-foreground">
-                            This address will be saved with the order.
-                          </p>
+                          <div className="mt-1 flex items-start gap-3 rounded-xl bg-muted/35 p-4">
+                            <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <div className="min-w-0 space-y-1"><p className="break-words text-sm leading-relaxed">{savedShippingAddress}</p><p className="text-xs text-muted-foreground">{selectedCustomer.name} / Destination for order {activeDraftIndex + 1}</p></div>
+                          </div>
                         )}
                       </Field>
                     )}
                   />
                 )}
 
-                {isCustomShipping && (
-                  <>
-                    <Controller
-                      name="shipping_recipient"
-                      control={form.control}
-                      render={({ field, fieldState }) => (
-                        <Field data-invalid={fieldState.invalid}>
-                          <FieldLabel htmlFor="shipping_recipient">
-                            Shipping Recipient
-                            <span className="text-destructive">*</span>
-                          </FieldLabel>
-                          <Input
-                            {...field}
-                            id="shipping_recipient"
-                            type="text"
-                            aria-invalid={fieldState.invalid}
-                            placeholder="Enter shipping recipient"
-                            autoComplete="off"
-                          />
-                          {fieldState.invalid && (
-                            <FieldError errors={[fieldState.error]} />
-                          )}
-                        </Field>
-                      )}
-                    />
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <Controller
-                        name="shipping_phone"
-                        control={form.control}
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="shipping_phone">
-                              Shipping Phone
-                              <span className="text-destructive">*</span>
-                            </FieldLabel>
-                            <Input
-                              {...field}
-                              id="shipping_phone"
-                              type="text"
-                              aria-invalid={fieldState.invalid}
-                              placeholder="Enter shipping phone"
-                              autoComplete="off"
-                            />
-                            {fieldState.invalid && (
-                              <FieldError errors={[fieldState.error]} />
-                            )}
-                          </Field>
-                        )}
-                      />
-                      <Controller
-                        name="shipping_address"
-                        control={form.control}
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="shipping_address">
-                              Shipping Address
-                              <span className="text-destructive">*</span>
-                            </FieldLabel>
-                            <Input
-                              {...field}
-                              id="shipping_address"
-                              type="text"
-                              aria-invalid={fieldState.invalid}
-                              placeholder="Enter shipping address"
-                              autoComplete="off"
-                            />
-                            {fieldState.invalid && (
-                              <FieldError errors={[fieldState.error]} />
-                            )}
-                          </Field>
-                        )}
-                      />
-                    </div>
-                  </>
-                )}
+                {selectedCustomer && <div className="sm:col-span-2"><SavedAddressForm key={selectedCustomer.id} customerId={selectedCustomer.id} onSaved={async address => {
+                  await customerQuery.refetch();
+                  if (!mounted.current || form.getValues("customer_id") !== selectedCustomer.id) return;
+                  form.setValue("is_custom_shipping", false);
+                  form.setValue("customer_address_id", address.id, { shouldDirty: true, shouldValidate: true });
+                }} /></div>}
 
-                {isCustomShipping && <div className="grid gap-3 sm:grid-cols-2">
-                  <p className="text-sm text-muted-foreground sm:col-span-2">Destination coordinates are optional now and must be confirmed before delivery scheduling.</p>
-                  {(["shipping_latitude", "shipping_longitude"] as const).map((name) => <Controller key={name} name={name} control={form.control} render={({ field, fieldState }) => <Field>
-                    <FieldLabel htmlFor={name}>{name === "shipping_latitude" ? "Latitude" : "Longitude"}</FieldLabel>
-                    <Input id={name} type="number" step="any" min={name === "shipping_latitude" ? -90 : -180} max={name === "shipping_latitude" ? 90 : 180} value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? undefined : event.target.valueAsNumber)} />
-                    <FieldError errors={[fieldState.error]} />
-                  </Field>} />)}
-                </div>}
                 <Controller
                   name="notes"
                   control={form.control}
                   render={({ field, fieldState }) => (
-                    <Field data-invalid={fieldState.invalid}>
+                    <Field className="sm:col-span-2" data-invalid={fieldState.invalid}>
                       <FieldLabel htmlFor="notes">Notes (optional)</FieldLabel>
                       <Textarea
                         {...field}
                         id="notes"
                         placeholder="Add order notes or delivery instructions..."
-                        rows={4}
+                        rows={3}
                         autoComplete="off"
                       />
                       {fieldState.invalid && (
@@ -872,7 +695,7 @@ export default function Form() {
                               colSpan={7}
                               className="h-24 text-center text-sm text-muted-foreground"
                             >
-                              No item have been added yet.
+                              <div className="flex flex-col items-center gap-2 py-6"><Package className="size-8 text-muted-foreground/50" aria-hidden="true" /><p className="font-medium text-foreground">No products added yet.</p><p className="max-w-xs text-xs leading-relaxed">Choose Add Item to select a product, confirm its price and set the quantity.</p></div>
                             </TableCell>
                           </TableRow>
                         )}
@@ -901,7 +724,7 @@ export default function Form() {
             </>
           )}
 
-          {step === 2 && (
+          {step === 2 && paymentMode === "SEPARATE" && (
             <>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Controller
@@ -1029,19 +852,20 @@ export default function Form() {
             </>
           )}
 
+          {step === 2 && paymentMode === "COMBINED" && <p className="rounded-lg border p-4 text-sm">This order uses the combined payment above. Its allocated payment and balance will be shown in review. Separate payment entries are preserved if you switch back.</p>}
           {step === 3 && (
             <>
               <div className="space-y-5">
                 <div>
                   <h3 className="font-semibold">Order summary</h3>
                   <p className="text-sm text-muted-foreground">
-                    Check the customer, destination, items and payment before creating the order.
+                    Review the destination, quantities and payment for this order.
                   </p>
                 </div>
 
                 <section className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-medium">Customer & delivery details</h4><Button type="button" variant="outline" size="sm" disabled={form.formState.isSubmitting} onClick={() => setStep(0)}>Edit details</Button></div>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <ReviewItem
                       label="Warehouse"
                       value={
@@ -1061,14 +885,9 @@ export default function Form() {
                       }
                     />
                     <ReviewItem
-                      label="Delivery Type"
-                      value="Assigned when scheduling"
-                    />
-                    <ReviewItem
                       label="Payment Arrangement"
                       value={formatReviewValue(reviewPaymentArrangement)}
                     />
-                    <ReviewItem label="Address source" value={reviewIsCustomShipping ? "Custom delivery address" : "Saved customer address"} />
                     <ReviewItem
                       label="Shipping Address"
                       value={
@@ -1158,14 +977,14 @@ export default function Form() {
                 <Separator />
 
                 <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-medium">Payment summary</h4><Button type="button" variant="outline" size="sm" disabled={form.formState.isSubmitting} onClick={() => setStep(2)}>Edit payment</Button></div>
-                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <section className="grid gap-4 sm:grid-cols-2">
                   <ReviewItem
                     label="Payment Method"
                     value={formatReviewValue(reviewPaymentMethod)}
                   />
                   {reviewPaymentMethod !== "CASH" && <ReviewItem label="Payment Type" value={reviewValues.payment_type ?? ""} />}
                   <ReviewItem
-                    label="Amount Paid"
+                    label={paymentMode === "COMBINED" ? "Allocated payment" : "Amount Paid"}
                     value={formatCurrency(reviewAmountPaid ?? 0)}
                   />
                   <ReviewItem

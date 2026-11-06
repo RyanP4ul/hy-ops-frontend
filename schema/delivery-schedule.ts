@@ -19,7 +19,14 @@ export const deliveryScheduleSchema = z.object({
 
 export type DeliveryScheduleFormData = z.infer<typeof deliveryScheduleSchema>;
 
-export type DeliveryScheduleOrderDetail = {
+export type OrderGroupFields = {
+  order_group_id: string | null;
+  order_group_number: string | null;
+  order_group_position: number | null;
+  order_group_size: number;
+};
+
+export type DeliveryScheduleOrderDetail = OrderGroupFields & {
   id: number;
   order_number: string;
   customer_company: string | null;
@@ -36,7 +43,7 @@ export const orderSchema = z.object({
 
 export type OrderFormData = z.infer<typeof orderSchema>;
 
-export type DeliveryScheduleRow = {
+export type DeliveryScheduleRow = OrderGroupFields & {
   warehouse_id: number;
   id: number;
   order_number: string;
@@ -47,4 +54,12 @@ export type DeliveryScheduleRow = {
   shipping_longitude: string | null;
   version: number;
   payment_arrangement: string;
+};
+
+export type SchedulingEntry = DeliveryScheduleRow & {
+  members: (DeliveryScheduleRow & { status: string })[];
+  ready_count: number;
+  total_members: number;
+  can_schedule: boolean;
+  blocked_reason: string | null;
 };

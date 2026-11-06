@@ -88,9 +88,11 @@ import { request, requestWithErrorHandling } from "@/components/http";
 import { REQUESTS } from "@/constant/request";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { QueryFeedback } from "@/components/query-feedback";
-import { WorkflowStepper, WorkflowSummary, type WorkflowStep } from "@/components/workflow-stepper";
+import { WorkflowSummary, type WorkflowStep } from "@/components/workflow-stepper";
+
+import { ScheduleWorkspace } from "./schedule-workspace";
 
 export default function DeliveryScheduleDialog() {
   const { state, dispatch } = useModal();
@@ -126,10 +128,6 @@ export default function DeliveryScheduleDialog() {
   const reviewOrderTotal = sumKnownMoney(
     reviewOrders.map((order) => order.total),
   );
-
-  useEffect(() => {
-    setStep(0);
-  }, [state.mode]);
 
   function moveItem(index: number, direction: -1 | 1) {
     const currentItems = orderDetailQuery.data;
@@ -228,6 +226,10 @@ export default function DeliveryScheduleDialog() {
         return;
       }
 
+      if ((step === 1 || step === 2) && form.getValues("order_ids").length > getAvailableSlotDate()) {
+        form.setError(step === 1 ? "scheduled_date" : "order_ids", { message: `This date has ${getAvailableSlotDate()} available stops. Choose a date with enough slots or remove a complete group. Groups must be scheduled together.` });
+        return;
+      }
       setStep((current) => Math.min(current + 1, steps.length - 1));
     } finally {
       setNextPending(false);
@@ -285,21 +287,14 @@ export default function DeliveryScheduleDialog() {
 
   return (
     <>
-      <DialogContent className="sm:max-w-7xl">
-        <DialogHeader>
-          <DialogTitle>{state.title}</DialogTitle>
-          <DialogDescription>{state.description}</DialogDescription>
+      <DialogContent className="grid max-h-none max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl p-0 transition-none sm:max-w-none"
+        style={{ width: "min(1180px, calc(100vw - 2rem))", maxWidth: "calc(100vw - 2rem)", height: "min(900px, calc(100dvh - 2rem))", maxHeight: "calc(100dvh - 2rem)" }}>
+        <DialogHeader className="border-b px-4 py-5 pr-12 sm:px-7">
+          <div className="flex items-center gap-3"><span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background"><Truck className="size-5" /></span>
+            <div className="min-w-0"><DialogTitle>Schedule delivery</DialogTitle><DialogDescription className="mt-1">Plan your route, assign a driver, and schedule orders together.</DialogDescription></div></div>
         </DialogHeader>
-        <WorkflowStepper label="Delivery schedule progress" steps={steps} current={step}
-          disabled={nextPending || driverExpensesMutation.isPending || form.formState.isSubmitting}
-          onBackToStep={setStep}
-          summary={<WorkflowSummary items={[
-            { label: "Warehouse", value: warehouseCB.inputValue || (form.watch("warehouse_id") > 0 ? `Warehouse #${form.getValues("warehouse_id")}` : "Choose a warehouse") },
-            { label: "Departure (Manila)", value: reviewScheduledDate ? `${format(reviewScheduledDate, "MMM d, yyyy")} / ${reviewScheduledTime || "Choose a time"}` : "Choose a departure" },
-            { label: "Orders", value: `${draftOrderIds.length} ${draftOrderIds.length === 1 ? "order" : "orders"} selected` },
-            { label: "Vehicle", value: vehicleCB.inputValue || (form.watch("vehicle_id") > 0 ? `Vehicle #${form.getValues("vehicle_id")}` : "Not assigned") },
-          ]} />}
-        />
+        <ScheduleWorkspace disabled={nextPending || driverExpensesMutation.isPending || form.formState.isSubmitting}
+          title={steps[step].title} description={steps[step].description}>
 
         {step === 0 && (
           <>
@@ -309,8 +304,8 @@ export default function DeliveryScheduleDialog() {
               render={({ field, fieldState }) => (
                 <PaginatedCombobox
                   key={sub.id}
-                  id="product-variant"
-                  label="Product Variant"
+                  id="warehouse"
+                  label="Warehouse"
                   required
                   disabled={warehouseQuery.isFetching}
                   value={
@@ -332,6 +327,15 @@ export default function DeliveryScheduleDialog() {
                     warehouseCB.setInputValue(
                       selectedProductVariant?.name ?? "",
                     );
+                    if (Number(value) !== field.value) {
+                      form.setValue("order_ids", []);
+                      form.setValue("driver_id", -1); form.setValue("vehicle_id", -1);
+                      form.setValue("scheduled_date", undefined as unknown as Date);
+                      form.setValue("scheduled_time", "");
+                      form.setValue("delivery_allowance", 0); form.setValue("fuel", 0); form.setValue("toll", 0);
+                      driverCB.setInputValue(""); vehicleCB.setInputValue("");
+                      orderCB.setPage(0); driverCB.setPage(0); vehicleCB.setPage(0);
+                    }
                     field.onChange(value ? Number(value) : null);
                   }}
                   onSearchChange={warehouseCB.setSearchQuery}
@@ -349,110 +353,9 @@ export default function DeliveryScheduleDialog() {
                     )
                   }
                   placeholder="Select warehouse name..."
-                  emptyMessage="All product variants are already in this warehouse inventory, or no variants match."
+                  emptyMessage="No warehouses found."
                 />
-                // <Combobox
-                //   open={warehouseCB.open}
-                //   onOpenChange={(open) => warehouseCB.setOpen(open)}
-                //   value={field.value ? String(field.value) : ""}
-                //   onValueChange={(value) => {
-                //     const selectedWarehouse = warehouseQuery.data?.rows?.find(
-                //       (warehouse) => warehouse.id === Number(value),
-                //     );
-                //
-                //     warehouseCB.setInputValue(selectedWarehouse?.name ?? "");
-                //
-                //     if (Number(value) !== field.value) {
-                //       form.setValue("order_ids", []);
-                //       form.setValue("driver_id", -1);
-                //       form.setValue("vehicle_id", -1);
-                //       driverCB.setInputValue(""); vehicleCB.setInputValue("");
-                //       orderCB.setPage(0); driverCB.setPage(0); vehicleCB.setPage(0);
-                //     }
-                //     field.onChange(value ? Number(value) : null);
-                //   }}
-                // >
-                //   <Field data-invalid={fieldState.invalid}>
-                //     <FieldLabel htmlFor="warehouse-name">
-                //       Warehouse<span className="text-destructive">*</span>
-                //     </FieldLabel>
-                //
-                //     <ComboboxInput
-                //       placeholder="Select warehouse name..."
-                //       value={warehouseCB.inputValue}
-                //       disabled={warehouseQuery.isFetching}
-                //       aria-invalid={fieldState.invalid}
-                //       readOnly
-                //     />
-                //     <ComboboxContent>
-                //       <ComboboxList>
-                //         {warehouseQuery.data?.rows?.map((productVariant) => (
-                //           <ComboboxItem
-                //             key={productVariant.id}
-                //             value={String(productVariant.id)}
-                //           >
-                //             <Item size="xs" className="p-0">
-                //               <ItemContent>
-                //                 <ItemTitle className="whitespace-nowrap">
-                //                   ({productVariant.id}) {productVariant.name}
-                //                 </ItemTitle>
-                //
-                //               </ItemContent>
-                //             </Item>
-                //           </ComboboxItem>
-                //         ))}
-                //
-                //         {warehouseQuery.isFetching && (
-                //           <div className="px-2 py-1 text-xs text-muted-foreground">
-                //             Loading...
-                //           </div>
-                //         )}
-                //
-                //         {!warehouseQuery.isFetching &&
-                //           warehouseQuery.data?.rows?.length === 0 && (
-                //             <ComboboxEmpty>No found.</ComboboxEmpty>
-                //           )}
-                //       </ComboboxList>
-                //
-                //       <div className="flex items-center justify-between border-t p-2">
-                //         <Button
-                //           type="button"
-                //           variant="ghost"
-                //           size="sm"
-                //           disabled={
-                //             warehouseCB.page <= 0 || warehouseQuery.isFetching
-                //           }
-                //           onClick={() => warehouseCB.setPage((p) => p - 1)}
-                //         >
-                //           Previous
-                //         </Button>
-                //
-                //         <span className="text-muted-foreground text-xs">
-                //           {warehouseCB.page + 1} / {warehouseCB.totalPages}
-                //         </span>
-                //
-                //         <Button
-                //           type="button"
-                //           variant="ghost"
-                //           size="sm"
-                //           disabled={
-                //             warehouseCB.page + 1 >= warehouseCB.totalPages ||
-                //             warehouseQuery.isFetching
-                //           }
-                //           onClick={() => {
-                //             warehouseCB.setPage((p) => p + 1);
-                //           }}
-                //         >
-                //           Next
-                //         </Button>
-                //       </div>
-                //     </ComboboxContent>
-                //
-                //     {fieldState.invalid && (
-                //       <FieldError errors={[fieldState.error]} />
-                //     )}
-                //   </Field>
-                // </Combobox>
+
               )}
             />
           </>
@@ -587,10 +490,10 @@ export default function DeliveryScheduleDialog() {
                     Orders <span className="text-destructive">*</span>
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Select order to be delivered
+                    Add a single order or a complete group. Arrange each destination in delivery order.
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     variant="outline"
@@ -633,94 +536,23 @@ export default function DeliveryScheduleDialog() {
                   {form.formState.errors.order_ids?.message}
                 </p>
               )}
-              <div
-                className={`overflow-hidden rounded-lg border ${form.formState.errors.order_ids ? "border-destructive" : "border-border"}`}
-              >
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/30 hover:bg-muted/30">
-                        <TableHead className="min-w-32.5">
-                          Order Number
-                        </TableHead>
-                        <TableHead className="min-w-45">Company</TableHead>
-                        <TableHead className="text-right">Items</TableHead>
-                        <TableHead>Destination</TableHead>
-                        <TableHead>Total</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {orderDetailQuery.data?.map((item, index) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.order_number || "—"}</TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {item.customer_company || "—"}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {item.item_count}
-                          </TableCell>
-                          <TableCell>{item.destination || "—"}</TableCell>
-                          <TableCell>
-                            {item.total === null
-                              ? "Unverified"
-                              : formatCurrency(item.total)}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              disabled={index === 0}
-                              onClick={() => {
-                                moveItem(index, -1);
-                              }}
-                            >
-                              <ArrowUp className="size-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              disabled={
-                                index ===
-                                (orderDetailQuery.data || []).length - 1
-                              }
-                              onClick={() => moveItem(index, 1)}
-                            >
-                              <ArrowDown className="size-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setSub({
-                                  id: index,
-                                  is_open: true,
-                                  mode: DialogMode.DELETE,
-                                });
-                              }}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {(orderDetailQuery?.data || []).length < 1 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={7}
-                            className="h-24 text-center text-sm text-muted-foreground"
-                          >
-                            No orders selected yet. Add an order to build this delivery run.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
+              <ol aria-label="Delivery stop order" className="space-y-3">
+                {reviewOrders.map((item, index) => <li key={item.id} className="rounded-xl border bg-background p-3 sm:p-4">
+                  <div className="flex flex-wrap items-start gap-3">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold">{index + 1}</span>
+                    <div className="min-w-0 flex-1"><p className="break-all text-sm font-semibold">{item.order_number}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.customer_company || "Customer"}</p></div>
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                      <Button type="button" variant="outline" size="icon" className="size-8" aria-label={`Move ${item.order_number} up`} disabled={index === 0} onClick={() => moveItem(index, -1)}><ArrowUp className="size-3.5" /></Button>
+                      <Button type="button" variant="outline" size="icon" className="size-8" aria-label={`Move ${item.order_number} down`} disabled={index === reviewOrders.length - 1} onClick={() => moveItem(index, 1)}><ArrowDown className="size-3.5" /></Button>
+                      {(!item.order_group_id || index === reviewOrders.findIndex(member => member.order_group_id === item.order_group_id)) && <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`Remove ${item.order_group_number ? `group ${item.order_group_number}` : item.order_number}`} onClick={() => setSub({ id: index, is_open: true, mode: DialogMode.DELETE })}><Trash2 className="size-3.5" /></Button>}
+                    </div>
+                  </div>
+                  {item.order_group_number && <p className="mt-3 break-all text-xs text-muted-foreground">Group {item.order_group_number} / Order {item.order_group_position} of {item.order_group_size}</p>}
+                  <div className="mt-3 rounded-lg bg-muted/40 p-3"><p className="mb-1 text-[11px] font-medium text-muted-foreground">SAVED DESTINATION</p><p className="break-words text-sm leading-relaxed">{item.destination || "Destination unavailable"}</p></div>
+                  <div className="mt-3 flex flex-wrap justify-between gap-2 text-xs"><span className="text-muted-foreground">{item.item_count} {item.item_count === 1 ? "item" : "items"}</span><span className="font-semibold">{item.total === null ? "Unverified total" : formatCurrency(item.total)}</span></div>
+                </li>)}
+              </ol>
+              {!reviewOrders.length && <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No orders selected yet. Add an order or a ready group to build this delivery run.</div>}
               {(orderDetailQuery.data || []).length > 0 && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   Stops are visited from top to bottom. Use the up and down arrows to change their order before continuing.
@@ -1252,9 +1084,9 @@ export default function DeliveryScheduleDialog() {
                 <TableBody>
                   {reviewOrders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell>{order.order_number || "—"}</TableCell>
+                      <TableCell className="min-w-36 max-w-52 whitespace-normal break-words">{order.order_number || "-"}{order.order_group_number && <p className="mt-1 text-xs text-muted-foreground">{order.order_group_number} / {order.order_group_position} of {order.order_group_size}</p>}</TableCell>
                       <TableCell>{order.customer_company || "—"}</TableCell>
-                      <TableCell>{order.destination || "—"}</TableCell>
+                      <TableCell className="min-w-40 max-w-64 whitespace-normal break-words">{order.destination || "-"}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {order.item_count}
                       </TableCell>
@@ -1298,7 +1130,8 @@ export default function DeliveryScheduleDialog() {
             {form.formState.errors.root.message}
           </p>
         )}
-        <DialogFooter className="sticky -bottom-4 z-20 flex-wrap items-center rounded-lg border bg-background/95 p-3 backdrop-blur-sm">
+        </ScheduleWorkspace>
+        <DialogFooter className="mx-0 mb-0 flex-row flex-wrap items-center gap-2 rounded-none border-t bg-background px-4 py-4 sm:px-7">
           <p className="w-full text-xs text-muted-foreground sm:mr-auto sm:w-auto">{step === steps.length - 1 ? "Check the complete delivery plan before scheduling." : `Step ${step + 1} of ${steps.length} / Changes are not saved yet.`}</p>
           <Button
             type="button"
@@ -1313,10 +1146,12 @@ export default function DeliveryScheduleDialog() {
             <Button
               type="button"
               className="h-auto min-h-10 min-w-0 whitespace-normal text-left"
+              aria-label={nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}
               onClick={handleNext}
               disabled={nextPending || driverExpensesMutation.isPending || form.formState.isSubmitting}
             >
-              {nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}
+              <span className="sm:hidden">{nextPending ? "Checking..." : "Continue"}</span>
+              <span className="hidden sm:inline">{nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}</span>
               <ArrowRight className="ml-2 size-4" />
             </Button>
           )}

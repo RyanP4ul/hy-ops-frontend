@@ -1,7 +1,7 @@
 "use client";
 import { useSearchParams } from "next/navigation";
 
-import { useMutation, useQuery, UseQueryResult } from "@tanstack/react-query";
+import { useQuery, UseQueryResult } from "@tanstack/react-query";
 import { createContext, useContext, useState } from "react";
 import {
   OrderDetail,
@@ -10,6 +10,7 @@ import {
   OrderRow,
   orderSchema,
 } from "@/schema/order";
+import { draftForPaymentMode, emptyCombinedPayment, type PaymentMode, type CombinedPayment } from "@/schema/order-batch";
 import { request } from "@/components/http";
 import { useForm, useWatch, UseFormReturn } from "react-hook-form";
 import { useModal } from "@/components/providers/modal-provider";
@@ -50,14 +51,31 @@ type CustomerOption = {
 
 export type CustomerOrderEligibility = {
   eligible: boolean;
-  reasonCode: "CUSTOMER_ORDER_LIMIT_REACHED" | null;
+  reasonCode: null;
   activeOrderCount: number;
-  maxActiveOrders: number;
+  maxActiveOrders: null;
   checkedAt: string;
   message: string | null;
 };
 
+export type OrderDraft = {
+  data: OrderForm;
+  warehouseName: string;
+  destination: string;
+};
+
 type OrdersContext = {
+  paymentMode: PaymentMode;
+  setPaymentMode: React.Dispatch<React.SetStateAction<PaymentMode>>;
+  combinedPayment: CombinedPayment;
+  setCombinedPayment: React.Dispatch<React.SetStateAction<CombinedPayment>>;
+  draftOrders: OrderDraft[];
+  activeDraftIndex: number;
+  orderCount: number;
+  collectDrafts: () => OrderDraft[];
+  addAnotherOrder: () => void;
+  switchDraft: (index: number) => void;
+  removeDraft: (index: number) => void;
   startOrder: () => void;
   send: (data: unknown) => void;
   form: UseFormReturn<OrderForm>;
@@ -143,6 +161,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const filters = useSearchParams();
   const { send } = useWebSocket();
   const [step, setStep] = useState<number>(0);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>("SEPARATE");
+  const [combinedPayment, setCombinedPayment] = useState<CombinedPayment>({ ...emptyCombinedPayment });
+  const [draftOrders, setDraftOrders] = useState<OrderDraft[]>([]);
+  const [activeDraftIndex, setActiveDraftIndex] = useState(0);
+  const orderCount = Math.max(draftOrders.length, activeDraftIndex + 1);
   const [selected, setSelected] = useState<FormSelected>({
     id: -1,
     version: 0,
@@ -173,7 +196,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       items: OrderItemDetail[];
     }
   >({
-    resolver: zodResolver(orderSchema),
+    resolver: (values, context, options) => zodResolver(orderSchema)(draftForPaymentMode(values, paymentMode), context, options),
     defaultValues: {
       warehouse_id: -1,
       customer_id: -1,
@@ -350,7 +373,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const selectedCustomerId = form.watch("customer_id");
+  const selectedCustomerId = useWatch({ control: form.control, name: "customer_id" });
   const customerOrderEligibility = useQuery({
     queryKey: ["customer-order-eligibility", selectedCustomerId],
     queryFn: async () => {
@@ -377,7 +400,66 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     setViewOrderId(orderId);
   };
 
+  const collectDrafts = (): OrderDraft[] => {
+    const data = structuredClone(form.getValues());
+    const customer = customerQuery.data?.rows.find(row => row.id === data.customer_id);
+    const address = customer?.addresses.find(row => row.id === data.customer_address_id);
+    const destination = address
+      ? [address.address_line, address.barangay, address.city_municipality, address.province, address.postal_code].filter(Boolean).join(", ")
+      : "Choose a saved shipping address";
+    const drafts = [...draftOrders];
+    drafts[activeDraftIndex] = { data, warehouseName: warehouseCB.inputValue, destination };
+    return drafts;
+  };
+
+  const loadDraft = (draft: OrderDraft, index: number) => {
+    form.reset(structuredClone(draft.data));
+    setActiveDraftIndex(index);
+    warehouseCB.setInputValue(draft.warehouseName);
+    warehouseCB.setOpen(false);
+    inventoryCB.setInputValue(""); inventoryCB.setPage(0); inventoryCB.setOpen(false);
+    setInventoryItem(draft.data.items.map(item => ({ inventory_id: item.inventory_id, quantity: item.quantity })));
+    setSub({ is_open: false, mode: DialogMode.DEFAULT });
+    setStep(0);
+  };
+
+  const addAnotherOrder = () => {
+    if (orderCount >= 25) return;
+    const drafts = collectDrafts();
+    const current = drafts[activeDraftIndex];
+    setDraftOrders(drafts);
+    loadDraft({
+      warehouseName: current.warehouseName,
+      destination: "Choose a saved shipping address",
+      data: {
+        warehouse_id: current.data.warehouse_id, customer_id: current.data.customer_id,
+        delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "BANK_TRANSFER", payment_type: "",
+        notes: "", is_custom_shipping: false, customer_address_id: undefined, items: [], amount_paid: 0,
+      },
+    }, drafts.length);
+  };
+
+  const switchDraft = (index: number) => {
+    if (index === activeDraftIndex) return;
+    const drafts = collectDrafts();
+    if (!drafts[index]) return;
+    setDraftOrders(drafts);
+    loadDraft(drafts[index], index);
+  };
+
+  const removeDraft = (index: number) => {
+    if (orderCount <= 1) return;
+    const drafts = collectDrafts();
+    drafts.splice(index, 1);
+    if (drafts.length === 1) setPaymentMode("SEPARATE");
+    const next = index < activeDraftIndex ? activeDraftIndex - 1 : Math.min(activeDraftIndex, drafts.length - 1);
+    setDraftOrders(drafts);
+    loadDraft(drafts[next], next);
+  };
+
   const startOrder = () => {
+    setPaymentMode("SEPARATE"); setCombinedPayment({ ...emptyCombinedPayment });
+    setDraftOrders([]); setActiveDraftIndex(0);
     form.reset({ warehouse_id: -1, customer_id: -1, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "BANK_TRANSFER", payment_type: "", notes: "", is_custom_shipping: false, customer_address_id: undefined, shipping_recipient: undefined, shipping_phone: undefined, shipping_address: undefined, shipping_latitude: undefined, shipping_longitude: undefined, items: [], amount_paid: 0 });
     setStep(0); setSelected({ id: -1, version: 0 }); setInventoryItem([]); setSub({ is_open: false, mode: DialogMode.DEFAULT });
     for (const combo of [warehouseCB, customerCB, inventoryCB]) { combo.setInputValue(""); combo.setPage(0); combo.setOpen(false); }
@@ -387,6 +469,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     <OrdersContext.Provider
       value={{
         startOrder,
+        paymentMode, setPaymentMode, combinedPayment, setCombinedPayment,
+        draftOrders, activeDraftIndex, orderCount, collectDrafts, addAnotherOrder, switchDraft, removeDraft,
         send,
         form,
         step,

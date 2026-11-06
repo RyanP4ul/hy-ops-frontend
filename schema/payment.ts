@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const paymentRowSchema = z.object({
   id: z.number().int(),
+  combined_payment_number: z.string().nullable().optional(),
+  combined_payment_reference: z.string().nullable().optional(),
+  combined_payment_amount: z.coerce.number().nullable().optional(),
+  combined_payment_allocation: z.coerce.number().nullable().optional(),
   payment_number: z.string().min(1, "Payment number is required").max(32),
   order_id: z.number().int().min(1, "Order is required"),
   customer_id: z.number().int().min(1, "Customer is required"),

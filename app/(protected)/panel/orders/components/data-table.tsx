@@ -122,10 +122,16 @@ export default function DataTable() {
       {
         accessorKey: "product_number",
         header: () => sortableHeader("product_number", "Order Number"),
+        cell: ({ row }) => <div><p>{row.original.product_number}</p>{row.original.order_group_number && <p className="mt-1 text-xs text-muted-foreground">{row.original.order_group_number} / {row.original.order_group_position} of {row.original.order_group_size}</p>}</div>,
       },
       {
         accessorKey: "warehouse_name",
         header: () => sortableHeader("warehouse_name", "Warehouse"),
+      },
+      {
+        accessorKey: "shipping_address",
+        header: "Shipping destination",
+        cell: ({ row }) => <p className="min-w-48 max-w-72 whitespace-normal text-sm">{row.original.shipping_address || "Address unavailable"}</p>,
       },
       {
         accessorKey: "customer_name",

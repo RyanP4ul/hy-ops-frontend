@@ -1,3 +1,4 @@
+import type { OrderGroupFields } from "./delivery-schedule";
 import { z } from "zod";
 
 export const orderItemSchema = z.object({
@@ -52,6 +53,9 @@ export const orderSchema = z
       .nonnegative("Amount paid must be a non-negative number"),
   })
   .superRefine((data, ctx) => {
+    if (data.is_custom_shipping) {
+      ctx.addIssue({ code: "custom", path: ["customer_address_id"], message: "Select a saved shipping address for this order" });
+    }
     if (data.payment_method !== "CASH" && !data.payment_type?.trim()) {
       ctx.addIssue({ code: "custom", path: ["payment_type"], message: "Select or enter a payment type" });
     }
@@ -103,8 +107,10 @@ export type OrderItemDetail = z.infer<typeof OrderItemDetailSchema>;
 //   price: number;
 // };
 
-export type OrderRow = {
+export type OrderRow = Partial<OrderGroupFields> & {
+  product_number?: string;
   id: number;
+  shipping_address?: string | null;
   customer_name: string;
   email: string;
   customer_company: string;
@@ -122,10 +128,13 @@ export type OrderItemDetailView = Omit<OrderItemDetail, "price"> & {
   price: number | null;
 };
 
-export type OrderDetail = Omit<OrderForm, "items" | "payment_type"> & {
+export type CombinedPaymentInfo = { payment_number: string; amount: number; allocated_amount: number; reference_number?: string | null };
+
+export type OrderDetail = Omit<OrderForm, "items" | "payment_type"> & Partial<OrderGroupFields> & {
   payment_type?: string | null;
   id: number;
   order_number: string;
+  combined_payment?: CombinedPaymentInfo | null;
   version: number;
   customer_name: string;
   items: OrderItemDetailView[];
