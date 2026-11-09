@@ -17,7 +17,7 @@ const stages = [
 ];
 
 export function CreateOrderWorkspace({ disabled, error, children }: { disabled: boolean; error?: string; children: ReactNode }) {
-  const { step, setStep, activeDraftIndex, orderCount } = useOrders();
+  const { step, setStep, activeDraftIndex, orderCount, form } = useOrders();
   const content = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const previous = useRef(`${activeDraftIndex}:${step}`);
@@ -61,6 +61,7 @@ export function CreateOrderWorkspace({ disabled, error, children }: { disabled: 
       <div className="space-y-6">
         {step === 2 && orderCount > 1 && <BatchPaymentOptions disabled={disabled} />}
         {children}
+        {step === 0 && <label className="block space-y-2 text-sm"><span className="font-medium">Delivery method</span><select className="h-10 w-full rounded-md border bg-background px-3" disabled={disabled} {...form.register("delivery_type")}><option value="INTERNAL">Company delivery</option><option value="PICKUP">Customer pickup</option><option value="LALAMOVE">Lalamove</option></select><p className="text-xs text-muted-foreground">Lalamove is quoted and booked separately after the order is ready for scheduling.</p></label>}
       </div>
     </div>
   </div>;

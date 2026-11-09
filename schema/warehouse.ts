@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const warehouseSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  phone_number: z.string().trim().max(20).regex(/^$|^\+?[0-9 ()-]{7,20}$/, "Enter a valid phone number").nullish(),
   street_address: z.string().min(1, "Street address is required"),
   city: z.string().min(1, "City is required"),
   state: z.string().min(1, "Province is required"),

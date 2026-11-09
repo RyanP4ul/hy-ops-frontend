@@ -91,7 +91,7 @@ export default function DataTable() {
       {
         accessorKey: "name",
         header: () => sortableHeader("name", "Warehouse"),
-        cell: ({ row }) => <div className="space-y-1"><p className="font-medium">{row.original.name}</p><Badge variant="outline">#{row.original.id}</Badge></div>,
+        cell: ({ row }) => <div className="space-y-1"><p className="font-medium">{row.original.name}</p><p className="text-xs text-muted-foreground">{row.original.phone_number || "No phone number saved"}</p><Badge variant="outline">#{row.original.id}</Badge></div>,
       },
       {
         accessorKey: "street_address",

@@ -3,6 +3,7 @@ import z from "zod";
 export const inventoryTableSchema = z.object({
   id: z.number().nonnegative(),
   product_name: z.string().min(1).nonempty(),
+  description: z.string().nullable().optional(),
   sku: z.string().min(1).nonempty(),
   reserved: z.number().nonnegative(),
   warehouse_name: z.string().min(1).nonempty(),

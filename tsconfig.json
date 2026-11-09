@@ -38,7 +38,9 @@
     ".next/dev/dev/types/**/*.ts",
     ".next-live-fixture/dev/types/**/*.ts",
     ".next-live-fixture/dev/dev/types/**/*.ts",
-    ".next-live-fixture/types/**/*.ts"
+    ".next-live-fixture/types/**/*.ts",
+    ".next-build-check/types/**/*.ts",
+    ".next-build-check/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

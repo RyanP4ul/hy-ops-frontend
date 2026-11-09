@@ -8,6 +8,7 @@ import { useModal } from "@/components/providers/modal-provider";
 import { useOrders } from "../provider";
 import { OrderForm } from "@/schema/order";
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { orderBatchFormSchema, toOrderBatchPayload, previewCombinedOrders } from "@/schema/order-batch";
 import { Controller, useWatch } from "react-hook-form";
 import { Edit, FileText, Plus, Trash2, MapPin, Phone, Building2, Package } from "lucide-react";
@@ -87,6 +88,7 @@ function formatCustomerAddress(address: {
   }
 
 export default function Form() {
+  const router = useRouter();
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -193,6 +195,8 @@ export default function Form() {
         onSuccess();
         const created = Array.isArray(result.orders) ? result.orders : [result];
         for (const order of created) send({ type: REQUESTS.ORDER_ADDED, payload: [JSON.stringify(order)] });
+        const lalamoveOrder = created.find((order: { id?: number; delivery_type?: string }) => order.delivery_type === "LALAMOVE" && Number.isSafeInteger(order.id) && Number(order.id) > 0);
+        if (lalamoveOrder) router.push(`/panel/lalamove?orderId=${lalamoveOrder.id}`);
       });
     }
   }

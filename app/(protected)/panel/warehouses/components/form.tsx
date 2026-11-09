@@ -59,6 +59,7 @@ export default function Form() {
         latitude: warehouseDetailQuery.data?.latitude == null ? null : Number(warehouseDetailQuery.data.latitude),
         longitude: warehouseDetailQuery.data?.longitude == null ? null : Number(warehouseDetailQuery.data.longitude),
         name: warehouseDetailQuery.data?.name ?? "",
+        phone_number: warehouseDetailQuery.data?.phone_number ?? "",
         street_address: warehouseDetailQuery.data?.street_address ?? "",
         city: warehouseDetailQuery.data?.city ?? "",
         state: warehouseDetailQuery.data?.state ?? "",
@@ -72,6 +73,7 @@ export default function Form() {
         latitude: null,
         longitude: null,
         name: "",
+        phone_number: "",
         street_address: "",
         city: "",
         state: "",
@@ -276,6 +278,19 @@ export default function Form() {
                 placeholder="Enter Name"
                 autoComplete="off"
               />
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+            </Field>
+          )}
+        />
+
+        <Controller
+          name="phone_number"
+          control={form.control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="warehouse_phone_number">Warehouse phone number</FieldLabel>
+              <Input {...field} value={field.value ?? ""} id="warehouse_phone_number" type="tel" maxLength={20} autoComplete="tel" placeholder="+639XXXXXXXXX" aria-invalid={fieldState.invalid} />
+              <p className="text-xs text-muted-foreground">Used by Lalamove to contact this warehouse at pickup. Required for courier bookings.</p>
               {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
             </Field>
           )}

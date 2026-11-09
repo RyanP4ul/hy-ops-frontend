@@ -25,6 +25,7 @@ export function createEventDeduplicator(limit = 1000, ttl = 30_000) {
 
 // Existing query roots are intentionally retained to avoid splitting caches.
 export const resourceQueryRoots: Record<string, readonly string[]> = {
+  lalamove: ["lalamove", "orders", "order", "order_view", "deliveries", "deliveryScheduleQuery", "inventory", "reports"],
   users: ["delivery-calendar", "users", "userDetail", "customer_query", "drivers", "delivery-assignment-drivers", "archives"],
   archives: ["archives", "users", "warehouses", "userDetail", "warehouse_detail"],
   products: ["inventory-available-variants", "products", "edit_product", "edit_variant", "product_variants", "inventory", "inventory-summary", "inventory_query"],
@@ -34,7 +35,7 @@ export const resourceQueryRoots: Record<string, readonly string[]> = {
   deliveries: ["delivery-calendar", "customer-return-pickups", "customer-return-candidates", "deliveries", "deliveryScheduleQuery", "orders", "order", "order_view", "inventory", "inventory-summary", "inventory_query", "stock-history", "inventory-reorder", "inventory-reconciliation", "fleet", "vehicles", "drivers", "delivery-assignment-drivers", "delivery-assignment-vehicles", "event_query", "dashboard_query"],
   "delivery-schedules": ["delivery-calendar", "deliveryScheduleQuery", "availableDateQuery", "deliveries", "orders", "fleet", "event_query", "dashboard_query"],
   vehicles: ["delivery-calendar", "vehicles", "vehicle_detail", "fleet", "delivery-assignment-vehicles", "dashboard_query"],
-  warehouses: ["delivery-calendar", "warehouses", "warehouse_detail", "fleet", "archives", "inventory"],
+  warehouses: ["delivery-calendar", "warehouses", "warehouse_detail", "fleet", "archives", "inventory", "lalamove"],
   fleet: ["fleet", "vehicles", "warehouse_detail", "dashboard_query"],
   sms: ["communications-sms"],
   calendar: ["event_query"],

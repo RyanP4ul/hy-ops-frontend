@@ -71,7 +71,7 @@ export function DataTable() {
     {
       accessorKey: "description",
       header: "Product",
-      cell: ({ row }) => <p className="min-w-36 max-w-xs whitespace-normal font-medium">{row.original.description}</p>,
+      cell: ({ row }) => <p className="min-w-36 max-w-xs whitespace-normal font-medium">{row.original.description || row.original.product_name}</p>,
     },
     {
       accessorKey: "warehouse_name",

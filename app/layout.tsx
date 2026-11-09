@@ -1,10 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Inter } from "next/font/google";
-import { cn } from "@/lib/utils";
 import QueryProvider from "@/components/providers/query-provider";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "HyOps",
@@ -20,7 +16,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-navbar-style="sticky"
-      className={cn("font-sans", inter.variable)}
+      className="font-sans"
       suppressHydrationWarning
     >
       <body>

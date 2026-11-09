@@ -19,7 +19,7 @@ interface ProductDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function ProductDialog({ open, onOpenChange }: ProductDialogProps) {
+function ProductDialog({ open, onOpenChange }: ProductDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent

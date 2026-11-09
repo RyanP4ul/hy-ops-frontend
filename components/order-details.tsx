@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
@@ -48,6 +49,7 @@ export function ViewOrderDetails({
     <div className="max-h-[65vh] space-y-5 overflow-y-auto">
       <section className="space-y-3">
         <h4 className="text-sm font-medium">Order Information</h4>
+        {order.delivery_type === "LALAMOVE" && <Link href={`/panel/lalamove?orderId=${order.id}`} className="inline-block text-sm underline">View Lalamove delivery and tracking</Link>}
         <div className="grid gap-3 sm:grid-cols-2">
           <ViewOrderItem label="Order number" value={order.order_number} />
           {order.order_group_number && <ViewOrderItem label="Order group" value={`${order.order_group_number} / Order ${order.order_group_position} of ${order.order_group_size}`} />}

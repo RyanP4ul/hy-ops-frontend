@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -189,7 +190,7 @@ export default function DeliveryScheduleDialog() {
   ];
 
   async function handleNext() {
-    if (nextPending || form.formState.isSubmitting) return;
+    if (nextPending || form.formState.isSubmitting || (step === 3 && reviewDeliveryType === "LALAMOVE")) return;
     setNextPending(true);
     try {
       const fields = fieldsByStep[step] ?? [];
@@ -592,6 +593,7 @@ export default function DeliveryScheduleDialog() {
               )}
             />
 
+            {reviewDeliveryType === "LALAMOVE" ? <section className="space-y-3 rounded-lg border p-4"><h3 className="font-medium">Book each order with Lalamove</h3><p className="text-sm text-muted-foreground">Continue to select Lalamove for the order, review its quotation, and confirm the courier booking. Each order is booked separately; no company driver or vehicle is assigned. The departure selected here does not schedule a Lalamove pickup.</p>{draftOrderIds.map(id => <p key={id}><Link className="text-sm underline" href={`/panel/lalamove?orderId=${id}`}>Review Lalamove delivery for order #{id}</Link></p>)}</section> : <>
             <Controller
               name="driver_id"
               control={form.control}
@@ -796,6 +798,7 @@ export default function DeliveryScheduleDialog() {
                 </Combobox>
               )}
             />
+            </>}
           </>
         )}
 
@@ -1148,7 +1151,7 @@ export default function DeliveryScheduleDialog() {
               className="h-auto min-h-10 min-w-0 whitespace-normal text-left"
               aria-label={nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}
               onClick={handleNext}
-              disabled={nextPending || driverExpensesMutation.isPending || form.formState.isSubmitting}
+              disabled={nextPending || driverExpensesMutation.isPending || form.formState.isSubmitting || (step === 3 && reviewDeliveryType === "LALAMOVE")}
             >
               <span className="sm:hidden">{nextPending ? "Checking..." : "Continue"}</span>
               <span className="hidden sm:inline">{nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}</span>

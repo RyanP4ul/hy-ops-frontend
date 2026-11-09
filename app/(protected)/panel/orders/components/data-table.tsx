@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { formatCurrency } from "@/utils/date-util";
 
 import { QueryFeedback } from "@/components/query-feedback";
@@ -197,6 +198,7 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
+            {(["SCHEDULING", "SCHEDULED", "IN_TRANSIT", "COMPLETED"].includes(row.original.status) || row.original.delivery_type === "LALAMOVE") && <Link className="self-center whitespace-nowrap text-xs underline" href={`/panel/lalamove?orderId=${row.original.id}`}>{row.original.delivery_type === "LALAMOVE" ? "Lalamove delivery" : "Delivery method"}</Link>}
             {/* View Order */}
             <Tooltip>
               <TooltipTrigger

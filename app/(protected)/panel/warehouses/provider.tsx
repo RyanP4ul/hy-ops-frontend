@@ -84,6 +84,7 @@ export function WarehousesProvider({
     resolver: zodResolver(warehouseSchema),
     defaultValues: {
       name: "",
+      phone_number: "",
       street_address: "",
       city: "",
       state: "",
