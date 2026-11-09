@@ -1,7 +1,6 @@
 "use client";
 
-import { ArchiveRow, ArchiveTable } from "@/schema/archives";
-import { SessionsAndLogsTableSchemaType } from "@/schema/s&l";
+import { ArchiveTable } from "@/schema/archives";
 import { useQuery } from "@tanstack/react-query";
 import { PaginationState } from "@tanstack/react-table";
 import {
@@ -9,6 +8,7 @@ import {
   Dispatch,
   SetStateAction,
   useContext,
+  useEffect,
   useState,
 } from "react";
 
@@ -46,8 +46,13 @@ export function useArchive() {
 }
 
 export function ArchiveProvider({ children }: { children: React.ReactNode }) {
+  const [{ pageIndex, pageSize }, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+
   const archivesQuery = useQuery({
-    queryKey: ["archives"],
+    queryKey: ["archives", pageIndex, pageSize],
 
     queryFn: async () => {
       const url_params = new URLSearchParams();
@@ -68,10 +73,13 @@ export function ArchiveProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const [{ pageIndex, pageSize }, setPagination] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: 10,
-  });
+  useEffect(() => {
+    if (!archivesQuery.isSuccess) return;
+    const lastPage = Math.max(0, Math.ceil(archivesQuery.data.total / pageSize) - 1);
+    if (pageIndex > lastPage) {
+      setPagination((current) => ({ ...current, pageIndex: lastPage }));
+    }
+  }, [archivesQuery.data?.total, archivesQuery.isSuccess, pageIndex, pageSize]);
 
   const [selected, setSelected] = useState<SelectedType>({
     archived_id: -1,

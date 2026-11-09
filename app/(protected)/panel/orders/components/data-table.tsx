@@ -2,77 +2,46 @@
 import { formatCurrency } from "@/utils/date-util";
 
 import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 
 
-import { ModalProvider, useModal } from "@/components/providers/modal-provider";
+import { useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { DialogMode } from "@/types/dialog";
 import {
-  flexRender,
   getCoreRowModel,
-  SortingState,
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
 import {
   ArrowDownUp,
-  Calendar,
   Check,
   CircleX,
   Edit,
   Eye,
-  Loader2Icon,
   NotepadText,
   Plus,
-  Search,
-  Trash2,
   Truck,
-  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
 import { OrderRow } from "@/schema/order";
 import { useOrders } from "../provider";
-import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import PaginationOrders from "./pagination";
-import { REQUESTS } from "@/constant/request";
-import { useWebSocket } from "@/components/providers/websocket-provider";
-import { useQueryClient } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type OrdersQueryData = {
-  rows: (OrderRow & { version: number })[];
-  total: number;
-};
 
 export default function DataTable() {
-  const { subscribe } = useWebSocket();
   const {
     ordersQuery,
     page,
@@ -89,7 +58,10 @@ export default function DataTable() {
   const { openModal } = useModal();
   const { viewOrder } = useOrders();
   const [searchInput, setSearchInput] = useState(search);
-  const debouncedSearch = useMemo(() => debounce(setSearch, 500), [setSearch]);
+  const debouncedSearch = useMemo(() => debounce((value: string) => {
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+    setSearch(value);
+  }, 350), [setSearch, setPage]);
 
   const sortableHeader = (id: string, label: string) => (
     <button
@@ -122,7 +94,7 @@ export default function DataTable() {
       {
         accessorKey: "product_number",
         header: () => sortableHeader("product_number", "Order Number"),
-        cell: ({ row }) => <div><p>{row.original.product_number}</p>{row.original.order_group_number && <p className="mt-1 text-xs text-muted-foreground">{row.original.order_group_number} / {row.original.order_group_position} of {row.original.order_group_size}</p>}</div>,
+        cell: ({ row }) => <div><p className="font-medium">{row.original.product_number}</p>{row.original.order_group_number && <p className="mt-1 text-xs text-muted-foreground">{row.original.order_group_number} / {row.original.order_group_position} of {row.original.order_group_size}</p>}</div>,
       },
       {
         accessorKey: "warehouse_name",
@@ -188,17 +160,17 @@ export default function DataTable() {
           };
 
           const statusColors: Record<string, string> = {
-            PENDING: "bg-yellow-100 text-yellow-800",
-            PROCESSING: "bg-blue-100 text-blue-800",
-            IN_TRANSIT: "bg-purple-100 text-purple-800",
-            COMPLETED: "bg-green-100 text-green-800",
-            CANCELLED: "bg-red-100 text-red-800",
+            PENDING: "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+            PROCESSING: "border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+            IN_TRANSIT: "border border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
+            COMPLETED: "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+            CANCELLED: "border border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
           };
 
           const status = row.original.status;
           const label = statusLabels[status] ?? status;
           const colorClass =
-            statusColors[status] ?? "bg-gray-100 text-gray-800";
+            statusColors[status] ?? "border border-border bg-muted text-muted-foreground";
 
           return (
             <span
@@ -230,8 +202,8 @@ export default function DataTable() {
               <TooltipTrigger
                 render={
                   <Button
-                    variant="outline"
-                    size="icon"
+                    variant="ghost"
+                    size="icon-sm"
                     aria-label="View order"
                     onClick={() => {
                       setSelected({
@@ -264,8 +236,8 @@ export default function DataTable() {
                 <TooltipTrigger
                   render={
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label="Edit order"
                       disabled={ordersQuery.isFetching}
                       onClick={() => {
@@ -297,8 +269,8 @@ export default function DataTable() {
                 <TooltipTrigger
                   render={
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label="Process order"
                       disabled={ordersQuery.isFetching}
                       className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
@@ -328,8 +300,8 @@ export default function DataTable() {
                 <TooltipTrigger
                   render={
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label="Mark ready for delivery"
                       disabled={ordersQuery.isFetching}
                       className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
@@ -361,8 +333,8 @@ export default function DataTable() {
                 <TooltipTrigger
                   render={
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label="Invoice"
                       onClick={() => {
                         setSelected({
@@ -393,8 +365,8 @@ export default function DataTable() {
                 <TooltipTrigger
                   render={
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label="Cancel order"
                       disabled={ordersQuery.isFetching}
                       className="text-destructive hover:text-destructive"
@@ -436,161 +408,49 @@ export default function DataTable() {
 
   useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
+  function clearSearch() {
+    debouncedSearch.cancel();
+    setSearchInput("");
+    setSearch("");
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }
+
+  function resetFilters() {
+    clearSearch();
+    setDeliveryType("ALL");
+    setSortBy({ id: "id", type: "desc" });
+  }
+
+  const deliveryOptions = [
+    { value: "ALL", label: "All delivery methods" },
+    { value: "LALAMOVE", label: "Lalamove" },
+    { value: "PICKUP", label: "Customer pickup" },
+    { value: "INTERNAL", label: "Company delivery" },
+  ];
+  const filtered = Boolean(search || deliveryType !== "ALL");
+
   return (
-    <>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <div className="relative sm:w-64">
-            <InputGroup className="max-w-md">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                placeholder="Search orders..."
-                value={searchInput}
-                onChange={(event) => {
-                  setSearchInput(event.target.value);
-                  setPage((current) => ({ ...current, pageIndex: 0 }));
-                  debouncedSearch(event.target.value);
-                }}
-              />
-            </InputGroup>
-          </div>
-
-          <Select
-            value={deliveryType}
-            onValueChange={(value) => {
-              if (value) {
-                setDeliveryType(value);
-                setPage((current) => ({ ...current, pageIndex: 0 }));
-              }
-            }}
-          >
-            <SelectTrigger className="w-48" aria-label="Filter by delivery method">
-              <SelectValue placeholder="Delivery method" />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                <SelectItem value="ALL">All delivery methods</SelectItem>
-                <SelectItem value="LALAMOVE">Lalamove</SelectItem>
-                <SelectItem value="PICKUP">Customer pickup</SelectItem>
-                <SelectItem value="INTERNAL">Company delivery</SelectItem>
-              </SelectGroup>
-            </SelectContent>
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <ManagementListHeader title="Order history" description="Review order progress, customer details, and saved checkout totals."
+        total={ordersQuery.data?.total} isFetching={ordersQuery.isFetching} onRefresh={() => void ordersQuery.refetch()}
+        actions={<Button size="sm" onClick={() => { startOrder(); openModal(DialogMode.INSERT, { title: "Create Order", description: "Add a new order below.", action: "Create Order" }); }}><Plus className="size-4" aria-hidden="true" />Add order</Button>} />
+      <div className="space-y-3 border-b bg-muted/20 p-4 md:px-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <ManagementSearch id="order-search" value={searchInput} placeholder="Search orders…" onChange={(value) => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
+          <Select items={deliveryOptions} value={deliveryType} onValueChange={(value) => { if (value) { setDeliveryType(value); setPage((current) => ({ ...current, pageIndex: 0 })); } }}>
+            <SelectTrigger className="h-10 w-full bg-background sm:w-52" aria-label="Filter by delivery method"><SelectValue /></SelectTrigger>
+            <SelectContent>{deliveryOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
           </Select>
-
-          <Button variant="outline" onClick={() => { setSortBy({ id: "id", type: sortBy.id === "id" && sortBy.type === "desc" ? "asc" : "desc" }); setPage(current => ({ ...current, pageIndex: 0 })); }}>
-            <ArrowDownUp className="mr-2 size-4" />
-            {sortBy.id === "id" && sortBy.type === "asc" ? "Oldest first" : "Newest first"}
-            {/* {sortOrder === "newest" ? "Newest first" : "Oldest first"} */}
+          <Button variant="outline" className="h-10 bg-background" onClick={() => { setSortBy({ id: "id", type: sortBy.id === "id" && sortBy.type === "desc" ? "asc" : "desc" }); setPage((current) => ({ ...current, pageIndex: 0 })); }}>
+            <ArrowDownUp className="size-4" aria-hidden="true" />{sortBy.id === "id" ? (sortBy.type === "asc" ? "Oldest first" : "Newest first") : "Sort by date"}
           </Button>
+          {(filtered || searchInput || sortBy.id !== "id" || sortBy.type !== "desc") && <Button variant="ghost" size="sm" onClick={resetFilters}>Reset filters</Button>}
         </div>
-        <Button
-          type="button"
-          variant="default"
-          size="lg"
-          className="cursor-pointer"
-          onClick={() => {
-            startOrder();
-            openModal(DialogMode.INSERT, {
-              title: "Create Order",
-              description: "Add a new order below.",
-              action: "Create Order",
-            });
-          }}
-        >
-          <Plus className="h-3 w-3" />
-          <span>Add Order</span>
-        </Button>
+        <p className="text-xs text-muted-foreground">Totals use saved checkout prices. Missing historical prices are marked Unverified. Cancelled orders retain their recorded value.</p>
       </div>
-
-      <div className="rounded-md border overflow-hidden">
-        <QueryFeedback query={ordersQuery} label="orders" />
-            <Table>
-          <TableHeader className="bg-muted sticky top-0 z-10">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {ordersQuery.isPending ? (
-              <TableRow>
-                <TableCell colSpan={10} className="h-40 text-center">
-                  <div className="flex items-center justify-center">
-                    <Loader2Icon className="mr-2 animate-spin h-4 w-4" />
-                    Loading...
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <>
-                {table.getRowModel().rows.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
-                      No Results Found
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex w-full items-center px-4">
-        <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-          <Field orientation="horizontal" className="w-fit">
-            <FieldLabel htmlFor="select-rows-per-page">
-              Rows per page
-            </FieldLabel>
-
-            <Select
-              defaultValue="10"
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" id="select-rows-per-page">
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="30">30</SelectItem>
-                  <SelectItem value="40">40</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
-        <div className="flex items-center justify-end">
-          <PaginationOrders table={table} />
-        </div>
-      </div>
-    </>
+      <QueryFeedback query={ordersQuery} label="orders" />
+      <ManagementTableView table={table} loading={ordersQuery.isPending} isFetching={ordersQuery.isFetching} error={ordersQuery.isError} filtered={filtered} label="orders" />
+      <ManagementListFooter table={table} total={ordersQuery.data?.total ?? 0} isFetching={ordersQuery.isFetching} label="Orders" />
+    </section>
   );
 }

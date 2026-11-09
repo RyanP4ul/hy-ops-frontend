@@ -5,49 +5,25 @@ import { ProofOfDeliveryAction } from "./proof-of-delivery-action";
 import { RefundPickupAction } from "./refund-pickup-action";
 import { RunActions } from "./run-actions";
 import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 
 
 import { useRouter } from "next/navigation";
 import { useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { DialogMode } from "@/types/dialog";
 import {
-  flexRender,
   getCoreRowModel,
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
 import {
-  Loader2Icon,
   PencilLine,
   Plus,
-  Search,
   Truck,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
-import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { REQUESTS } from "@/constant/request";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { useQueryClient } from "@tanstack/react-query";
@@ -81,7 +57,12 @@ export default function DataTable() {
   } = useDeliveries();
   const { openModal } = useModal();
   const [searchInput, setSearchInput] = useState(search);
-  const debouncedSearch = useMemo(() => debounce(setSearch, 500), [setSearch]);
+  const debouncedSearch = useMemo(() => debounce((value: string) => {
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+    setSearch(value);
+  }, 350), [setSearch, setPage]);
+
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
   const columns = useMemo<ColumnDef<DeliveriesRow>[]>(
     () => [
@@ -134,7 +115,7 @@ export default function DataTable() {
           <div className="flex flex-col gap-1">
             {row.original.pickups?.map(pickup => <p key={`pickup-${pickup.id}`} className="text-sm text-rose-600">Pickup: {pickup.orderNumber} / {pickup.status}</p>)}
             {row.original.orders.map((order) => (
-              <div key={order.order_id} className="flex items-center gap-2">
+              <div key={order.order_id} className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{order.order_number}{order.return_status && <span className="ml-2 text-rose-600">Refunded / {order.return_status}</span>}</p>
                   <Badge variant={"ghost"}>{order.status}</Badge>
@@ -157,9 +138,9 @@ export default function DataTable() {
             <div className="flex flex-col gap-1">
               <Badge
                 variant={status === "CANCELLED" ? "destructive" : "outline"}
-                className="uppercase"
+                className="capitalize"
               >
-                {row.original.status}
+                {row.original.status.replace(/_/g, " ")}
               </Badge>
               {row.original.is_overdue && <span className="text-xs text-destructive">Overdue: Reschedule before dispatch</span>}
             </div>
@@ -198,8 +179,8 @@ export default function DataTable() {
                 <TooltipTrigger
                   render={
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label="Delivery Event"
                       disabled={status !== "SCHEDULED"}
                       onClick={() => {
@@ -232,8 +213,8 @@ export default function DataTable() {
                   <TooltipTrigger
                     render={
                       <Button
-                        variant="outline"
-                        size="icon"
+                        variant="ghost"
+                        size="icon-sm"
                         aria-label="Change Driver and Vehicle"
                         onClick={() => {
                           assignment_form.reset({
@@ -313,130 +294,23 @@ export default function DataTable() {
     );
   }, [page.pageIndex, page.pageSize, queryClient, search, subscribe]);
 
+  function clearSearch() {
+    debouncedSearch.cancel();
+    setSearchInput("");
+    setSearch("");
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }
+
   return (
-    <>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <div className="relative sm:w-64">
-            <InputGroup className="max-w-md">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                placeholder="Search deliveries or customers..."
-                value={searchInput}
-                onChange={(event) => {
-                  setSearchInput(event.target.value);
-                  setPage((current) => ({ ...current, pageIndex: 0 }));
-                  debouncedSearch(event.target.value);
-                }}
-              />
-            </InputGroup>
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="default"
-          size="lg"
-          className="cursor-pointer"
-          onClick={() => router.push("/panel/delivery-schedules")}
-        >
-          <Plus className="h-3 w-3" />
-          <span>Schedule Delivery</span>
-        </Button>
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <ManagementListHeader title="Delivery runs" description="Review assignments, follow progress, and manage delivery events." total={deliveriesQuery.data?.total} isFetching={deliveriesQuery.isFetching} onRefresh={() => void deliveriesQuery.refetch()} actions={<Button size="sm" onClick={() => router.push("/panel/delivery-schedules")}><Plus className="size-4" aria-hidden="true" />Schedule delivery</Button>} />
+      <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
+        <ManagementSearch id="deliveries-search" value={searchInput} placeholder="Search deliveries or customers…" onChange={(value) => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
+        {(search || searchInput) && <Button variant="ghost" size="sm" onClick={clearSearch}>Clear search</Button>}
       </div>
-
-      <div className="rounded-md border overflow-hidden">
-        <QueryFeedback query={deliveriesQuery} label="deliveries" />
-            <Table>
-          <TableHeader className="bg-muted sticky top-0 z-10">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {deliveriesQuery.isPending ? (
-              <TableRow>
-                <TableCell colSpan={10} className="h-40 text-center">
-                  <div className="flex items-center justify-center">
-                    <Loader2Icon className="mr-2 animate-spin h-4 w-4" />
-                    Loading...
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <>
-                {table.getRowModel().rows.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => {
-                        const renderedCell = cell.column.columnDef.cell
-                          ? flexRender(cell.column.columnDef.cell, cell.getContext())
-                          : cell.getValue();
-
-                        return (
-                          <TableCell key={cell.id}>{renderedCell as ReactNode}</TableCell>
-                        );
-                      })}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
-                      No Results Found
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex w-full items-center px-4">
-        <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-          <Field orientation="horizontal" className="w-fit">
-            <FieldLabel htmlFor="select-rows-per-page">
-              Rows per page
-            </FieldLabel>
-
-            <Select
-              defaultValue="10"
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" id="select-rows-per-page">
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="30">30</SelectItem>
-                  <SelectItem value="40">40</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
-        <div className="flex items-center justify-end">
-          {/* <PaginationOrders table={table} /> */}
-        </div>
-      </div>
-    </>
+      <QueryFeedback query={deliveriesQuery} label="deliveries" />
+      <ManagementTableView table={table} loading={deliveriesQuery.isPending} isFetching={deliveriesQuery.isFetching} error={deliveriesQuery.isError} filtered={Boolean(search)} label="deliveries" />
+      <ManagementListFooter table={table} total={deliveriesQuery.data?.total ?? 0} isFetching={deliveriesQuery.isFetching} label="deliveries" />
+    </section>
   );
 }

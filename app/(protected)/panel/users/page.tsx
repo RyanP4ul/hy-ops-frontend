@@ -5,6 +5,8 @@ import { UserProvider } from "./provider";
 import UserPage from "./components/user-page";
 import UserDialog from "./components/dialog";
 import { MotionPage } from "@/components/page-motion";
+import { ManagementPageHeading } from "@/components/management-list";
+import { UsersRound } from "lucide-react";
 
 export default function Page() {
   return (
@@ -12,12 +14,7 @@ export default function Page() {
       <ModalProvider>
         <UserProvider>
           <section className="space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl tracking-tight">Users</h2>
-              <p className="text-muted-foreground text-sm">
-                Manage your users and their access to the application.
-              </p>
-            </div>
+            <ManagementPageHeading title="Users" description="Manage accounts, roles, and access to your workspace." icon={<UsersRound className="size-5" />} />
             <UserDialog />
             <UserPage />
           </section>

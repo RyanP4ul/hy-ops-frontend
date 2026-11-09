@@ -3,9 +3,9 @@
 import { ModalProvider } from "@/components/providers/modal-provider";
 import { WarehousesProvider } from "./provider";
 import WarehouseDialog from "./components/dialog";
-import DataTable from "./components/data-table";
 import WarehousePage from "./components/warehouse-page";
 import { MotionPage } from "@/components/page-motion";
+import { Warehouse } from "lucide-react";
 
 export default function Page() {
   return (
@@ -13,11 +13,12 @@ export default function Page() {
       <ModalProvider>
         <WarehousesProvider>
           <section className="space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl tracking-tight">Warehouses</h2>
-              <p className="text-muted-foreground text-sm">
-                Manage warehouse locations and delivery addresses.
-              </p>
+            <div className="flex items-start gap-3">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border bg-background text-primary"><Warehouse className="size-5" aria-hidden="true" /></div>
+              <div className="space-y-1">
+                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Warehouses</h1>
+                <p className="text-muted-foreground text-sm">Manage your locations and keep pickup and delivery addresses accurate.</p>
+              </div>
             </div>
             <WarehouseDialog />
             <WarehousePage />

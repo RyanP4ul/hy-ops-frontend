@@ -1,23 +1,11 @@
+"use client";
+
+import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
+import { debounce } from "@/utils/debounce";
 import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-  Table,
-} from "@/components/ui/table";
 import { SessionsAndLogsTableSchemaType } from "@/schema/s&l";
-import { flexRender, useReactTable } from "@tanstack/react-table";
+import { useReactTable } from "@tanstack/react-table";
 import {
   ColumnDef,
   ExpandedState,
@@ -32,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { REQUESTS } from "@/constant/request";
 import { useQueryClient } from "@tanstack/react-query";
-import PaginationSessions from "./session-pagination";
 import {
   Dialog,
   DialogContent,
@@ -51,9 +38,16 @@ export default function DataTable() {
     setPage,
     searchQuery,
     setSearchQuery,
-    tab,
-    setTab,
   } = useSessionsAndLogs();
+  const [searchInput, setSearchInput] = useState(searchQuery);
+  const [disconnectError, setDisconnectError] = useState("");
+  const debouncedSearch = useMemo(() => debounce((value: string) => {
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+    setSearchQuery(value);
+  }, 350), [setPage, setSearchQuery]);
+
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
+
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
   const [sessionToDisconnect, setSessionToDisconnect] =
     useState<SessionsAndLogsTableSchemaType | null>(null);
@@ -61,6 +55,7 @@ export default function DataTable() {
 
   const disconnectSession = async (sessionId: number): Promise<boolean> => {
     setDisconnectingId(sessionId);
+    setDisconnectError("");
 
     try {
       const response = await fetch(`/api/sessions/${sessionId}`, {
@@ -94,6 +89,7 @@ export default function DataTable() {
       return true;
     } catch (error) {
       console.error("Failed to disconnect session:", error);
+      setDisconnectError("Unable to disconnect this session. Please try again.");
       return false;
     } finally {
       setDisconnectingId(null);
@@ -116,10 +112,10 @@ export default function DataTable() {
     },
     {
       accessorKey: "name",
-      header: "Name",
+      header: "User",
       cell: ({ row }) => (
         <div className="flex items-center">
-          <span>{row.original.user.name}</span>
+          <div><p className="font-medium">{row.original.user.name}</p><p className="mt-1 text-xs text-muted-foreground">{row.original.user.email}</p></div>
         </div>
       ),
     },
@@ -169,12 +165,12 @@ export default function DataTable() {
       cell: ({ row }) => (
         <div className="flex space-x-2">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             className="text-destructive hover:text-destructive cursor-pointer"
             disabled={disconnectingId === row.original.id}
             aria-label="Disconnect session"
-            onClick={() => setSessionToDisconnect(row.original)}
+            onClick={() => { setDisconnectError(""); setSessionToDisconnect(row.original); }}
           >
             {disconnectingId === row.original.id ? (
               <Loader2Icon className="h-3 w-3 animate-spin" />
@@ -186,14 +182,6 @@ export default function DataTable() {
       ),
     },
   ];
-
-  const pagination = useMemo(
-    () => ({
-      page: page.pageIndex,
-      pageSize: page.pageSize,
-    }),
-    [page],
-  );
 
   const [expanded, setExpanded] = useState<ExpandedState>({});
 
@@ -218,77 +206,16 @@ export default function DataTable() {
   useEffect(() => {
     return subscribe(
       [REQUESTS.CHANGE_PAGE, REQUESTS.SESSION_OUT, REQUESTS.NEW_SESSION],
-      (message) => {
-        switch (message.type) {
-          case REQUESTS.SESSION_OUT:
-            sessionsAndLogsQuery.refetch();
-            break;
-          case REQUESTS.CHANGE_PAGE:
-            queryClient.setQueryData(
-              [
-                "sessionsAndLogsQuery",
-                page.pageIndex,
-                page.pageSize,
-                searchQuery,
-              ],
-              (oldData: any) => {
-                if (!oldData) {
-                  return oldData;
-                }
-
-                return {
-                  ...oldData,
-                  rows: oldData.rows.map(
-                    (row: SessionsAndLogsTableSchemaType) =>
-                      row.id === message.payload.id
-                        ? {
-                            ...row,
-                            page: message.payload.page,
-                          }
-                        : row,
-                  ),
-                };
-              },
-            );
-            break;
-          case REQUESTS.NEW_SESSION:
-            queryClient.setQueryData(
-              [
-                "sessionsAndLogsQuery",
-                page.pageIndex,
-                page.pageSize,
-                searchQuery,
-              ],
-              (oldData: any) => {
-                if (!oldData) {
-                  return {
-                    rows: [message.payload],
-                    total: 1,
-                  };
-                }
-
-                return {
-                  rows: [message.payload, ...oldData.rows],
-                  total: oldData.total + 1,
-                };
-              },
-            );
-            break;
-        }
-      },
+      () => { void queryClient.invalidateQueries({ queryKey: ["sessionsAndLogsQuery"] }); },
     );
-  }, [subscribe]);
+  }, [queryClient, subscribe]);
 
-  // useEffect(() => {
-  //   if (received === null) return;
-
-  //   switch (received?.type) {
-  //     case REQUESTS.SESSION_OUT:
-  //       console.log("Session out received:", received);
-  //       sessionsAndLogsQuery.refetch();
-  //       break;
-  //   }
-  // }, [received]);
+  function clearSearch() {
+    debouncedSearch.cancel();
+    setSearchInput("");
+    setSearchQuery("");
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }
 
   return (
     <>
@@ -311,6 +238,7 @@ export default function DataTable() {
               and remove it from the active sessions list.
             </DialogDescription>
           </DialogHeader>
+          {disconnectError && <p role="alert" className="text-sm text-destructive">{disconnectError}</p>}
           <DialogFooter>
             <Button
               variant="outline"
@@ -344,98 +272,17 @@ export default function DataTable() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <div className="px-4">
-        <div className="rounded-md border overflow-hidden">
-          <Table>
-            <TableHeader className="bg-muted sticky top-0 z-10">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => {
-                    return (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    );
-                  })}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {sessionsAndLogsQuery.isFetching ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="h-40 text-center">
-                    <div className="flex items-center justify-center">
-                      <Loader2Icon className="mr-2 animate-spin h-4 w-4" />
-                      Loading...
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                <>
-                  {table.getRowModel().rows.length ? (
-                    table.getRowModel().rows.map((row) => (
-                      <TableRow key={row.id}>
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id}>
-                            {cell.column.columnDef.cell
-                              ? (cell.column.columnDef.cell as any)(
-                                  cell.getContext(),
-                                )
-                              : cell.getValue()}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={10} className="h-24 text-center">
-                        No Results Found
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </>
-              )}
-            </TableBody>
-          </Table>
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <ManagementListHeader title="Active sessions" description="See who is connected, review their device, or disconnect a session."
+          total={sessionsAndLogsQuery.data?.total} isFetching={sessionsAndLogsQuery.isFetching} onRefresh={() => void sessionsAndLogsQuery.refetch()} />
+        <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
+          <ManagementSearch id="session-search" value={searchInput} placeholder="Search by name or email…" onChange={(value) => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
+          {(searchInput || searchQuery) && <Button variant="ghost" size="sm" onClick={clearSearch}>Clear search</Button>}
         </div>
-      </div>
-      <div className="flex w-full items-center px-4">
-        <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-          <Field orientation="horizontal" className="w-fit">
-            <FieldLabel htmlFor="select-rows-per-page">
-              Rows per page
-            </FieldLabel>
-
-            <Select
-              defaultValue="10"
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" id="select-rows-per-page">
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="30">30</SelectItem>
-                  <SelectItem value="40">40</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
-        <div className="flex items-center justify-end">
-          <PaginationSessions table={table} />
-        </div>
-      </div>
+        <QueryFeedback query={sessionsAndLogsQuery} label="active sessions" />
+        <ManagementTableView table={table} loading={sessionsAndLogsQuery.isPending} isFetching={sessionsAndLogsQuery.isFetching} error={sessionsAndLogsQuery.isError} filtered={Boolean(searchQuery)} label="active sessions" />
+        <ManagementListFooter table={table} total={sessionsAndLogsQuery.data?.total ?? 0} isFetching={sessionsAndLogsQuery.isFetching} label="Sessions" />
+      </section>
     </>
   );
 }

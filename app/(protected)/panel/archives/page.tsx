@@ -3,6 +3,8 @@ import { ArchiveProvider } from "./provider";
 import ArchivePage from "./components/archve-page";
 import ArchiveDialog from "./components/dialog";
 import { MotionPage } from "@/components/page-motion";
+import { Archive } from "lucide-react";
+import { ManagementPageHeading } from "@/components/management-list";
 
 export default function Page() {
   return (
@@ -10,13 +12,7 @@ export default function Page() {
       <ModalProvider>
         <ArchiveProvider>
           <section className="space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl tracking-tight">Archives</h2>
-              <p className="text-muted-foreground text-sm">
-                Manage your archived inventory and their variants. Click on an
-                archive to view its details or restore it.
-              </p>
-            </div>
+            <ManagementPageHeading title="Archives" description="Review archived records and restore accounts or warehouse locations when needed." icon={<Archive className="size-5" />} />
             <ArchiveDialog />
             <ArchivePage />
           </section>

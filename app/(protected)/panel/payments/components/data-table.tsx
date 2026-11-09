@@ -3,28 +3,19 @@ import { formatCurrency } from "@/utils/date-util";
 
 import { RefundControl } from "./refund-control";
 import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
+import { debounce } from "@/utils/debounce";
 
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownUp, CreditCard, Info, Search } from "lucide-react";
+import { ArrowDownUp, CreditCard, Info, Plus } from "lucide-react";
 import {
   useReactTable,
   getCoreRowModel,
-  flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { usePayments } from "../provider";
-import PaymentPagination from "./pagination";
 import { Button } from "@/components/ui/button";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
@@ -53,17 +44,25 @@ export default function DataTable() {
     setSearch,
     setSortBy,
     setSelected,
+    form,
   } = usePayments();
   const { openModal } = useModal();
   const { subscribe } = useWebSocket();
   const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState(search);
+  const debouncedSearch = useMemo(() => debounce((value: string) => {
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+    setSearch(value);
+  }, 350), [setPage, setSearch]);
+
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
   const columns = useMemo<ColumnDef<PaymentRowType>[]>(
     () => [
       { id: "received", header: "Total received", cell: ({ row }) => formatCurrency(row.original.gross_received) },
       { id: "refunded", header: "Refunded", cell: ({ row }) => formatCurrency(row.original.refunded_amount) },
       {
         accessorKey: "payment_number",
+        cell: ({ row }) => <span className="font-medium">{row.original.payment_number}</span>,
         header: () => (
           <SortableHeader
             label="Payment number"
@@ -108,7 +107,7 @@ export default function DataTable() {
           <SortableHeader label="Net received" id="amount" setSortBy={setSortBy} />
         ),
         cell: ({ row }) =>
-          formatCurrency(row.original.amount),
+          <span className="font-medium tabular-nums">{formatCurrency(row.original.amount)}</span>,
       },
       {
         accessorKey: "received_at",
@@ -218,75 +217,30 @@ export default function DataTable() {
     void queryClient.invalidateQueries({ queryKey: ["payments"] });
   }), [queryClient, subscribe]);
 
+  function clearSearch() {
+    debouncedSearch.cancel();
+    setSearchInput("");
+    setSearch("");
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchInput}
-          onChange={(event) => {
-            const value = event.target.value;
-            setSearchInput(value);
-            setSearch(value);
-            setPage((current) => ({ ...current, pageIndex: 0 }));
-          }}
-          placeholder="Search payments..."
-          className="pl-9"
-        />
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <ManagementListHeader title="Payment records" description="Review money received, refunded amounts, and remaining order balances."
+        total={paymentsQuery.data?.total} isFetching={paymentsQuery.isFetching} onRefresh={() => void paymentsQuery.refetch()}
+        actions={<Button size="sm" onClick={() => {
+          setSelected({ order_id: -1, payment_number: "", version: -1 });
+          form.reset({ order_id: -1, payment_number: "", payment_amount: 0, version: -1 });
+          openModal(DialogMode.INSERT, { title: "Add payment", description: "Choose an order and record the money received from the customer.", action: "Record payment" });
+        }}><Plus className="size-4" aria-hidden="true" />Add payment</Button>} />
+      <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
+        <ManagementSearch id="payment-search" value={searchInput} placeholder="Search payments…" onChange={(value) => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
+        {(search || searchInput) && <Button variant="ghost" size="sm" onClick={clearSearch}>Clear search</Button>}
       </div>
-      <div className="rounded-md border">
-        <QueryFeedback query={paymentsQuery} label="payments" />
-            <Table>
-          <TableHeader>
-            <TableRow>
-              {table.getHeaderGroups()[0].headers.map((header) => (
-                <TableHead key={header.id}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {paymentsQuery.isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
-                  Loading payments...
-                </TableCell>
-              </TableRow>
-            ) : table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No payment records found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <PaymentPagination table={table} />
-    </div>
+      <QueryFeedback query={paymentsQuery} label="payments" />
+      <ManagementTableView table={table} loading={paymentsQuery.isPending} isFetching={paymentsQuery.isFetching} error={paymentsQuery.isError} filtered={Boolean(search)} label="payments" />
+      <ManagementListFooter table={table} total={paymentsQuery.data?.total ?? 0} isFetching={paymentsQuery.isFetching} label="Payments" />
+    </section>
   );
 }
 

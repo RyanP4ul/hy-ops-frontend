@@ -24,7 +24,7 @@ export function StockSummary() {
     setPagination((page) => ({ ...page, pageIndex: 0 }));
   };
   return (
-    <div className="space-y-2 px-6" aria-label="Stock summary">
+    <div className="space-y-3" aria-label="Stock summary">
       <p className="text-sm text-muted-foreground">
         {warehouseId ? "Selected warehouse" : "All warehouses"} · Available = on hand − reserved. Summary covers all stock in this scope.
       </p>
@@ -33,10 +33,10 @@ export function StockSummary() {
           {([
             ["SKUs", "skus"], ["Low stock", "low"], ["Out of stock", "out"], ["Reserved units", "reserved"], ["Available units", "available"],
           ] as const).map(([label, key]) => (
-            <div key={key} className="rounded-lg border p-3">
-              <dt className="text-sm text-muted-foreground">{label}</dt>
-              <dd className="text-xl font-semibold">{summary.data?.[key]?.toLocaleString() ?? "—"}</dd>
-              {(key === "low" || key === "out") && <dd><Button variant="link" size="sm" className="h-auto p-0" onClick={() => filter(key === "low" ? "Low" : "Out")}>View items</Button></dd>}
+            <div key={key} className="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-sm last:col-span-2 lg:last:col-span-1">
+              <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+              <dd className={`text-2xl font-semibold tabular-nums tracking-tight ${key === "low" ? "text-amber-700 dark:text-amber-300" : key === "out" ? "text-red-700 dark:text-red-300" : ""}`}>{summary.data?.[key]?.toLocaleString() ?? "—"}</dd>
+              {(key === "low" || key === "out") && <dd><Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => filter(key === "low" ? "Low" : "Out")}>View items</Button></dd>}
             </div>
           ))}
         </dl>

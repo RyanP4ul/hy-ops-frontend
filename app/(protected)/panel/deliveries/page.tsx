@@ -6,8 +6,10 @@ import { DeliveriesProvider } from "./provider";
 import DeliveriesPage from "./components/deliveries-page";
 import DeliveriesDialog from "./components/dialog";
 import { MotionPage } from "@/components/page-motion";
+import { ManagementPageHeading } from "@/components/management-list";
+import { Truck } from "lucide-react";
 
-export default function Page() { return <Suspense fallback={<p role="status">Loading records?</p>}><PageContent /></Suspense>; }
+export default function Page() { return <Suspense fallback={<p role="status" className="p-6 text-sm text-muted-foreground">Loading deliveries…</p>}><PageContent /></Suspense>; }
 
 function PageContent() {
   return (
@@ -15,12 +17,7 @@ function PageContent() {
       <DeliveriesProvider>
         <ModalProvider>
           <section className="space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl tracking-tight">Deliveries</h2>
-              <p className="text-muted-foreground text-sm">
-                Manage delivery status, assignments, and delivery events.
-              </p>
-            </div>
+            <ManagementPageHeading title="Deliveries" description="Follow delivery progress, manage assignments, and review delivery outcomes." icon={<Truck className="size-5" />} />
             <DeliveriesDialog />
             <DeliveriesPage />
           </section>

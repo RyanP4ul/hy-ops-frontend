@@ -1,5 +1,8 @@
+"use client";
+
 import { StockHistory } from "./stock-history";
 import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementListHeader, ManagementListFooter, ManagementTableState } from "@/components/management-list";
 import { useModal } from "@/components/providers/modal-provider";
 import { InventoryTableSchemaType } from "@/schema/inventory";
 import {
@@ -11,26 +14,10 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Edit, Loader2Icon, Plus, Trash2 } from "lucide-react";
+import { Edit, Plus, Trash2 } from "lucide-react";
 import { useInventory } from "../provider";
 import { useMemo, useState } from "react";
 import { useEffect } from "react";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   TableHeader,
   TableRow,
@@ -40,8 +27,6 @@ import {
   Table,
 } from "@/components/ui/table";
 import { DialogMode } from "@/types/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
-import PaginationInventory from "./pagination";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -81,14 +66,16 @@ export function DataTable() {
     {
       accessorKey: "sku",
       header: "SKU",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.sku}</span>,
     },
     {
       accessorKey: "description",
-      header: "Description",
+      header: "Product",
+      cell: ({ row }) => <p className="min-w-36 max-w-xs whitespace-normal font-medium">{row.original.description}</p>,
     },
     {
       accessorKey: "warehouse_name",
-      header: "Warehouse Name",
+      header: "Warehouse",
       cell: ({ row }) => {
         const warehouseName = row.original.warehouse_name;
         return (
@@ -96,7 +83,7 @@ export function DataTable() {
             <TooltipTrigger
               render={
                 <a
-                  className="font-medium text-blue-700 border-b border-blue-700 hover:text-blue-900 hover:border-blue-900"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
                   href="/panel/warehouses"
                 >
                   {warehouseName}
@@ -118,13 +105,13 @@ export function DataTable() {
         let className = "";
 
         if (quantity <= 0) {
-          className = "bg-red-100 text-red-800 border-red-200 hover:bg-red-100";
+          className = "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900";
         } else if (quantity <= 10) {
           className =
-            "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100";
+            "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900";
         } else {
           className =
-            "bg-green-100 text-green-800 border-green-200 hover:bg-green-100";
+            "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900";
         }
         return (
           <Badge variant="outline" className={cn(className)}>
@@ -147,12 +134,12 @@ export function DataTable() {
 
         if (reserved <= 0) {
           className =
-            "bg-green-100 text-green-800 border-green-200 hover:bg-green-100";
+            "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900";
         } else if (reserved <= 10) {
           className =
-            "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100";
+            "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900";
         } else {
-          className = "bg-red-100 text-red-800 border-red-200 hover:bg-red-100";
+          className = "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900";
         }
 
         return (
@@ -169,7 +156,7 @@ export function DataTable() {
         <div className="flex space-x-2">
           <Button
             aria-label="Edit inventory"
-            variant="outline"
+            variant="ghost"
             size="sm"
             className="cursor-pointer"
             onClick={() => {
@@ -188,7 +175,7 @@ export function DataTable() {
             <Edit className="h-3 w-3" />
           </Button>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             className="text-destructive hover:text-destructive cursor-pointer"
             aria-label="Delete inventory"
@@ -303,99 +290,27 @@ export function DataTable() {
     warehouseId,
   ]);
 
+  const filtered = Boolean(searchQuery || stockStatus !== "All" || warehouseId || dateRange?.from || dateRange?.to);
+
   return (
-    <>
-      <div className="px-4">
-        <Filter />
-
-        <div className="rounded-md border overflow-hidden">
-          <QueryFeedback query={inventoryQuery} label="inventory" />
-            <Table>
-            <TableHeader className="bg-muted sticky top-0 z-10">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => {
-                    return (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    );
-                  })}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {inventoryQuery.isPending ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="h-40 text-center">
-                    <div className="flex items-center justify-center">
-                      <Loader2Icon className="mr-2 animate-spin h-4 w-4" />
-                      Loading...
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                <>
-                  {table.getRowModel().rows.length ? (
-                    table.getRowModel().rows.map((row) => (
-                      <TableRow key={row.id}>
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={10} className="h-24 text-center">
-                        {inventoryQuery.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <ManagementListHeader title="Stock records" description="Review warehouse availability, reserved stock, and each item's movement history."
+        total={inventoryQuery.data?.total} isFetching={inventoryQuery.isFetching} onRefresh={() => void inventoryQuery.refetch()}
+        actions={<Button size="sm" onClick={() => openModal(DialogMode.INSERT, { title: "Add Inventory Item", description: "Create a new inventory record below.", action: "Add Inventory Item" })}><Plus className="size-4" aria-hidden="true" />Add inventory item</Button>}
+      />
+      <Filter />
+      <QueryFeedback query={inventoryQuery} label="inventory" />
+      <div aria-busy={inventoryQuery.isFetching}>
+        <Table>
+          <TableHeader className="bg-muted/30">
+            {table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id} className="px-5">{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}
+          </TableHeader>
+          <TableBody>
+            {inventoryQuery.isPending ? <TableRow><TableCell colSpan={columns.length}><ManagementTableState loading label="inventory records" /></TableCell></TableRow> : table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="px-5 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={columns.length}><ManagementTableState error={inventoryQuery.isError} filtered={filtered} label="inventory records" /></TableCell></TableRow>}
+          </TableBody>
+        </Table>
       </div>
-      <div className="flex w-full items-center px-4">
-        <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-          <Field orientation="horizontal" className="w-fit">
-            <FieldLabel htmlFor="select-rows-per-page">
-              Rows per page
-            </FieldLabel>
-
-            <Select
-              defaultValue="10"
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" id="select-rows-per-page">
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="30">30</SelectItem>
-                  <SelectItem value="40">40</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
-        <div className="flex items-center justify-end">
-          <PaginationInventory table={table} />
-        </div>
-      </div>
-    </>
+      <ManagementListFooter table={table} total={inventoryQuery.data?.total ?? 0} isFetching={inventoryQuery.isFetching} label="Inventory" />
+    </section>
   );
 }

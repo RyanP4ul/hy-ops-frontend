@@ -1,194 +1,106 @@
 "use client";
 
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { debounce } from "@/utils/debounce";
-
-import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useInventory } from "../provider";
-import { Button } from "@/components/ui/button";
+import { CalendarDays } from "lucide-react";
 import { format } from "date-fns";
+import { ManagementSearch } from "@/components/management-list";
+import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { debounce } from "@/utils/debounce";
+import { useInventory } from "../provider";
+
+const stockOptions = [
+  { value: "All", label: "All stock levels" },
+  { value: "High", label: "High stock" },
+  { value: "Low", label: "Low stock" },
+  { value: "Out", label: "Out of stock" },
+];
 
 export default function Filter() {
   const {
-    warehouseQuery,
-    setPagination,
-    setSearchQuery,
-    setStockStatus,
-    warehouseId,
-    setWarehouseId,
-    dateRange,
-    setDateRange,
+    warehouseQuery, setPagination, searchQuery, setSearchQuery, stockStatus, setStockStatus,
+    warehouseId, setWarehouseId, dateRange, setDateRange,
   } = useInventory();
+  const [search, setSearch] = useState(searchQuery);
+  const [previousQuery, setPreviousQuery] = useState(searchQuery);
 
-  const [search, setSearch] = useState<string>("");
+  if (searchQuery !== previousQuery) {
+    setPreviousQuery(searchQuery);
+    setSearch(searchQuery);
+  }
 
-  const stock_status_data = [
-    { value: "All", label: "All" },
-    { value: "High", label: "High" },
-    { value: "Low", label: "Low" },
-    { value: "Out", label: "Out of Stock" },
-  ];
-
-  const debouncedSearch = useMemo(
-    () =>
-      debounce((value: string) => {
-        setPagination(current => ({ ...current, pageIndex: 0 }));
-        setSearchQuery(value);
-      }, 500),
-    [setSearchQuery, setPagination],
-  );
+  const debouncedSearch = useMemo(() => debounce((value: string) => {
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+    setSearchQuery(value);
+  }, 350), [setSearchQuery, setPagination]);
 
   useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
+  function clearSearch() {
+    debouncedSearch.cancel();
+    setSearch("");
+    setSearchQuery("");
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+  }
+
+  function resetFilters() {
+    clearSearch();
+    setStockStatus("All");
+    setWarehouseId(null);
+    setDateRange(undefined);
+  }
+
+  const filtered = Boolean(search || searchQuery || stockStatus !== "All" || warehouseId || dateRange?.from || dateRange?.to);
+  const selectedWarehouse = warehouseQuery.data?.rows.find((warehouse) => warehouse.id === warehouseId);
+
   return (
-    <div className="flex flex-wrap items-end gap-4 py-6">
-      <div className="flex flex-col gap-2">
-        <InputGroup>
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-
-          <InputGroupInput
-            placeholder="Search SKU or Product Name..."
-            value={search}
-            onChange={(event) => {
-              const value = event.target.value;
-
-              setSearch(value);
-              debouncedSearch(value);
-            }}
-          />
-        </InputGroup>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Select
-          defaultValue="All"
-          onValueChange={(value) => {
-            if (value === "All" || value === "High" || value === "Low" || value === "Out") setStockStatus(value);
-            setPagination(current => ({ ...current, pageIndex: 0 }));
-          }}
-        >
-          <SelectTrigger id="stock-status" aria-label="Filter by stock status" className="w-full sm:w-55">
-            <SelectValue placeholder="Filter by stock status" />
-          </SelectTrigger>
-
-          <SelectContent>
-            <SelectGroup>
-              {stock_status_data.map((status) => (
-                <SelectItem key={status.value} value={status.value}>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        status.value === "High"
-                          ? "bg-green-500"
-                          : status.value === "Low"
-                            ? "bg-yellow-500"
-                            : status.value === "Out"
-                              ? "bg-red-500"
-                              : "bg-gray-500"
-                      }`}
-                    />
-                    {
-                      stock_status_data.find((s) => s.value === status.value)
-                        ?.label
-                    }
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        {warehouseQuery.isFetched ? (
-          <Select
-            onValueChange={(value) => { setWarehouseId(value && value !== "All" ? parseInt(value as string) : null); setPagination(current => ({ ...current, pageIndex: 0 })); }}
-          >
-            <SelectTrigger id="warehouse" aria-label="Filter by warehouse" className="w-full sm:w-55">
-              <SelectValue placeholder="Filter by warehouse">
-                {
-                  warehouseQuery.data?.rows?.find(
-                    (warehouse) => warehouse.id === warehouseId,
-                  )?.name
-                }
-              </SelectValue>
+    <div className="space-y-3 border-b bg-muted/20 p-4 md:px-5">
+      <ManagementSearch id="inventory-search" value={search} placeholder="Search SKU or product name…" onChange={(value) => { setSearch(value); debouncedSearch(value); }} onClear={clearSearch} />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-full space-y-1.5 sm:w-auto">
+          <label htmlFor="stock-status" className="text-xs font-medium text-muted-foreground">Stock level</label>
+          <Select items={stockOptions} value={stockStatus} onValueChange={(value) => {
+            if (value === "All" || value === "High" || value === "Low" || value === "Out") {
+              setStockStatus(value);
+              setPagination((current) => ({ ...current, pageIndex: 0 }));
+            }
+          }}>
+            <SelectTrigger id="stock-status" className="h-10 w-full bg-background sm:w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>{stockOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="w-full space-y-1.5 sm:w-auto">
+          <label htmlFor="inventory-warehouse" className="text-xs font-medium text-muted-foreground">Warehouse</label>
+          <Select value={warehouseId === null ? "All" : String(warehouseId)} disabled={warehouseQuery.isPending || warehouseQuery.isError} onValueChange={(value) => {
+            setWarehouseId(value && value !== "All" ? Number(value) : null);
+            setPagination((current) => ({ ...current, pageIndex: 0 }));
+          }}>
+            <SelectTrigger id="inventory-warehouse" className="h-10 w-full bg-background sm:w-52">
+              <SelectValue>{warehouseQuery.isPending ? "Loading warehouses…" : warehouseQuery.isError ? "Warehouses unavailable" : selectedWarehouse?.name ?? (warehouseId === null ? "All warehouses" : `Warehouse #${warehouseId}`)}</SelectValue>
             </SelectTrigger>
-
             <SelectContent>
-              <SelectGroup>
-                <SelectItem value="All">All</SelectItem>
-
-                {warehouseQuery.data?.rows?.map((warehouse) => (
-                  <SelectItem key={warehouse.id} value={String(warehouse.id)}>
-                    {warehouse.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
+              <SelectItem value="All">All warehouses</SelectItem>
+              {warehouseQuery.data?.rows.map((warehouse) => <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}</SelectItem>)}
             </SelectContent>
           </Select>
-        ) : (
-          <Select disabled>
-            <SelectTrigger className="w-full sm:w-55">
-              <SelectValue placeholder="Loading warehouses..." />
-            </SelectTrigger>
-          </Select>
-        )}
+        </div>
+        <div className="w-full space-y-1.5 sm:w-auto">
+          <p id="inventory-date-label" className="text-xs font-medium text-muted-foreground">Date range</p>
+          <Popover>
+            <PopoverTrigger render={<Button variant="outline" aria-labelledby="inventory-date-label inventory-date-value" className="h-10 w-full justify-start bg-background font-normal sm:w-auto">
+              <CalendarDays className="size-4 text-muted-foreground" aria-hidden="true" />
+              <span id="inventory-date-value">{dateRange?.from ? `${format(dateRange.from, "MMM d, yyyy")}${dateRange.to ? ` – ${format(dateRange.to, "MMM d, yyyy")}` : " – Select end date"}` : "All dates"}</span>
+            </Button>} />
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={(range) => { setDateRange(range); setPagination((current) => ({ ...current, pageIndex: 0 })); }} numberOfMonths={1} />
+            </PopoverContent>
+          </Popover>
+        </div>
+        {filtered && <Button variant="ghost" size="sm" className="h-10" onClick={resetFilters}>Reset filters</Button>}
       </div>
-
-      <div className="flex flex-col gap-2">
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button
-                variant="outline"
-                id="date-picker-simple"
-                className="w-full justify-start font-normal"
-              >
-                <span className="text-muted-foreground">
-                  {dateRange?.from && dateRange?.to
-                    ? `${format(dateRange.from, "PPP")} - ${format(
-                        dateRange.to,
-                        "PPP",
-                      )}`
-                    : "Pick a date"}
-                </span>
-              </Button>
-            }
-          />
-
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="range"
-              defaultMonth={dateRange?.from}
-              selected={dateRange}
-              onSelect={(range) => { setDateRange(range); setPagination(current => ({ ...current, pageIndex: 0 })); }}
-              numberOfMonths={2}
-              className="rounded-lg border"
-            />
-          </PopoverContent>
-        </Popover>
-      </div>
+      {warehouseQuery.isError && <p role="alert" className="text-xs text-destructive">Warehouse filters could not be loaded. <button type="button" className="underline" onClick={() => void warehouseQuery.refetch()}>Retry</button></p>}
     </div>
   );
 }

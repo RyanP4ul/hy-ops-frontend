@@ -20,7 +20,6 @@ import { formatElapsedTime } from "@/utils/time";
 
 const notificationIcons = { inventory: PackageOpen, payment: CreditCard, delivery: Truck, info: Info, success: Check, warning: TriangleAlert, error: CircleX };
 const notificationTones = {
-  warning: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   error: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
   success: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   info: "bg-muted text-muted-foreground",

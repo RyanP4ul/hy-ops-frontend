@@ -1,168 +1,104 @@
 "use client";
 
-import { QueryFeedback } from "@/components/query-feedback";
-
-
-import { ModalProvider, useModal } from "@/components/providers/modal-provider";
-import { Button } from "@/components/ui/button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { DialogMode } from "@/types/dialog";
-import {
-  flexRender,
-  getCoreRowModel,
-  SortingState,
-  useReactTable,
-  type ColumnDef,
-} from "@tanstack/react-table";
-import {
-  Archive,
-  ArchiveRestore,
-  ArrowDownUp,
-  Edit,
-  Filter,
-  Info,
-  Loader2Icon,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { debounce } from "@/utils/debounce";
-import { WarehouseRow } from "@/schema/warehouse";
-import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { REQUESTS } from "@/constant/request";
-import { useWebSocket } from "@/components/providers/websocket-provider";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSetting } from "@/components/providers/setting-provider";
+import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
+import { ArchiveRestore, ArrowUpRight } from "lucide-react";
+import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
+import { useModal } from "@/components/providers/modal-provider";
+import { useWebSocket } from "@/components/providers/websocket-provider";
+import { QueryFeedback } from "@/components/query-feedback";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { REQUESTS } from "@/constant/request";
+import type { ArchiveTable } from "@/schema/archives";
+import { DialogMode } from "@/types/dialog";
 import { useArchive } from "../provider";
-import { ArchiveForm, ArchiveRow, ArchiveTable } from "@/schema/archives";
-import PaginationArchive from "./pagination";
+
+function recordType(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function recordName(record: ArchiveTable) {
+  const data = record.data as Record<string, unknown>;
+  return typeof data?.name === "string" && data.name.trim() ? data.name : `${recordType(record.entity_type)} #${record.entity_id}`;
+}
 
 export default function DataTable() {
   const { subscribe } = useWebSocket();
   const { openModal } = useModal();
   const { archivesQuery, page, setPage, setSelected } = useArchive();
-
   const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [entityType, setEntityType] = useState("all");
 
-  useEffect(() => {
-    return subscribe([REQUESTS.ARCHIVE_CREATED], (message) => {
-      const query_key = ["archives"];
-      switch (message.type) {
-        case REQUESTS.ARCHIVE_CREATED:
-          queryClient.setQueryData(query_key, (oldData: any) => {
-            if (!oldData) {
-              return {
-                rows: [message.payload],
-                total: 1,
-              };
-            }
+  useEffect(() => subscribe(
+    [REQUESTS.ARCHIVE_CREATED, REQUESTS.USER_RESTORED, REQUESTS.WAREHOUSE_RESTORED],
+    () => { void queryClient.invalidateQueries({ queryKey: ["archives"] }); },
+  ), [queryClient, subscribe]);
 
-            return {
-              rows: [message.payload, ...oldData.rows].slice(0, page.pageSize),
-              total: oldData.total + 1,
-            };
-          });
-          break;
-      }
-    });
-  }, [subscribe]);
+  const filteredRows = useMemo(() => (archivesQuery.data?.rows ?? []).filter((record) => {
+    const keyword = search.trim().toLowerCase();
+    return (entityType === "all" || record.entity_type === entityType)
+      && (!keyword || [recordName(record), record.entity_id, record.entity_type, record.user?.name].some((value) => String(value ?? "").toLowerCase().includes(keyword)));
+  }), [archivesQuery.data?.rows, search, entityType]);
 
-  const columns = useMemo<ColumnDef<ArchiveTable>[]>(
-    () => [
-      { accessorKey: "entity_id", header: "Entity ID" },
-      { accessorKey: "entity_type", header: "Entity Type" },
-      // {
-      //   accessorKey: "data",
-      //   header: "Data",
-      //   cell: ({ row }) =>
-      //     JSON.stringify(row.original.data, null, 2).slice(0, 100) + "...",
-      // },
-      {
-        accessorKey: "archived_by",
-        header: "Archived By",
-        cell: ({ row }) => {
-          return (
-            <a
-              className="font-medium text-blue-700 border-b border-blue-700 hover:text-blue-900 hover:border-blue-900"
-              href="#"
-            >
-              {row.original.user?.name ?? "Unknown"}
-            </a>
-          );
-        },
+  const columns: ColumnDef<ArchiveTable>[] = [
+    {
+      accessorKey: "entity_id",
+      header: "Archived record",
+      cell: ({ row }) => <div className="min-w-40 space-y-1">
+        <p className="font-medium">{recordName(row.original)}</p>
+        <p className="font-mono text-xs text-muted-foreground">Record #{row.original.entity_id} · Archive #{row.original.id}</p>
+      </div>,
+    },
+    {
+      accessorKey: "entity_type",
+      header: "Record type",
+      cell: ({ row }) => <Badge variant="outline">{recordType(row.original.entity_type)}</Badge>,
+    },
+    {
+      accessorKey: "archived_by",
+      header: "Archived by",
+      cell: ({ row }) => <span className="text-sm">{row.original.user?.name ?? "Unknown user"}</span>,
+    },
+    {
+      id: "archived_at",
+      header: "Archived on",
+      cell: ({ row }) => {
+        const timestamp = (row.original as ArchiveTable & { archived_at?: number }).archived_at;
+        if (timestamp == null) return <span className="text-xs text-muted-foreground">Not recorded</span>;
+        const date = new Date(Number(timestamp) * 1000);
+        if (!Number.isFinite(date.getTime())) return <span className="text-xs text-muted-foreground">Not recorded</span>;
+        return <time dateTime={date.toISOString()} title={date.toLocaleString()}>
+          <span className="block text-sm">{date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">{date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span>
+        </time>;
       },
-      {
-        accessorKey: "actions",
-        header: "Actions",
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSelected({
-                  archived_id: row.original.id,
-                  entity_id: row.original.entity_id,
-                  entity_table: row.original.entity_type,
-                });
-                openModal(DialogMode.DEFAULT, {
-                  title: "Archive Details",
-                  description: `Details of the archive "${row.original.entity_id} ${row.original.entity_type}".`,
-                  action: "none",
-                });
-              }}
-            >
-              <Info className="h-4 w-4" />
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSelected({
-                  archived_id: row.original.id,
-                  entity_id: row.original.entity_id,
-                  entity_table: row.original.entity_type,
-                });
-                openModal(DialogMode.ARCHIVE, {
-                  title: "Restore Archive",
-                  description: `Are you sure you want to restore the archive "${row.original.entity_id} ${row.original.entity_type}"? This action cannot be undone.`,
-                  action: "Restore",
-                });
-              }}
-            >
-              <ArchiveRestore className="h-4 w-4" />
-            </Button>
-          </div>
-        ),
-      },
-    ],
-    [],
-  );
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: ({ row }) => <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" aria-label={`View details for ${recordName(row.original)}`} onClick={() => {
+          setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
+          openModal(DialogMode.DEFAULT, { title: "Archive details", description: `Review the archived record for ${recordName(row.original)}.`, action: "none" });
+        }}>
+          <span className="hidden sm:inline">Details</span><ArrowUpRight className="size-4" aria-hidden="true" />
+        </Button>
+        <Button variant="outline" size="sm" aria-label={`Restore ${recordName(row.original)}`} onClick={() => {
+          setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
+          openModal(DialogMode.ARCHIVE, { title: "Restore record?", description: `Restore ${recordName(row.original)}? This record will become active again and will be removed from Archives.`, action: "Restore record" });
+        }}>
+          <ArchiveRestore className="size-4" aria-hidden="true" /><span>Restore</span>
+        </Button>
+      </div>,
+    },
+  ];
 
   const table = useReactTable({
-    data: archivesQuery.data?.rows ?? [],
+    data: filteredRows,
     columns,
     pageCount: Math.ceil((archivesQuery.data?.total ?? 0) / page.pageSize),
     state: { pagination: page },
@@ -170,100 +106,35 @@ export default function DataTable() {
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
   });
+  const filtered = Boolean(search.trim() || entityType !== "all");
+  const typeOptions = [
+    { value: "all", label: "All record types" },
+    ...Array.from(new Set([...(archivesQuery.data?.rows ?? []).map((record) => record.entity_type), ...(entityType !== "all" ? [entityType] : [])])).map((value) => ({ value, label: recordType(value) })),
+  ];
+
+  function resetFilters() {
+    setSearch("");
+    setEntityType("all");
+  }
 
   return (
-    <>
-      <div className="rounded-md border overflow-hidden">
-        <QueryFeedback query={archivesQuery} label="archives" />
-            <Table>
-          <TableHeader className="bg-muted sticky top-0 z-10">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {archivesQuery.isPending ? (
-              <TableRow>
-                <TableCell colSpan={10} className="h-40 text-center">
-                  <div className="flex items-center justify-center">
-                    <Loader2Icon className="mr-2 animate-spin h-4 w-4" />
-                    Loading...
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <>
-                {table.getRowModel().rows.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {cell.column.columnDef.cell
-                            ? (cell.column.columnDef.cell as any)(
-                                cell.getContext(),
-                              )
-                            : cell.getValue()}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
-                      No Results Found
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex w-full items-center px-4">
-        <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-          <Field orientation="horizontal" className="w-fit">
-            <FieldLabel htmlFor="select-rows-per-page">
-              Rows per page
-            </FieldLabel>
-
-            <Select
-              defaultValue="10"
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" id="select-rows-per-page">
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="30">30</SelectItem>
-                  <SelectItem value="40">40</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <ManagementListHeader title="Archived records" description="Review record details before restoring an account or warehouse."
+        total={archivesQuery.data?.total} isFetching={archivesQuery.isFetching} onRefresh={() => void archivesQuery.refetch()} />
+      <div className="space-y-3 border-b bg-muted/20 p-4 md:px-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <ManagementSearch id="archive-search" value={search} placeholder="Search records on this page…" onChange={setSearch} onClear={() => setSearch("")} />
+          <Select items={typeOptions} value={entityType} onValueChange={(value) => setEntityType(value ?? "all")}>
+            <SelectTrigger className="h-10 w-full bg-background sm:w-48" aria-label="Filter record types on this page"><SelectValue /></SelectTrigger>
+            <SelectContent>{typeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+          {filtered && <Button variant="ghost" size="sm" onClick={resetFilters}>Reset filters</Button>}
         </div>
-
-        <div className="flex items-center justify-end">
-          <PaginationArchive table={table} />
-        </div>
+        <p className="text-xs text-muted-foreground">Search and record-type filters apply to the current page. Use pagination to browse other archived records.</p>
       </div>
-    </>
+      <QueryFeedback query={archivesQuery} label="archived records" />
+      <ManagementTableView table={table} loading={archivesQuery.isPending} isFetching={archivesQuery.isFetching} error={archivesQuery.isError} filtered={filtered} label="archived records" />
+      <ManagementListFooter table={table} total={archivesQuery.data?.total ?? 0} isFetching={archivesQuery.isFetching} label="Archives" pageFiltered={filtered} />
+    </section>
   );
 }

@@ -4,7 +4,9 @@ import { ModalProvider } from "@/components/providers/modal-provider";
 import PaymentDialog from "./components/dialog";
 import PaymentPage from "./components/payment-page";
 import { PaymentsProvider } from "./provider";
+import { CreditCard } from "lucide-react";
 import { MotionPage } from "@/components/page-motion";
+import { ManagementPageHeading } from "@/components/management-list";
 
 export default function Page() {
   return (
@@ -12,12 +14,7 @@ export default function Page() {
       <ModalProvider>
         <PaymentsProvider>
           <section className="space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl tracking-tight">Payments</h2>
-              <p className="text-sm text-muted-foreground">
-                Record and monitor customer payments against orders.
-              </p>
-            </div>
+            <ManagementPageHeading title="Payments" description="Review receipts, record customer payments, and manage refunds." icon={<CreditCard className="size-5" />} />
             <PaymentDialog />
             <PaymentPage />
           </section>

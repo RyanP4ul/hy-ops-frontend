@@ -32,7 +32,7 @@ export function StockTools() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to reconcile stock."); }
     finally { setSaving(false); }
   }
-  return <div className="space-y-3 px-4">
+  return <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm md:p-5">
     <details><summary className="cursor-pointer font-medium">Replenishment suggestions</summary><QueryFeedback query={suggestions} label="suggestions" />
       <p className="py-2 text-xs text-muted-foreground">Suggested quantities restore availability above the low-stock threshold. Review these quantities before purchasing.</p>
       {suggestions.data?.rows.length === 0 && <p className="text-sm">No replenishment needed for this warehouse scope.</p>}

@@ -2,58 +2,28 @@
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 
 
-import { ModalProvider, useModal } from "@/components/providers/modal-provider";
+import { useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { DialogMode } from "@/types/dialog";
 import {
-  flexRender,
   getCoreRowModel,
-  SortingState,
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
 import {
   Archive,
-  ArrowDownUp,
   KeyRound,
   Edit,
-  Filter,
-  Loader2Icon,
   Plus,
-  Search,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
-import { WarehouseRow } from "@/schema/warehouse";
-import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useSetting } from "@/components/providers/setting-provider";
 import { useUser } from "../provider";
 import { UserRow } from "@/schema/user";
 import { Badge } from "@/components/ui/badge";
-import PaginationUser from "./pagination";
 
 export default function DataTable() {
   const { userQuery, page, setPage, search, setSearch, setSelected } =
@@ -62,12 +32,17 @@ export default function DataTable() {
   const { userQuery: sessionQuery } = useAuth();
   const actorId = Number(sessionQuery.data?.sub);
   const [searchInput, setSearchInput] = useState(search);
-  const debouncedSearch = useMemo(() => debounce(setSearch, 500), [setSearch]);
+  const debouncedSearch = useMemo(() => debounce((value: string) => {
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+    setSearch(value);
+  }, 350), [setSearch, setPage]);
+
+  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
   const columns = useMemo<ColumnDef<UserRow & { version: number }>[]>(
     () => [
       { accessorKey: "id", header: "ID" },
-      { accessorKey: "name", header: "Name" },
+      { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
       {
         accessorKey: "role",
         header: "Role",
@@ -82,7 +57,7 @@ export default function DataTable() {
             case "customer":
               return <Badge variant="outline">Customer</Badge>;
             case "driver":
-              return <Badge variant="destructive">Driver</Badge>;
+              return <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">Driver</Badge>;
             default:
               return <Badge variant="ghost">Unknown</Badge>;
           }
@@ -110,8 +85,8 @@ export default function DataTable() {
           <div className="flex gap-2">
             {row.original.role !== "customer" && (
               <Button
-                variant="outline"
-                size="icon"
+                variant="ghost"
+                size="icon-sm"
                 aria-label="Change password"
                 onClick={() => {
                   setSelected({
@@ -129,8 +104,8 @@ export default function DataTable() {
               </Button>
             )}
             <Button
-              variant="outline"
-              size="icon"
+              variant="ghost"
+              size="icon-sm"
               aria-label={`Edit user ${row.original.name}`}
               onClick={() => {
                 setSelected({
@@ -148,8 +123,8 @@ export default function DataTable() {
             </Button>
 
             <Button
-              variant="outline"
-              size="icon"
+              variant="ghost"
+              size="icon-sm"
               aria-label={`Deactivate user ${row.original.name}`}
               disabled={row.original.id === actorId}
               title={row.original.id === actorId ? "You cannot deactivate your own account." : "Deactivate this account while retaining its history"}
@@ -183,114 +158,23 @@ export default function DataTable() {
 
   // Shared WebSocket invalidation refetches server-filtered rows and totals.
 
+  function clearSearch() {
+    debouncedSearch.cancel();
+    setSearchInput("");
+    setSearch("");
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }
+
   return (
-    <>
-      <div className="flex flex-wrap items-end gap-6 mb-3">
-        <div className="flex flex-col gap-2">
-          <InputGroup className="max-w-md">
-            <InputGroupAddon>
-              <Search />
-            </InputGroupAddon>
-            <InputGroupInput
-              placeholder="Search users..."
-              value={searchInput}
-              onChange={(event) => {
-                setSearchInput(event.target.value);
-                setPage((current) => ({ ...current, pageIndex: 0 }));
-                debouncedSearch(event.target.value);
-              }}
-            />
-          </InputGroup>
-        </div>
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <ManagementListHeader title="User directory" description="Review account roles, update details, and manage access securely." total={userQuery.data?.total} isFetching={userQuery.isFetching} onRefresh={() => void userQuery.refetch()} actions={<Button size="sm" onClick={() => openModal(DialogMode.INSERT, { title: "Add User", description: "Create a user account.", action: "Add User" })}><Plus className="size-4" aria-hidden="true" />Add user</Button>} />
+      <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
+        <ManagementSearch id="users-search" value={searchInput} placeholder="Search users…" onChange={(value) => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
+        {(search || searchInput) && <Button variant="ghost" size="sm" onClick={clearSearch}>Clear search</Button>}
       </div>
-
-      <div className="rounded-md border overflow-hidden">
-        <QueryFeedback query={userQuery} label="users" />
-            <Table>
-          <TableHeader className="bg-muted sticky top-0 z-10">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {userQuery.isPending ? (
-              <TableRow>
-                <TableCell colSpan={10} className="h-40 text-center">
-                  <div className="flex items-center justify-center">
-                    <Loader2Icon className="mr-2 animate-spin h-4 w-4" />
-                    Loading...
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <>
-                {table.getRowModel().rows.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
-                      {userQuery.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex w-full items-center px-4">
-        <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-          <Field orientation="horizontal" className="w-fit">
-            <FieldLabel htmlFor="select-rows-per-page">
-              Rows per page
-            </FieldLabel>
-
-            <Select
-              defaultValue="10"
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" id="select-rows-per-page">
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="30">30</SelectItem>
-                  <SelectItem value="40">40</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
-        <div className="flex items-center justify-end">
-          <PaginationUser table={table} />
-        </div>
-      </div>
-    </>
+      <QueryFeedback query={userQuery} label="users" />
+      <ManagementTableView table={table} loading={userQuery.isPending} isFetching={userQuery.isFetching} error={userQuery.isError} filtered={Boolean(search)} label="users" />
+      <ManagementListFooter table={table} total={userQuery.data?.total ?? 0} isFetching={userQuery.isFetching} label="users" />
+    </section>
   );
 }

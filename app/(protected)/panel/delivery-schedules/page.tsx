@@ -6,6 +6,8 @@ import DeliverySchedulePage from "./components/delivery-schedule-page";
 import DeliveryScheduleDialog from "./components/dialog";
 import SubDialog from "./components/sub-modal";
 import { MotionPage } from "@/components/page-motion";
+import { ManagementPageHeading } from "@/components/management-list";
+import { CalendarDays } from "lucide-react";
 
 export default function Page() {
   return (
@@ -13,13 +15,7 @@ export default function Page() {
       <DeliveryScheduleProvider>
         <ModalProvider>
           <section className="space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl tracking-tight">Delivery Schedules</h2>
-              <p className="text-muted-foreground text-sm">
-                Review delivery windows, assign drivers and vehicles, and manage
-                dispatch readiness.
-              </p>
-            </div>
+            <ManagementPageHeading title="Delivery schedules" description="Review ready orders, confirm destinations, and plan your next dispatch." icon={<CalendarDays className="size-5" />} />
             <DeliveryScheduleDialog />
             <DeliverySchedulePage />
           </section>

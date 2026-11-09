@@ -5,6 +5,8 @@ import { VehiclesProvider } from "./provider";
 import VehicleDialog from "./components/dialog";
 import VehiclePage from "./components/vehicle-page";
 import { MotionPage } from "@/components/page-motion";
+import { ManagementPageHeading } from "@/components/management-list";
+import { Truck } from "lucide-react";
 
 export default function Page() {
   return (
@@ -12,14 +14,7 @@ export default function Page() {
       <ModalProvider>
         <VehiclesProvider>
           <section className="space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl tracking-tight">Vehicles</h2>
-              <p className="text-muted-foreground text-sm">
-                View, add, and update your delivery fleet. Keep track of each
-                vehicle details and availability to ensure smooth
-                dispatching.
-              </p>
-            </div>
+            <ManagementPageHeading title="Vehicles" description="Manage your fleet, assigned warehouses, and vehicle availability." icon={<Truck className="size-5" />} />
             <VehicleDialog />
             <VehiclePage />
           </section>

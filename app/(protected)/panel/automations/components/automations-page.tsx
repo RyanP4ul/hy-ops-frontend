@@ -12,20 +12,22 @@ import {
   MailCheck,
   PackageSearch,
   Play,
-  Plus,
-  RefreshCw,
   Settings2,
   Truck,
   XCircle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { getCoreRowModel, getPaginationRowModel, useReactTable, type ColumnDef, type PaginationState } from "@tanstack/react-table";
+import { MotionPage } from "@/components/page-motion";
+import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementPageHeading, ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableState, ManagementTableView } from "@/components/management-list";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { request } from "@/components/http";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -33,7 +35,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
 type TaskStatus = "Enabled" | "Disabled" | "Failed";
@@ -48,6 +49,7 @@ type AutomationTask = {
   frequency: Frequency;
   dailyTime?: string;
   lastRun: string;
+  lastRunAt: string | null;
   nextRun: string;
   status: TaskStatus;
   notes: string;
@@ -86,7 +88,7 @@ function taskIcon(name: string): TaskIcon {
 }
 
 function formatDate(value: string | null, fallback: string) {
-  if (!value) return fallback;
+  if (!value || !Number.isFinite(Date.parse(value))) return fallback;
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -105,6 +107,7 @@ function toTask(record: AutomationRecord): AutomationTask {
     frequency: frequency in frequencyLabels ? frequency : "5",
     dailyTime: record.daily_time ?? undefined,
     lastRun: formatDate(record.last_run_at, "Not run"),
+    lastRunAt: record.last_run_at,
     nextRun: formatDate(record.next_run_at, record.status === "DISABLED" ? "Paused" : "Not scheduled"),
     status: record.status === "ENABLED" ? "Enabled" : record.status === "FAILED" ? "Failed" : "Disabled",
     notes: record.notes ?? "",
@@ -120,7 +123,7 @@ function statusVariant(status: TaskStatus) {
 
 function StatusBadge({ status }: { status: TaskStatus }) {
   return (
-    <Badge variant={statusVariant(status)}>
+    <Badge variant={statusVariant(status)} className={status === "Enabled" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" : ""}>
       {status === "Enabled" ? <CheckCircle2 /> : status === "Failed" ? <XCircle /> : <Clock3 />}
       {status}
     </Badge>
@@ -130,7 +133,9 @@ function StatusBadge({ status }: { status: TaskStatus }) {
 export default function AutomationsPage() {
   const queryClient = useQueryClient();
   const [editingTask, setEditingTask] = useState<AutomationTask | null>(null);
-  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 10 });
   const [runTask, setRunTask] = useState<AutomationTask | null>(null);
   const automationsQuery = useQuery({
     queryKey: ["automations"],
@@ -144,15 +149,18 @@ export default function AutomationsPage() {
   const enabledCount = tasks.filter((task) => task.status === "Enabled").length;
   const failedCount = tasks.filter((task) => task.status === "Failed").length;
   const lastRun = useMemo(() => {
-    const runs = tasks.filter((task) => task.lastRun !== "Not run").map((task) => task.lastRun);
-    return runs[0] ?? "Not run";
+    const latest = tasks.reduce<string | null>((current, task) => {
+      if (!task.lastRunAt || !Number.isFinite(Date.parse(task.lastRunAt))) return current;
+      return !current || Date.parse(task.lastRunAt) > Date.parse(current) ? task.lastRunAt : current;
+    }, null);
+    return formatDate(latest, "Not run");
   }, [tasks]);
 
   const saveMutation = useMutation({
     mutationFn: async (task: AutomationTask) => {
       const response = await request(
-        task.id === 0 ? "POST" : "PUT",
-        task.id === 0 ? "/api/automations" : `/api/automations/${task.id}`,
+        "PUT",
+        `/api/automations/${task.id}`,
         {
           name: task.name,
           description: task.description,
@@ -167,7 +175,6 @@ export default function AutomationsPage() {
     },
     onSuccess: () => {
       setEditingTask(null);
-      setIsAddOpen(false);
       void queryClient.invalidateQueries({ queryKey: ["automations"] });
       toast.success("Automation saved");
     },
@@ -201,52 +208,94 @@ export default function AutomationsPage() {
     onError: (error) => toast.error(error.message),
   });
 
+  const filteredTasks = useMemo(() => tasks.filter((task) => {
+    const keyword = search.trim().toLowerCase();
+    return (statusFilter === "all" || task.status === statusFilter)
+      && (!keyword || [task.name, task.description, task.schedule, task.notes].some((value) => value.toLowerCase().includes(keyword)));
+  }), [tasks, search, statusFilter]);
+
+  const columns: ColumnDef<AutomationTask>[] = [
+    { accessorKey: "name", header: "Task", cell: ({ row }) => {
+      const Icon = row.original.icon;
+      return <div className="flex min-w-60 max-w-sm items-start gap-3">
+        <div className="rounded-lg bg-muted p-2"><Icon className="size-4" aria-hidden="true" /></div>
+        <div className="space-y-1 whitespace-normal"><p className="font-medium">{row.original.name}</p><p className="text-xs leading-relaxed text-muted-foreground">{row.original.description}</p></div>
+      </div>;
+    } },
+    { accessorKey: "schedule", header: "Schedule" },
+    { accessorKey: "lastRun", header: "Last run", cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.lastRun}</span> },
+    { accessorKey: "nextRun", header: "Next run", cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.status === "Disabled" ? "Paused" : row.original.nextRun}</span> },
+    { accessorKey: "status", header: "Status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
+    { id: "actions", header: "Actions", cell: ({ row }) => <Actions task={row.original} onEdit={setEditingTask} onRun={setRunTask} onToggle={(task) => toggleMutation.mutate(task)} /> },
+  ];
+  const table = useReactTable({
+    data: filteredTasks,
+    columns,
+    state: { pagination },
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+  });
+  const filtered = Boolean(search.trim() || statusFilter !== "all");
+  const statusOptions = [
+    { value: "all", label: "All statuses" },
+    { value: "Enabled", label: "Enabled" },
+    { value: "Disabled", label: "Disabled" },
+    { value: "Failed", label: "Failed" },
+  ];
+
+  function resetFilters() {
+    setSearch("");
+    setStatusFilter("all");
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+  }
+
   return (
-    <main className="flex flex-col gap-6 px-4 py-6 lg:px-6">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Activity className="size-4" />System operations</div>
-          <h1 className="text-3xl font-semibold tracking-tight">Automations</h1>
-          <p className="text-muted-foreground">Manage recurring checks and scheduled system tasks.</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void automationsQuery.refetch()} disabled={automationsQuery.isFetching}><RefreshCw className={automationsQuery.isFetching ? "animate-spin" : ""} /> Refresh</Button>
-          <Button onClick={() => setIsAddOpen(true)}><Plus /> Add Task</Button>
-        </div>
+    <MotionPage className="flex flex-col gap-5 px-4 py-4 md:py-6 lg:px-6">
+      <ManagementPageHeading title="Automations" description="Monitor recurring checks, review recent runs, and manage existing system tasks." icon={<Activity className="size-5" />} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard title="System tasks" value={automationsQuery.data ? tasks.length : "—"} description="Recurring operational tasks" icon={ListChecks} />
+        <SummaryCard title="Enabled" value={automationsQuery.data ? enabledCount : "—"} description="Currently active" icon={CheckCircle2} />
+        <SummaryCard title="Failed tasks" value={automationsQuery.data ? failedCount : "—"} description="Tasks needing attention" icon={XCircle} />
+        <SummaryCard title="Last run" value={automationsQuery.data ? lastRun : "—"} description="Most recent recorded execution" icon={History} />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="System Tasks" value={tasks.length} description="Recurring operational tasks" icon={ListChecks} />
-        <SummaryCard title="Enabled" value={enabledCount} description="Currently active" icon={CheckCircle2} />
-        <SummaryCard title="Failed Runs" value={failedCount} description="Current failed status" icon={XCircle} />
-        <SummaryCard title="Last Run" value={lastRun} description="Most recent execution" icon={History} />
-      </div>
-      <Card>
-        <CardHeader><CardTitle>Scheduled tasks</CardTitle><CardDescription>Task configuration is stored in the database.</CardDescription></CardHeader>
-        <CardContent className="p-0">
-          {automationsQuery.isLoading ? <div className="p-8 text-center text-muted-foreground">Loading automations...</div> : automationsQuery.isError ? <div className="p-8 text-center text-destructive">Unable to load automations.</div> : <>
-            <div className="hidden md:block"><Table><TableHeader><TableRow><TableHead className="pl-6">Task</TableHead><TableHead>Description</TableHead><TableHead>Schedule</TableHead><TableHead>Last run</TableHead><TableHead>Next run</TableHead><TableHead>Status</TableHead><TableHead className="pr-6 text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{tasks.map((task) => <TaskRow key={task.id} task={task} onEdit={setEditingTask} onRun={setRunTask} onToggle={(item) => toggleMutation.mutate(item)} />)}</TableBody></Table></div>
-            <div className="divide-y md:hidden">{tasks.map((task) => <TaskMobileCard key={task.id} task={task} onEdit={setEditingTask} onRun={setRunTask} onToggle={(item) => toggleMutation.mutate(item)} />)}</div>
-          </>}
-        </CardContent>
-      </Card>
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <ManagementListHeader title="Scheduled tasks" description="Review schedules, update configurations, or run an existing task."
+          total={automationsQuery.data ? filteredTasks.length : undefined} isFetching={automationsQuery.isFetching} onRefresh={() => void automationsQuery.refetch()} />
+        <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
+          <ManagementSearch id="automation-search" value={search} placeholder="Search tasks or schedules…" onChange={(value) => { setSearch(value); setPagination((current) => ({ ...current, pageIndex: 0 })); }} onClear={() => { setSearch(""); setPagination((current) => ({ ...current, pageIndex: 0 })); }} />
+          <Select items={statusOptions} value={statusFilter} onValueChange={(value) => { setStatusFilter(value ?? "all"); setPagination((current) => ({ ...current, pageIndex: 0 })); }}>
+            <SelectTrigger className="h-10 w-full bg-background sm:w-44" aria-label="Filter tasks by status"><SelectValue /></SelectTrigger>
+            <SelectContent>{statusOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+          {filtered && <Button variant="ghost" size="sm" onClick={resetFilters}>Reset filters</Button>}
+        </div>
+        <QueryFeedback query={automationsQuery} label="automations" />
+        <div className="hidden md:block">
+          <ManagementTableView table={table} loading={automationsQuery.isPending} isFetching={automationsQuery.isFetching} error={automationsQuery.isError} filtered={filtered} label="automation tasks" />
+        </div>
+        <div className="divide-y md:hidden" aria-busy={automationsQuery.isFetching}>
+          {automationsQuery.isPending ? <ManagementTableState loading label="automation tasks" /> : table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TaskMobileCard key={row.original.id} task={row.original} onEdit={setEditingTask} onRun={setRunTask} onToggle={(task) => toggleMutation.mutate(task)} />) : <ManagementTableState error={automationsQuery.isError} filtered={filtered} label="automation tasks" />}
+        </div>
+        <ManagementListFooter table={table} total={filteredTasks.length} isFetching={automationsQuery.isFetching} label="Automations" />
+      </section>
       <TaskDialog key={editingTask?.id ?? "none"} task={editingTask} open={editingTask !== null} onOpenChange={(open) => !open && setEditingTask(null)} onSave={(task) => saveMutation.mutate(task)} isSaving={saveMutation.isPending} />
-      <TaskDialog key={isAddOpen ? "new" : "closed"} task={isAddOpen ? emptyTask() : null} open={isAddOpen} onOpenChange={setIsAddOpen} onSave={(task) => saveMutation.mutate(task)} isSaving={saveMutation.isPending} />
-      <Dialog open={runTask !== null} onOpenChange={(open) => !open && setRunTask(null)}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Run this task now?</DialogTitle><DialogDescription>This will execute the registered backend task immediately.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setRunTask(null)}>Cancel</Button><Button onClick={() => runTask && runMutation.mutate(runTask)} disabled={runMutation.isPending}><Play /> Run Now</Button></DialogFooter></DialogContent></Dialog>
-    </main>
+      <Dialog open={runTask !== null} onOpenChange={(open) => !open && setRunTask(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Run this task now?</DialogTitle><DialogDescription>This will execute {runTask?.name ?? "the selected task"} immediately.</DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" disabled={runMutation.isPending} onClick={() => setRunTask(null)}>Cancel</Button><Button onClick={() => runTask && runMutation.mutate(runTask)} disabled={runMutation.isPending}><Play />{runMutation.isPending ? "Running…" : "Run now"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </MotionPage>
   );
 }
 
 function SummaryCard({ title, value, description, icon: Icon }: { title: string; value: string | number; description: string; icon: typeof Activity }) {
-  return <Card><CardHeader className="flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">{title}</CardTitle><Icon className="size-4 text-muted-foreground" /></CardHeader><CardContent><div className="text-2xl font-semibold">{value}</div><p className="text-xs text-muted-foreground">{description}</p></CardContent></Card>;
+  return <Card className="rounded-xl shadow-sm"><CardHeader className="flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">{title}</CardTitle><Icon className="size-4 text-muted-foreground" /></CardHeader><CardContent><div className="text-2xl font-semibold">{value}</div><p className="text-xs text-muted-foreground">{description}</p></CardContent></Card>;
 }
 
 function Actions({ task, onEdit, onRun, onToggle }: { task: AutomationTask; onEdit: (task: AutomationTask) => void; onRun: (task: AutomationTask) => void; onToggle: (task: AutomationTask) => void }) {
   return <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${task.name}`} />}><Ellipsis /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => onEdit(task)}><Settings2 /> View Details</DropdownMenuItem><DropdownMenuItem onClick={() => onEdit(task)}><Settings2 /> Edit Configuration</DropdownMenuItem><DropdownMenuItem onClick={() => onRun(task)}><Play /> Run Now</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onClick={() => onToggle(task)}><Activity /> {task.status === "Enabled" ? "Disable" : "Enable"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
-}
-
-function TaskRow({ task, onEdit, onRun, onToggle }: { task: AutomationTask; onEdit: (task: AutomationTask) => void; onRun: (task: AutomationTask) => void; onToggle: (task: AutomationTask) => void }) {
-  const Icon = task.icon;
-  return <TableRow><TableCell className="pl-6"><div className="flex items-center gap-3"><div className="rounded-md bg-muted p-2"><Icon className="size-4" /></div><span className="font-medium">{task.name}</span></div></TableCell><TableCell className="max-w-xs whitespace-normal text-muted-foreground">{task.description}</TableCell><TableCell>{task.schedule}</TableCell><TableCell className="text-muted-foreground">{task.lastRun}</TableCell><TableCell className="text-muted-foreground">{task.status === "Disabled" ? "Paused" : task.nextRun}</TableCell><TableCell><StatusBadge status={task.status} /></TableCell><TableCell className="pr-6 text-right"><Actions task={task} onEdit={onEdit} onRun={onRun} onToggle={onToggle} /></TableCell></TableRow>;
 }
 
 function TaskMobileCard({ task, onEdit, onRun, onToggle }: { task: AutomationTask; onEdit: (task: AutomationTask) => void; onRun: (task: AutomationTask) => void; onToggle: (task: AutomationTask) => void }) {
@@ -254,13 +303,9 @@ function TaskMobileCard({ task, onEdit, onRun, onToggle }: { task: AutomationTas
   return <div className="space-y-4 p-4"><div className="flex items-start justify-between gap-3"><div className="flex gap-3"><div className="rounded-md bg-muted p-2"><Icon className="size-4" /></div><div><p className="font-medium">{task.name}</p><p className="text-sm text-muted-foreground">{task.description}</p></div></div><Actions task={task} onEdit={onEdit} onRun={onRun} onToggle={onToggle} /></div><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Schedule</p><p>{task.schedule}</p></div><div><p className="text-xs text-muted-foreground">Next run</p><p>{task.status === "Disabled" ? "Paused" : task.nextRun}</p></div></div><StatusBadge status={task.status} /></div>;
 }
 
-function emptyTask(): AutomationTask {
-  return { id: 0, name: "", description: "", schedule: "Every 5 minutes", frequency: "5", lastRun: "Not run", nextRun: "Not scheduled", status: "Disabled", notes: "", icon: Settings2 };
-}
-
 function TaskDialog({ task, open, onOpenChange, onSave, isSaving }: { task: AutomationTask | null; open: boolean; onOpenChange: (open: boolean) => void; onSave: (task: AutomationTask) => void; isSaving: boolean }) {
   const [form, setForm] = useState<AutomationTask | null>(task);
   if (!form) return null;
   const setField = <K extends keyof AutomationTask>(key: K, value: AutomationTask[K]) => setForm((current) => current ? { ...current, [key]: value } : current);
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{task?.id === 0 ? "Add task" : form.name}</DialogTitle><DialogDescription>{task?.id === 0 ? "Create a database-backed automation." : "Changes are applied to the database and runtime task."}</DialogDescription></DialogHeader><div className="space-y-4">{task?.id !== 0 && <StatusBadge status={form.status} />}<Separator /><div className="space-y-2"><Label htmlFor="task-name">Task name</Label><Input id="task-name" value={form.name} onChange={(event) => setField("name", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="task-description">Description</Label><Textarea id="task-description" value={form.description} onChange={(event) => setField("description", event.target.value)} /></div><div className="flex items-center justify-between rounded-lg border p-3"><div><Label htmlFor="task-enabled">Enable task</Label><p className="text-xs text-muted-foreground">Updates the persisted automation status.</p></div><Switch id="task-enabled" checked={form.status === "Enabled"} onCheckedChange={(checked) => setField("status", checked ? "Enabled" : "Disabled")} /></div><div className="space-y-2"><Label>Frequency</Label><Select value={form.frequency} onValueChange={(value) => setField("frequency", value as Frequency)}><SelectTrigger className="w-full"><SelectValue placeholder="Choose frequency" /></SelectTrigger><SelectContent>{Object.entries(frequencyLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>{form.frequency === "daily" && <div className="space-y-2"><Label>Daily execution time</Label><Input type="time" value={form.dailyTime || "02:00"} onChange={(event) => setField("dailyTime", event.target.value)} /></div>}<div className="space-y-2"><Label htmlFor="task-notes">Notes <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="task-notes" value={form.notes} onChange={(event) => setField("notes", event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!form.name.trim() || !form.description.trim() || isSaving} onClick={() => onSave(form)}>Save Changes</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{form.name}</DialogTitle><DialogDescription>Update the schedule and configuration of this existing task.</DialogDescription></DialogHeader><div className="space-y-4"><StatusBadge status={form.status} /><Separator /><div className="space-y-2"><Label htmlFor="task-name">Task name</Label><Input id="task-name" value={form.name} onChange={(event) => setField("name", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="task-description">Description</Label><Textarea id="task-description" value={form.description} onChange={(event) => setField("description", event.target.value)} /></div><div className="flex items-center justify-between rounded-lg border p-3"><div><Label htmlFor="task-enabled">Enable task</Label><p className="text-xs text-muted-foreground">Updates the persisted automation status.</p></div><Switch id="task-enabled" checked={form.status === "Enabled"} onCheckedChange={(checked) => setField("status", checked ? "Enabled" : "Disabled")} /></div><div className="space-y-2"><Label htmlFor="task-frequency">Frequency</Label><Select value={form.frequency} onValueChange={(value) => setField("frequency", value as Frequency)}><SelectTrigger id="task-frequency" className="w-full"><SelectValue placeholder="Choose frequency" /></SelectTrigger><SelectContent>{Object.entries(frequencyLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>{form.frequency === "daily" && <div className="space-y-2"><Label htmlFor="task-daily-time">Daily execution time</Label><Input id="task-daily-time" type="time" value={form.dailyTime || "02:00"} onChange={(event) => setField("dailyTime", event.target.value)} /></div>}<div className="space-y-2"><Label htmlFor="task-notes">Notes <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="task-notes" value={form.notes} onChange={(event) => setField("notes", event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!form.name.trim() || !form.description.trim() || isSaving} onClick={() => onSave(form)}>Save Changes</Button></DialogFooter></DialogContent></Dialog>;
 }

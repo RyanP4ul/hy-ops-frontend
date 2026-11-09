@@ -1,31 +1,22 @@
 "use client";
 
 import { QueryFeedback } from "@/components/query-feedback";
+import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 
 
 import { useEffect, useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
-  flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowDownUp, Edit, Loader2Icon, Search, Trash2 } from "lucide-react";
+import { ArrowDownUp, Edit, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useVehicles } from "../provider";
 import { VehicleRow } from "@/schema/vehicle";
-import PaginationVehicle from "./pagination";
 import { debounce } from "@/utils/debounce";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { REQUESTS } from "@/constant/request";
@@ -51,7 +42,12 @@ export default function DataTable() {
   const { subscribe } = useWebSocket();
   const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState(search);
-  const updateSearch = useMemo(() => debounce(setSearch, 400), [setSearch]);
+  const updateSearch = useMemo(() => debounce((value: string) => {
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+    setSearch(value);
+  }, 350), [setSearch, setPage]);
+
+  useEffect(() => () => updateSearch.cancel(), [updateSearch]);
   const sortableHeader = (id: string, label: string) => (
     <button
       type="button"
@@ -72,12 +68,14 @@ export default function DataTable() {
       { accessorKey: "id", header: () => sortableHeader("id", "ID") },
       {
         accessorKey: "plate_number",
-        header: () => sortableHeader("plate_number", "Plate Number"),
+        header: () => sortableHeader("plate_number", "Plate number"),
+        cell: ({ row }) => <span className="font-medium">{row.original.plate_number}</span>,
       },
       { accessorKey: "type", header: () => sortableHeader("type", "Type") },
       {
         accessorKey: "status",
         header: () => sortableHeader("status", "Status"),
+        cell: ({ row }) => <Badge variant="outline" className={row.original.status === "available" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" : row.original.status === "maintenance" ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300" : "bg-muted text-muted-foreground"}>{row.original.status.replace(/_/g, " ")}</Badge>,
       },
       { accessorKey: "warehouse_name", header: "Assigned Warehouse" },
       {
@@ -86,8 +84,8 @@ export default function DataTable() {
         cell: ({ row }) => (
           <div className="flex gap-2">
             <Button
-              variant="outline"
-              size="icon"
+              variant="ghost"
+              size="icon-sm"
               aria-label="Edit vehicle"
               onClick={() => {
                 setSelected({
@@ -104,8 +102,8 @@ export default function DataTable() {
               <Edit className="size-4" />
             </Button>
             <Button
-              variant="outline"
-              size="icon"
+              variant="ghost"
+              size="icon-sm"
               aria-label="Delete vehicle"
               className="text-destructive"
               onClick={() => {
@@ -190,72 +188,23 @@ export default function DataTable() {
       },
     );
   }, [page.pageIndex, page.pageSize, queryClient, search, sortBy, subscribe]);
+  function clearSearch() {
+    updateSearch.cancel();
+    setSearchInput("");
+    setSearch("");
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }
+
   return (
-    <>
-      <div className="mb-3">
-        <div className="relative max-w-md">
-          <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
-          <Input
-            className="pl-9"
-            placeholder="Search vehicles..."
-            value={searchInput}
-            onChange={(event) => {
-              setSearchInput(event.target.value);
-              setPage((current) => ({ ...current, pageIndex: 0 }));
-              updateSearch(event.target.value);
-            }}
-          />
-        </div>
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <ManagementListHeader title="Fleet directory" description="Review vehicle availability and warehouse assignments before dispatch." total={vehicleQuery.data?.total} isFetching={vehicleQuery.isFetching} onRefresh={() => void vehicleQuery.refetch()} actions={<Button size="sm" onClick={() => openModal(DialogMode.INSERT, { title: "Add Vehicle", description: "Add a new vehicle.", action: "Add Vehicle" })}><Plus className="size-4" aria-hidden="true" />Add vehicle</Button>} />
+      <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
+        <ManagementSearch id="vehicles-search" value={searchInput} placeholder="Search vehicles…" onChange={(value) => { setSearchInput(value); updateSearch(value); }} onClear={clearSearch} />
+        {(search || searchInput) && <Button variant="ghost" size="sm" onClick={clearSearch}>Clear search</Button>}
       </div>
-      <div className="overflow-hidden rounded-md border">
-        <QueryFeedback query={vehicleQuery} label="vehicles" />
-            <Table>
-          <TableHeader className="bg-muted">
-            <TableRow>
-              {table.getHeaderGroups()[0]?.headers.map((header) => (
-                <TableHead key={header.id}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {vehicleQuery.isPending ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-40 text-center">
-                  <Loader2Icon className="mr-2 inline size-4 animate-spin" />
-                  Loading...
-                </TableCell>
-              </TableRow>
-            ) : table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
-                  {vehicleQuery.isError ? "Records unavailable. Use Retry above." : "No matching records. Try adjusting your filters."}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex justify-end px-4">
-        <PaginationVehicle table={table} />
-      </div>
-    </>
+      <QueryFeedback query={vehicleQuery} label="vehicles" />
+      <ManagementTableView table={table} loading={vehicleQuery.isPending} isFetching={vehicleQuery.isFetching} error={vehicleQuery.isError} filtered={Boolean(search)} label="vehicles" />
+      <ManagementListFooter table={table} total={vehicleQuery.data?.total ?? 0} isFetching={vehicleQuery.isFetching} label="vehicles" />
+    </section>
   );
 }
