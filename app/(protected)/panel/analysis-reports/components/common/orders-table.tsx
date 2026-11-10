@@ -39,7 +39,7 @@ export function OrdersTable({ rows }: { rows: OrderRow[] }) {
           <TableBody>
             {visible.map((o) => (
               <TableRow key={o.id}>
-                <TableCell>{o.number}</TableCell><TableCell>{manilaDay(o.at)}</TableCell><TableCell>{o.customer}</TableCell><TableCell>{o.itemCount}</TableCell>
+                <TableCell>{o.number}{o.salesChannel === "WALK_IN" && <span className="block text-xs text-muted-foreground">Walk-in sale</span>}</TableCell><TableCell>{manilaDay(o.at)}</TableCell><TableCell>{o.customer}</TableCell><TableCell>{o.itemCount}</TableCell>
                 <TableCell>{peso(o.total)}</TableCell><TableCell>{peso(o.balance)}</TableCell>
                 <TableCell><StatusBadge s={o.payStatus} /></TableCell><TableCell><StatusBadge s={o.status} /></TableCell>
               </TableRow>

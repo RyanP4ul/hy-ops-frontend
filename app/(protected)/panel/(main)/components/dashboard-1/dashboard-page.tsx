@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Sparkles,
+  Store,
   Truck,
 } from "lucide-react";
 import { QueryFeedback } from "@/components/query-feedback";
@@ -143,6 +144,17 @@ export default function DashboardPage() {
             >
               <Navigation className="size-3.5 text-primary" />
               Live Map
+            </Button>
+
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 text-xs font-medium rounded-xl"
+              render={<Link href="/panel/orders?walkin=true" />}
+            >
+              <Store className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+              Walk-in Sale
             </Button>
 
             <Button

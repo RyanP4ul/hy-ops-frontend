@@ -108,6 +108,7 @@ export type OrderItemDetail = z.infer<typeof OrderItemDetailSchema>;
 // };
 
 export type OrderRow = Partial<OrderGroupFields> & {
+  sales_channel?: "STANDARD" | "WALK_IN";
   product_number?: string;
   id: number;
   shipping_address?: string | null;
@@ -131,6 +132,7 @@ export type OrderItemDetailView = Omit<OrderItemDetail, "price"> & {
 export type CombinedPaymentInfo = { payment_number: string; amount: number; allocated_amount: number; reference_number?: string | null };
 
 export type OrderDetail = Omit<OrderForm, "items" | "payment_type"> & Partial<OrderGroupFields> & {
+  sales_channel?: "STANDARD" | "WALK_IN";
   payment_type?: string | null;
   id: number;
   order_number: string;

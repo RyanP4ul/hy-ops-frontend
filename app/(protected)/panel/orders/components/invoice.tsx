@@ -31,6 +31,7 @@ type InvoiceItem = {
 };
 
 type Invoice = {
+  salesChannel?: "STANDARD" | "WALK_IN";
   combinedPayment?: CombinedPaymentInfo | null;
   paymentMethod?: string | null;
   paymentType?: string | null;
@@ -68,6 +69,7 @@ type InvoiceResponse = {
   combined_payment?: CombinedPaymentInfo | null;
   payment_method?: string | null;
   payment_type?: string | null;
+  sales_channel?: "STANDARD" | "WALK_IN";
   invoice_number: string;
   status: Invoice["status"];
   issue_date: string;
@@ -212,6 +214,7 @@ export default function Invoice({ orderId }: { orderId: number }) {
     combinedPayment: invoiceQuery.data.combined_payment,
     paymentMethod: invoiceQuery.data.payment_method,
     paymentType: invoiceQuery.data.payment_type,
+    salesChannel: invoiceQuery.data.sales_channel,
     invoiceNumber: invoiceQuery.data.invoice_number,
     status: invoiceQuery.data.status,
     issueDate: invoiceQuery.data.issue_date,
@@ -278,7 +281,7 @@ export default function Invoice({ orderId }: { orderId: number }) {
       doc.setTextColor(25, 25, 25);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(22);
-      doc.text("INVOICE", rightEdge, 22, { align: "right" });
+      doc.text(invoice.salesChannel === "WALK_IN" ? "WALK-IN INVOICE" : "INVOICE", rightEdge, 22, { align: "right" });
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
@@ -516,7 +519,7 @@ export default function Invoice({ orderId }: { orderId: number }) {
           <p className="text-sm font-medium text-muted-foreground">
             {company.name}
           </p>
-          <CardTitle className="text-3xl">Invoice</CardTitle>
+          <CardTitle className="text-3xl">{invoice.salesChannel === "WALK_IN" ? "Walk-in invoice" : "Invoice"}</CardTitle>
           <p className="text-sm text-muted-foreground">{company.address}</p>
         </div>
         <div className="space-y-2 sm:text-right">

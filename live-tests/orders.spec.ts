@@ -506,3 +506,60 @@ test("Order dialog redesign keeps navigation visible and shows submission paymen
   await expect(main.getByLabel("Combined amount received", { exact: true })).toHaveCount(0);
   await expect(main.getByLabel("Amount Paid", { exact: false })).toBeVisible();
 });
+
+
+test("Walk-in vehicle delivery collects guest details and sends a large paid sale to scheduling", async ({ page }) => {
+  await page.goto("/panel/orders?walkin=true");
+  const dialog = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Walk-in Counter Sale" }) });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: "Take away now", exact: true })).toBeChecked();
+  await dialog.getByRole("button", { name: "Add", exact: true }).first().click();
+  await dialog.getByRole("spinbutton", { name: "Quantity for LIVE-SKU", exact: true }).fill("100");
+  await expect(dialog).toContainText("100 total units");
+  await dialog.getByRole("radio", { name: "Company vehicle delivery", exact: true }).check();
+  await expect(dialog.locator("#walkin-name")).toHaveCount(0);
+  await expect(dialog.locator("#walkin-phone")).toHaveCount(0);
+  await dialog.getByLabel("Recipient name", { exact: false }).fill("Browser Guest");
+  await dialog.locator("#delivery-shipping_phone").fill("09171234567");
+  await dialog.getByLabel("Delivery address", { exact: false }).fill("100 Browser Customer Street");
+  await dialog.getByRole("radio", { name: "Take away now", exact: true }).check();
+  await expect(dialog.locator("#walkin-name")).toHaveValue("Browser Guest");
+  await expect(dialog.locator("#walkin-phone")).toHaveValue("09171234567");
+  await dialog.getByRole("radio", { name: "Company vehicle delivery", exact: true }).check();
+  await expect(dialog.getByLabel("Delivery address", { exact: false })).toHaveValue("100 Browser Customer Street");
+  await dialog.getByRole("button", { name: "Walk-in Guest", exact: true }).click();
+  await expect(dialog.getByLabel("Recipient name", { exact: false })).toHaveValue("Browser Guest");
+  await dialog.getByLabel("Latitude", { exact: false }).fill("14.6");
+  await dialog.getByLabel("Longitude", { exact: false }).fill("121.2");
+  await dialog.evaluate(element => { element.scrollTop = 0; });
+  await dialog.screenshot({ path: "../../.tmp/walk-in-delivery-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await dialog.screenshot({ path: "../../.tmp/walk-in-delivery-mobile.png" });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  let interrupted = false;
+  await page.route("**/api/orders/walk-in", async route => {
+    if (!interrupted) {
+      interrupted = true;
+      const committed = await route.fetch();
+      expect(committed.status()).toBe(200);
+      await route.abort(); // Simulate losing the response after checkout committed.
+    } else await route.continue();
+  });
+  const resultPromise = page.waitForResponse(response => response.url().endsWith("/api/orders/walk-in") && response.request().method() === "POST");
+  await dialog.getByRole("button", { name: /^Pay and send to scheduling/ }).click();
+  await expect(dialog.getByRole("radio", { name: "Company vehicle delivery", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: /^Retry checkout/ }).click();
+  const response = await resultPromise;
+  expect(response.status(), await response.text()).toBe(200);
+  const sale = await response.json();
+  expect(sale).toMatchObject({ customer_name: "Browser Guest", status: "SCHEDULING", sales_channel: "WALK_IN", delivery_type: "INTERNAL", total: 1234 });
+  expect(response.request().postDataJSON()).toMatchObject({ fulfillment: "DELIVERY", shipping_phone: "09171234567", items: [{ inventory_id: 1, quantity: 100 }] });
+  const paidDialog = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: /Paid - awaiting delivery scheduling/ }) });
+  await expect(paidDialog).toBeVisible();
+  await paidDialog.getByRole("link", { name: "Open delivery scheduling" }).click();
+  await expect(page).toHaveURL(/delivery-schedules/);
+  await expect(page.getByRole("row").filter({ hasText: sale.product_number })).toContainText("Browser Guest");
+  const stock = await json(page.request, "GET", "/inventory?page=0&limit=10&warehouse_id=1");
+  expect(stock.find((item: { id: number }) => item.id === 1)).toMatchObject({ quantity: 10000, reserved: 100 });
+});

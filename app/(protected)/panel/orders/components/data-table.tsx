@@ -1,10 +1,15 @@
 "use client";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { formatCurrency } from "@/utils/date-util";
 
 import { QueryFeedback } from "@/components/query-feedback";
-import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
-
+import {
+  ManagementListHeader,
+  ManagementListFooter,
+  ManagementSearch,
+  ManagementTableView,
+} from "@/components/management-list";
 
 import { useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
@@ -22,12 +27,14 @@ import {
   Eye,
   NotepadText,
   Plus,
+  Store,
   Truck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
 import { OrderRow } from "@/schema/order";
 import { useOrders } from "../provider";
+import { WalkInSaleDialog } from "./walk-in/walk-in-sale-dialog";
 import {
   Select,
   SelectContent,
@@ -40,7 +47,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
 
 export default function DataTable() {
   const {
@@ -55,21 +61,29 @@ export default function DataTable() {
     deliveryType,
     setDeliveryType,
     startOrder,
+    walkInOpen,
+    setWalkInOpen,
   } = useOrders();
   const { openModal } = useModal();
   const { viewOrder } = useOrders();
+
   const [searchInput, setSearchInput] = useState(search);
-  const debouncedSearch = useMemo(() => debounce((value: string) => {
-    setPage((current) => ({ ...current, pageIndex: 0 }));
-    setSearch(value);
-  }, 350), [setSearch, setPage]);
+
+  const debouncedSearch = useMemo(
+    () =>
+      debounce((value: string) => {
+        setPage((current) => ({ ...current, pageIndex: 0 }));
+        setSearch(value);
+      }, 350),
+    [setSearch, setPage],
+  );
 
   const sortableHeader = (id: string, label: string) => (
     <button
       type="button"
       className="flex items-center gap-2 cursor-pointer text-left"
       onClick={() => {
-        setPage(current => ({ ...current, pageIndex: 0 }));
+        setPage((current) => ({ ...current, pageIndex: 0 }));
         setSortBy((current) => {
           if (current.id === id) {
             return {
@@ -95,7 +109,26 @@ export default function DataTable() {
       {
         accessorKey: "product_number",
         header: () => sortableHeader("product_number", "Order Number"),
-        cell: ({ row }) => <div><p className="font-medium">{row.original.product_number}</p>{row.original.order_group_number && <p className="mt-1 text-xs text-muted-foreground">{row.original.order_group_number} / {row.original.order_group_position} of {row.original.order_group_size}</p>}</div>,
+        cell: ({ row }) => (
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-medium">{row.original.product_number}</p>
+              {(row.original.sales_channel === "WALK_IN" ||
+                row.original.delivery_type === "WALK_IN") && (
+                <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  Walk-in sale
+                </span>
+              )}
+            </div>
+            {row.original.order_group_number && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {row.original.order_group_number} /{" "}
+                {row.original.order_group_position} of{" "}
+                {row.original.order_group_size}
+              </p>
+            )}
+          </div>
+        ),
       },
       {
         accessorKey: "warehouse_name",
@@ -104,7 +137,11 @@ export default function DataTable() {
       {
         accessorKey: "shipping_address",
         header: "Shipping destination",
-        cell: ({ row }) => <p className="min-w-48 max-w-72 whitespace-normal text-sm">{row.original.shipping_address || "Address unavailable"}</p>,
+        cell: ({ row }) => (
+          <p className="min-w-48 max-w-72 whitespace-normal text-sm">
+            {row.original.shipping_address || "Address unavailable"}
+          </p>
+        ),
       },
       {
         accessorKey: "customer_name",
@@ -161,17 +198,23 @@ export default function DataTable() {
           };
 
           const statusColors: Record<string, string> = {
-            PENDING: "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-            PROCESSING: "border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-            IN_TRANSIT: "border border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
-            COMPLETED: "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
-            CANCELLED: "border border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
+            PENDING:
+              "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+            PROCESSING:
+              "border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+            IN_TRANSIT:
+              "border border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
+            COMPLETED:
+              "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+            CANCELLED:
+              "border border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
           };
 
           const status = row.original.status;
           const label = statusLabels[status] ?? status;
           const colorClass =
-            statusColors[status] ?? "border border-border bg-muted text-muted-foreground";
+            statusColors[status] ??
+            "border border-border bg-muted text-muted-foreground";
 
           return (
             <span
@@ -198,7 +241,20 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
-            {(["SCHEDULING", "SCHEDULED", "IN_TRANSIT", "COMPLETED"].includes(row.original.status) || row.original.delivery_type === "LALAMOVE") && <Link className="self-center whitespace-nowrap text-xs underline" href={`/panel/lalamove?orderId=${row.original.id}`}>{row.original.delivery_type === "LALAMOVE" ? "Lalamove delivery" : "Delivery method"}</Link>}
+            {row.original.delivery_type !== "WALK_IN" &&
+              (["SCHEDULING", "SCHEDULED", "IN_TRANSIT", "COMPLETED"].includes(
+                row.original.status,
+              ) ||
+                row.original.delivery_type === "LALAMOVE") && (
+                <Link
+                  className="self-center whitespace-nowrap text-xs underline"
+                  href={`/panel/lalamove?orderId=${row.original.id}`}
+                >
+                  {row.original.delivery_type === "LALAMOVE"
+                    ? "Lalamove delivery"
+                    : "Delivery method"}
+                </Link>
+              )}
             {/* View Order */}
             <Tooltip>
               <TooltipTrigger
@@ -360,9 +416,12 @@ export default function DataTable() {
               </Tooltip>
             )}
 
-            {/* Cancel Order: PENDING or PROCESSING */}
+            {/* Unassigned walk-in deliveries can also be cancelled before dispatch. */}
             {(row.original.status === "PENDING" ||
-              row.original.status === "PROCESSING") && (
+              row.original.status === "PROCESSING" ||
+              (row.original.status === "SCHEDULING" &&
+                row.original.sales_channel === "WALK_IN" &&
+                row.original.delivery_type === "INTERNAL")) && (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -377,7 +436,7 @@ export default function DataTable() {
 
                         openModal(DialogMode.CANCEL, {
                           title: "Cancel Order",
-                          description: `Are you sure you want to cancel order #${row.original.id}? This action may not be reversible.`,
+                          description: `Cancel order #${row.original.id}? Reserved stock will be released. Any recorded payment must be refunded separately.`,
                           action: "Cancel Order",
                         });
                       }}
@@ -395,7 +454,15 @@ export default function DataTable() {
         ),
       },
     ],
-    [openModal, setSelected, viewOrder, sortBy, setSortBy, setPage, ordersQuery.isFetching],
+    [
+      openModal,
+      setSelected,
+      viewOrder,
+      sortBy,
+      setSortBy,
+      setPage,
+      ordersQuery.isFetching,
+    ],
   );
 
   const table = useReactTable({
@@ -425,6 +492,7 @@ export default function DataTable() {
 
   const deliveryOptions = [
     { value: "ALL", label: "All delivery methods" },
+    { value: "WALK_IN", label: "Walk-in sale" },
     { value: "LALAMOVE", label: "Lalamove" },
     { value: "PICKUP", label: "Customer pickup" },
     { value: "INTERNAL", label: "Company delivery" },
@@ -433,26 +501,127 @@ export default function DataTable() {
 
   return (
     <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      <ManagementListHeader title="Order history" description="Review order progress, customer details, and saved checkout totals."
-        total={ordersQuery.data?.total} isFetching={ordersQuery.isFetching} onRefresh={() => void ordersQuery.refetch()}
-        actions={<Button size="sm" onClick={() => { startOrder(); openModal(DialogMode.INSERT, { title: "Create Order", description: "Add a new order below.", action: "Create Order" }); }}><Plus className="size-4" aria-hidden="true" />Add order</Button>} />
+      <ManagementListHeader
+        title="Order history"
+        description="Review order progress, customer details, and saved checkout totals."
+        total={ordersQuery.data?.total}
+        isFetching={ordersQuery.isFetching}
+        onRefresh={() => void ordersQuery.refetch()}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setWalkInOpen(true)}
+            >
+              <Store
+                className="size-4 text-emerald-600 dark:text-emerald-400"
+                aria-hidden="true"
+              />
+              Walk-in sale
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                startOrder();
+                openModal(DialogMode.INSERT, {
+                  title: "Create Order",
+                  description: "Add a new order below.",
+                  action: "Create Order",
+                });
+              }}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Add order
+            </Button>
+          </div>
+        }
+      />
+
       <div className="space-y-3 border-b bg-muted/20 p-4 md:px-5">
         <div className="flex flex-wrap items-center gap-3">
-          <ManagementSearch id="order-search" value={searchInput} placeholder="Search orders…" onChange={(value) => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
-          <Select items={deliveryOptions} value={deliveryType} onValueChange={(value) => { if (value) { setDeliveryType(value); setPage((current) => ({ ...current, pageIndex: 0 })); } }}>
-            <SelectTrigger className="h-10 w-full bg-background sm:w-52" aria-label="Filter by delivery method"><SelectValue /></SelectTrigger>
-            <SelectContent>{deliveryOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          <ManagementSearch
+            id="order-search"
+            value={searchInput}
+            placeholder="Search orders…"
+            onChange={(value) => {
+              setSearchInput(value);
+              debouncedSearch(value);
+            }}
+            onClear={clearSearch}
+          />
+          <Select
+            items={deliveryOptions}
+            value={deliveryType}
+            onValueChange={(value) => {
+              if (value) {
+                setDeliveryType(value);
+                setPage((current) => ({ ...current, pageIndex: 0 }));
+              }
+            }}
+          >
+            <SelectTrigger
+              className="h-10 w-full bg-background sm:w-52"
+              aria-label="Filter by delivery method"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {deliveryOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
-          <Button variant="outline" className="h-10 bg-background" onClick={() => { setSortBy({ id: "id", type: sortBy.id === "id" && sortBy.type === "desc" ? "asc" : "desc" }); setPage((current) => ({ ...current, pageIndex: 0 })); }}>
-            <ArrowDownUp className="size-4" aria-hidden="true" />{sortBy.id === "id" ? (sortBy.type === "asc" ? "Oldest first" : "Newest first") : "Sort by date"}
+          <Button
+            variant="outline"
+            className="h-10 bg-background"
+            onClick={() => {
+              setSortBy({
+                id: "id",
+                type:
+                  sortBy.id === "id" && sortBy.type === "desc" ? "asc" : "desc",
+              });
+              setPage((current) => ({ ...current, pageIndex: 0 }));
+            }}
+          >
+            <ArrowDownUp className="size-4" aria-hidden="true" />
+            {sortBy.id === "id"
+              ? sortBy.type === "asc"
+                ? "Oldest first"
+                : "Newest first"
+              : "Sort by date"}
           </Button>
-          {(filtered || searchInput || sortBy.id !== "id" || sortBy.type !== "desc") && <Button variant="ghost" size="sm" onClick={resetFilters}>Reset filters</Button>}
+          {(filtered ||
+            searchInput ||
+            sortBy.id !== "id" ||
+            sortBy.type !== "desc") && (
+            <Button variant="ghost" size="sm" onClick={resetFilters}>
+              Reset filters
+            </Button>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground">Totals use saved checkout prices. Missing historical prices are marked Unverified. Cancelled orders retain their recorded value.</p>
+        <p className="text-xs text-muted-foreground">
+          Totals use saved checkout prices. Missing historical prices are marked
+          Unverified. Cancelled orders retain their recorded value.
+        </p>
       </div>
       <QueryFeedback query={ordersQuery} label="orders" />
-      <ManagementTableView table={table} loading={ordersQuery.isPending} isFetching={ordersQuery.isFetching} error={ordersQuery.isError} filtered={filtered} label="orders" />
-      <ManagementListFooter table={table} total={ordersQuery.data?.total ?? 0} isFetching={ordersQuery.isFetching} label="Orders" />
+      <ManagementTableView
+        table={table}
+        loading={ordersQuery.isPending}
+        isFetching={ordersQuery.isFetching}
+        error={ordersQuery.isError}
+        filtered={filtered}
+        label="orders"
+      />
+      <ManagementListFooter
+        table={table}
+        total={ordersQuery.data?.total ?? 0}
+        isFetching={ordersQuery.isFetching}
+        label="Orders"
+      />
     </section>
   );
 }

@@ -10,7 +10,12 @@ import {
   OrderRow,
   orderSchema,
 } from "@/schema/order";
-import { draftForPaymentMode, emptyCombinedPayment, type PaymentMode, type CombinedPayment } from "@/schema/order-batch";
+import {
+  draftForPaymentMode,
+  emptyCombinedPayment,
+  type PaymentMode,
+  type CombinedPayment,
+} from "@/schema/order-batch";
 import { request } from "@/components/http";
 import { useForm, useWatch, UseFormReturn } from "react-hook-form";
 import { useModal } from "@/components/providers/modal-provider";
@@ -145,6 +150,8 @@ type OrdersContext = {
   >;
   inventoryItem: InventoryItem[];
   setInventoryItem: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
+  walkInOpen: boolean;
+  setWalkInOpen: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 const OrdersContext = createContext<OrdersContext | null>(null);
@@ -156,13 +163,14 @@ export function useOrders() {
 }
 
 export function OrdersProvider({ children }: { children: React.ReactNode }) {
-  const { state } = useModal();
   const { settingQuery } = useSetting();
   const filters = useSearchParams();
   const { send } = useWebSocket();
   const [step, setStep] = useState<number>(0);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("SEPARATE");
-  const [combinedPayment, setCombinedPayment] = useState<CombinedPayment>({ ...emptyCombinedPayment });
+  const [combinedPayment, setCombinedPayment] = useState<CombinedPayment>({
+    ...emptyCombinedPayment,
+  });
   const [draftOrders, setDraftOrders] = useState<OrderDraft[]>([]);
   const [activeDraftIndex, setActiveDraftIndex] = useState(0);
   const orderCount = Math.max(draftOrders.length, activeDraftIndex + 1);
@@ -178,6 +186,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     id: "id",
     type: "desc",
   });
+
+  const [walkInOpen, setWalkInOpen] = useState(false);
 
   const [sub, setSub] = useState<SubType>({
     id: -1,
@@ -196,7 +206,12 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       items: OrderItemDetail[];
     }
   >({
-    resolver: (values, context, options) => zodResolver(orderSchema)(draftForPaymentMode(values, paymentMode), context, options),
+    resolver: (values, context, options) =>
+      zodResolver(orderSchema)(
+        draftForPaymentMode(values, paymentMode),
+        context,
+        options,
+      ),
     defaultValues: {
       warehouse_id: -1,
       customer_id: -1,
@@ -212,7 +227,10 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const selectedWarehouseId = useWatch({ control: form.control, name: "warehouse_id" });
+  const selectedWarehouseId = useWatch({
+    control: form.control,
+    name: "warehouse_id",
+  });
 
   const ordersQuery = useQuery({
     queryKey: [
@@ -257,11 +275,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
       const response = await request("GET", `/api/orders/${selected.id}`);
 
-      if (!response.ok) throw new Error("Unable to load this order. Close the dialog and try again.");
+      if (!response.ok)
+        throw new Error(
+          "Unable to load this order. Close the dialog and try again.",
+        );
 
       return (await response.json()) as OrderDetail;
     },
-    enabled: state.isOpen && state.mode !== DialogMode.INSERT && selected.id > 0,
+    enabled: selected.id > 0,
   });
 
   const orderItemDetailQuery = useQuery({
@@ -274,7 +295,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         `/api/inventory/details?ids=${inventoryItem.map((item) => item.inventory_id).join(",")}`,
       );
 
-      if (!response.ok) throw new Error("Unable to load available item details.");
+      if (!response.ok)
+        throw new Error("Unable to load available item details.");
 
       return (await response.json()) as (OrderItemDetail & {
         inventory_id: number;
@@ -286,9 +308,13 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const warehouseQuery = useQuery({
     queryKey: ["warehouses", "order-options", warehouseCB.page],
     queryFn: async () => {
-      const response = await request("GET", `/api/warehouses/names?page=${warehouseCB.page}&limit=10`);
+      const response = await request(
+        "GET",
+        `/api/warehouses/names?page=${warehouseCB.page}&limit=10`,
+      );
       if (!response.ok) throw new Error("Unable to load warehouses.");
-      const result = await response.json(); warehouseCB.setTotalPages(Math.max(1, Math.ceil(result.total / 10)));
+      const result = await response.json();
+      warehouseCB.setTotalPages(Math.max(1, Math.ceil(result.total / 10)));
       return result;
     },
   });
@@ -296,9 +322,13 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const inventoryQuery = useQuery({
     queryKey: ["inventory_query", selectedWarehouseId, inventoryCB.page],
     queryFn: async () => {
-      const response = await request("GET", `/api/inventory/names?warehouse_id=${selectedWarehouseId}&page=${inventoryCB.page}&limit=10`);
+      const response = await request(
+        "GET",
+        `/api/inventory/names?warehouse_id=${selectedWarehouseId}&page=${inventoryCB.page}&limit=10`,
+      );
       if (!response.ok) throw new Error("Unable to load available stock.");
-      const result = await response.json(); inventoryCB.setTotalPages(Math.max(1, Math.ceil(result.total / 10)));
+      const result = await response.json();
+      inventoryCB.setTotalPages(Math.max(1, Math.ceil(result.total / 10)));
       return result;
     },
     enabled: selectedWarehouseId > 0,
@@ -311,11 +341,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
       const response = await request("GET", `/api/orders/${viewOrderId}`);
 
-      if (!response.ok) throw new Error("Unable to load this order. Close the dialog and try again.");
+      if (!response.ok)
+        throw new Error(
+          "Unable to load this order. Close the dialog and try again.",
+        );
 
       return (await response.json()) as OrderDetail;
     },
-    enabled: state.isOpen && state.mode === DialogMode.VIEW && viewOrderId > 0,
+    enabled: viewOrderId > 0,
   });
 
   const productVariantsQuery = useQuery({
@@ -373,7 +406,10 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const selectedCustomerId = useWatch({ control: form.control, name: "customer_id" });
+  const selectedCustomerId = useWatch({
+    control: form.control,
+    name: "customer_id",
+  });
   const customerOrderEligibility = useQuery({
     queryKey: ["customer-order-eligibility", selectedCustomerId],
     queryFn: async () => {
@@ -381,13 +417,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         "GET",
         `/api/orders/eligibility/${selectedCustomerId}`,
       );
-      const result =
-        (await response.json()) as CustomerOrderEligibility & {
-          message?: string;
-        };
+      const result = (await response.json()) as CustomerOrderEligibility & {
+        message?: string;
+      };
 
       if (!response.ok) {
-        throw new Error(result.message || "Unable to check customer eligibility.");
+        throw new Error(
+          result.message || "Unable to check customer eligibility.",
+        );
       }
 
       return result;
@@ -402,13 +439,29 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
   const collectDrafts = (): OrderDraft[] => {
     const data = structuredClone(form.getValues());
-    const customer = customerQuery.data?.rows.find(row => row.id === data.customer_id);
-    const address = customer?.addresses.find(row => row.id === data.customer_address_id);
+    const customer = customerQuery.data?.rows.find(
+      (row) => row.id === data.customer_id,
+    );
+    const address = customer?.addresses.find(
+      (row) => row.id === data.customer_address_id,
+    );
     const destination = address
-      ? [address.address_line, address.barangay, address.city_municipality, address.province, address.postal_code].filter(Boolean).join(", ")
+      ? [
+          address.address_line,
+          address.barangay,
+          address.city_municipality,
+          address.province,
+          address.postal_code,
+        ]
+          .filter(Boolean)
+          .join(", ")
       : "Choose a saved shipping address";
     const drafts = [...draftOrders];
-    drafts[activeDraftIndex] = { data, warehouseName: warehouseCB.inputValue, destination };
+    drafts[activeDraftIndex] = {
+      data,
+      warehouseName: warehouseCB.inputValue,
+      destination,
+    };
     return drafts;
   };
 
@@ -417,8 +470,15 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     setActiveDraftIndex(index);
     warehouseCB.setInputValue(draft.warehouseName);
     warehouseCB.setOpen(false);
-    inventoryCB.setInputValue(""); inventoryCB.setPage(0); inventoryCB.setOpen(false);
-    setInventoryItem(draft.data.items.map(item => ({ inventory_id: item.inventory_id, quantity: item.quantity })));
+    inventoryCB.setInputValue("");
+    inventoryCB.setPage(0);
+    inventoryCB.setOpen(false);
+    setInventoryItem(
+      draft.data.items.map((item) => ({
+        inventory_id: item.inventory_id,
+        quantity: item.quantity,
+      })),
+    );
     setSub({ is_open: false, mode: DialogMode.DEFAULT });
     setStep(0);
   };
@@ -428,15 +488,26 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     const drafts = collectDrafts();
     const current = drafts[activeDraftIndex];
     setDraftOrders(drafts);
-    loadDraft({
-      warehouseName: current.warehouseName,
-      destination: "Choose a saved shipping address",
-      data: {
-        warehouse_id: current.data.warehouse_id, customer_id: current.data.customer_id,
-        delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "BANK_TRANSFER", payment_type: "",
-        notes: "", is_custom_shipping: false, customer_address_id: undefined, items: [], amount_paid: 0,
+    loadDraft(
+      {
+        warehouseName: current.warehouseName,
+        destination: "Choose a saved shipping address",
+        data: {
+          warehouse_id: current.data.warehouse_id,
+          customer_id: current.data.customer_id,
+          delivery_type: "INTERNAL",
+          payment_arrangement: "NET_30",
+          payment_method: "BANK_TRANSFER",
+          payment_type: "",
+          notes: "",
+          is_custom_shipping: false,
+          customer_address_id: undefined,
+          items: [],
+          amount_paid: 0,
+        },
       },
-    }, drafts.length);
+      drafts.length,
+    );
   };
 
   const switchDraft = (index: number) => {
@@ -452,25 +523,63 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     const drafts = collectDrafts();
     drafts.splice(index, 1);
     if (drafts.length === 1) setPaymentMode("SEPARATE");
-    const next = index < activeDraftIndex ? activeDraftIndex - 1 : Math.min(activeDraftIndex, drafts.length - 1);
+    const next =
+      index < activeDraftIndex
+        ? activeDraftIndex - 1
+        : Math.min(activeDraftIndex, drafts.length - 1);
     setDraftOrders(drafts);
     loadDraft(drafts[next], next);
   };
 
   const startOrder = () => {
-    setPaymentMode("SEPARATE"); setCombinedPayment({ ...emptyCombinedPayment });
-    setDraftOrders([]); setActiveDraftIndex(0);
-    form.reset({ warehouse_id: -1, customer_id: -1, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "BANK_TRANSFER", payment_type: "", notes: "", is_custom_shipping: false, customer_address_id: undefined, shipping_recipient: undefined, shipping_phone: undefined, shipping_address: undefined, shipping_latitude: undefined, shipping_longitude: undefined, items: [], amount_paid: 0 });
-    setStep(0); setSelected({ id: -1, version: 0 }); setInventoryItem([]); setSub({ is_open: false, mode: DialogMode.DEFAULT });
-    for (const combo of [warehouseCB, customerCB, inventoryCB]) { combo.setInputValue(""); combo.setPage(0); combo.setOpen(false); }
+    setPaymentMode("SEPARATE");
+    setCombinedPayment({ ...emptyCombinedPayment });
+    setDraftOrders([]);
+    setActiveDraftIndex(0);
+    form.reset({
+      warehouse_id: -1,
+      customer_id: -1,
+      delivery_type: "INTERNAL",
+      payment_arrangement: "NET_30",
+      payment_method: "BANK_TRANSFER",
+      payment_type: "",
+      notes: "",
+      is_custom_shipping: false,
+      customer_address_id: undefined,
+      shipping_recipient: undefined,
+      shipping_phone: undefined,
+      shipping_address: undefined,
+      shipping_latitude: undefined,
+      shipping_longitude: undefined,
+      items: [],
+      amount_paid: 0,
+    });
+    setStep(0);
+    setSelected({ id: -1, version: 0 });
+    setInventoryItem([]);
+    setSub({ is_open: false, mode: DialogMode.DEFAULT });
+    for (const combo of [warehouseCB, customerCB, inventoryCB]) {
+      combo.setInputValue("");
+      combo.setPage(0);
+      combo.setOpen(false);
+    }
   };
 
   return (
     <OrdersContext.Provider
       value={{
         startOrder,
-        paymentMode, setPaymentMode, combinedPayment, setCombinedPayment,
-        draftOrders, activeDraftIndex, orderCount, collectDrafts, addAnotherOrder, switchDraft, removeDraft,
+        paymentMode,
+        setPaymentMode,
+        combinedPayment,
+        setCombinedPayment,
+        draftOrders,
+        activeDraftIndex,
+        orderCount,
+        collectDrafts,
+        addAnotherOrder,
+        switchDraft,
+        removeDraft,
         send,
         form,
         step,
@@ -503,9 +612,24 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         orderItemDetailQuery,
         inventoryItem,
         setInventoryItem,
+        walkInOpen,
+        setWalkInOpen,
       }}
     >
-      {(filters.get("status") || filters.get("stock_status") || filters.get("overdue")) && <p className="rounded-lg border p-3 text-sm">Dashboard filter: {filters.get("overdue") === "true" ? "Overdue scheduled deliveries" : filters.get("status") ?? filters.get("stock_status")} ? <a href="/panel/orders" className="underline">Clear filter</a></p>}
+      {(filters.get("status") ||
+        filters.get("stock_status") ||
+        filters.get("overdue")) && (
+        <p className="rounded-lg border p-3 text-sm">
+          Dashboard filter:{" "}
+          {filters.get("overdue") === "true"
+            ? "Overdue scheduled deliveries"
+            : (filters.get("status") ?? filters.get("stock_status"))}{" "}
+          ?{" "}
+          <a href="/panel/orders" className="underline">
+            Clear filter
+          </a>
+        </p>
+      )}
       {children}
     </OrdersContext.Provider>
   );

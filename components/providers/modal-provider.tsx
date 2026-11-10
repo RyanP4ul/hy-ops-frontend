@@ -81,7 +81,13 @@ export function useModal() {
   return context;
 }
 
-export function ModalProvider({ children }: { children: ReactNode }) {
+export function ModalProvider({
+  children,
+  is_custom,
+}: {
+  children: ReactNode;
+  is_custom?: boolean;
+}) {
   const [state, dispatch] = useReducer(modalReducer, initialState);
 
   const openModal = (
@@ -114,16 +120,20 @@ export function ModalProvider({ children }: { children: ReactNode }) {
 
   return (
     <ModalContext.Provider value={value}>
-      <Dialog
-        open={state.isOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeModal();
-          }
-        }}
-      >
-        {children}
-      </Dialog>
+      {is_custom ? (
+        <>{children}</>
+      ) : (
+        <Dialog
+          open={state.isOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeModal();
+            }
+          }}
+        >
+          {children}
+        </Dialog>
+      )}
     </ModalContext.Provider>
   );
 }

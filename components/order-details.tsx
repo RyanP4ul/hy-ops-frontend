@@ -52,6 +52,7 @@ export function ViewOrderDetails({
         {order.delivery_type === "LALAMOVE" && <Link href={`/panel/lalamove?orderId=${order.id}`} className="inline-block text-sm underline">View Lalamove delivery and tracking</Link>}
         <div className="grid gap-3 sm:grid-cols-2">
           <ViewOrderItem label="Order number" value={order.order_number} />
+          {order.sales_channel === "WALK_IN" && <ViewOrderItem label="Sale type" value="Walk-in sale" />}
           {order.order_group_number && <ViewOrderItem label="Order group" value={`${order.order_group_number} / Order ${order.order_group_position} of ${order.order_group_size}`} />}
           <ViewOrderItem label="Customer" value={order.customer_name} />
           <ViewOrderItem label="Status" value={formatValue(order.status)} />
@@ -84,10 +85,10 @@ export function ViewOrderDetails({
       <Separator />
 
       <section className="space-y-3">
-        <h4 className="text-sm font-medium">Shipping destination</h4>
-        <ViewOrderItem label="Recipient" value={order.shipping_recipient} />
+        <h4 className="text-sm font-medium">{order.delivery_type === "WALK_IN" ? "Counter Sale Details" : "Shipping destination"}</h4>
+        <ViewOrderItem label={order.delivery_type === "WALK_IN" ? "Walk-in Buyer" : "Recipient"} value={order.shipping_recipient} />
         <ViewOrderItem label="Phone" value={order.shipping_phone} />
-        <ViewOrderItem label="Address saved at checkout" value={order.shipping_address} />
+        <ViewOrderItem label={order.delivery_type === "WALK_IN" ? "Fulfillment location" : "Address saved at checkout"} value={order.shipping_address} />
       </section>
       <section className="space-y-3">
         <h4 className="text-sm font-medium">Items</h4>
