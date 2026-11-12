@@ -66,7 +66,6 @@ type InventoryContextType = {
   createInventory: (data: InventoryType) => Promise<void>;
 
   updateInventory: (inventory_id: number, data: InventoryType & { version: number }) => Promise<void>;
-  deleteInventory: () => Promise<void>;
 
   warehouseCB: ReturnType<typeof useComboBoxPagination>;
   productVariantCB: ReturnType<typeof useComboBoxPagination>;
@@ -277,27 +276,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteInventory = async (): Promise<void> => {
-    const response = await fetch(
-      `/api/inventory/${inventoryDetail.id}?version=${inventoryDetail.version}`,
-      {
-        method: "DELETE",
-        credentials: "include",
-      },
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result?.message || "Failed to delete inventory");
-    } else {
-      send({
-        type: REQUESTS.INVENTORY_DELETED,
-        payload: [inventoryDetail.id],
-      });
-      toast.success(result?.message || "Inventory deleted successfully");
-    }
-  };
 
   return (
     <InventoryContext.Provider
@@ -310,7 +288,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         setPagination,
         createInventory,
         updateInventory,
-        deleteInventory,
         pageIndex,
         pageSize,
         searchQuery,

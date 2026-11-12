@@ -59,7 +59,7 @@ export function VehiclesProvider({ children }: { children: React.ReactNode }) {
       plate_number: "",
       status: "available",
       type: "truck",
-      image: "",
+
     },
   });
 

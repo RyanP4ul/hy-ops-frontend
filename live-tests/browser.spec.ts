@@ -1,28 +1,55 @@
 import { expect, test } from "@playwright/test";
 import { browserLogin, connectSocket, json } from "./helpers";
 
-test("real login and Products create/edit/delete through rendered controls", async ({ page }) => {
+test("Archive retention: Products archive, schedule deletion, restore and preserve the record", async ({ page }) => {
   await browserLogin(page);
   await page.goto('/panel/products');
-  await page.getByRole('button', { name: 'Add Product', exact: true }).click();
+  await page.getByRole('button', { name: /^Add product$/i }).click();
   let dialog = page.getByRole('dialog');
   await dialog.getByLabel('Product Name', { exact: false }).fill('Browser product');
-  await dialog.getByRole('button', { name: 'Add Product', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Add product$/i }).click();
   await expect(dialog).toHaveCount(0);
   const search = page.getByPlaceholder(/Search products/);
   await search.fill('Browser product');
   const row = page.getByRole('row').filter({ hasText: 'Browser product' });
   await expect(row).toBeVisible();
-  await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  await row.getByRole('button', { name: /^Edit Browser product/ }).click();
   dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('Product Name', { exact: false })).toHaveValue('Browser product');
   await dialog.getByLabel('Product Name', { exact: false }).fill('Browser product updated');
   await dialog.getByRole('button', { name: /save/i }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toContainText('Browser product updated');
-  await row.getByRole('button', { name: 'Delete', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: /delete/i }).click();
+  await row.getByRole('button', { name: 'Archive', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Archive', exact: true }).click();
   await expect(row).toHaveCount(0);
+  await page.goto('/panel/archives');
+  const archivedRow = page.getByRole('row').filter({ hasText: 'Browser product updated' });
+  await expect(archivedRow).toBeVisible();
+  await archivedRow.getByRole('button', { name: 'Delete', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('30 days');
+  await expect(dialog).toContainText('Estimated permanent deletion date:');
+  await dialog.getByRole('button', { name: 'Schedule deletion', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(archivedRow.getByRole('button', { name: 'Deletion scheduled', exact: true })).toBeDisabled();
+  const records = await json(page.request, 'GET', '/archives?limit=50');
+  const record = records.find((entry: { data: { name?: string } }) => entry.data.name === 'Browser product updated');
+  expect(record.delete_after - record.deletion_requested_at).toBe(30 * 24 * 60 * 60);
+  await archivedRow.getByRole('button', { name: 'Restore Browser product updated', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Restore record', exact: true }).click();
+  await expect(archivedRow).toHaveCount(0);
+  await page.goto('/panel/products');
+  await page.getByPlaceholder(/Search products/).fill('Browser product updated');
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('Inactive');
+  await expect(row.getByRole('button', { name: /Delete/ })).toHaveCount(0);
+  await page.goto('/panel/vehicles');
+  await page.getByRole('button', { name: /^Add vehicle$/i }).click();
+  dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('Status', { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel(/Image path/i)).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 });
 
 test("two real browsers reconcile events across backend processes and after reconnect", async ({ browser }) => {

@@ -1,36 +1,60 @@
-import { parseRoadRoute, roadRouteKey, routingWaypointsSchema } from "../lib/road-routing";
+import {
+  parseRoadRoute,
+  roadRouteKey,
+  routingWaypointsSchema,
+} from "../lib/road-routing";
 
-// This URL is under /panel so the existing session/role proxy protects it.
+// Under /panel so the existing session/role proxy protects it.
 // Only the server chooses the provider; callers cannot supply an upstream URL.
 let demoQueue: Promise<void> = Promise.resolve();
 
 export async function GET(request: Request) {
   const raw = new URL(request.url).searchParams.get("waypoints");
   if (!raw || raw.length > 5_000) {
-    return Response.json({ message: "Provide 2 to 100 valid routing waypoints." }, { status: 400 });
+    return Response.json(
+      { message: "Provide 2 to 100 valid routing waypoints." },
+      { status: 400 },
+    );
   }
   const points = routingWaypointsSchema.safeParse(
-    raw.split(";").map((point) => point.split(",").map((value) => value.trim() === "" ? NaN : Number(value))),
+    raw
+      .split(";")
+      .map((point) =>
+        point
+          .split(",")
+          .map((value) => (value.trim() === "" ? NaN : Number(value))),
+      ),
   );
   if (!points.success) {
-    return Response.json({ message: "Provide 2 to 100 valid longitude,latitude pairs." }, { status: 400 });
+    return Response.json(
+      { message: "Provide 2 to 100 valid longitude,latitude pairs." },
+      { status: 400 },
+    );
   }
 
   const provider = process.env.OSRM_ROUTING_URL?.trim();
   if (!provider && process.env.NODE_ENV === "production") {
-    return Response.json({ message: "Road routing is not configured. Set OSRM_ROUTING_URL on the server." }, { status: 503 });
+    return Response.json(
+      {
+        message:
+          "Road routing is not configured. Set OSRM_ROUTING_URL on the server.",
+      },
+      { status: 503 },
+    );
   }
 
   try {
     if (!provider) {
-      // The public demo permits at most one request per second. Production
-      // deployments use their own OSRM service rather than this shared demo.
       const turn = demoQueue;
-      demoQueue = turn.then(() => new Promise<void>((resolve) => setTimeout(resolve, 1_100)));
+      demoQueue = turn.then(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 1_100)),
+      );
       await turn;
     }
     request.signal.throwIfAborted();
-    const url = new URL(`${(provider || "https://router.project-osrm.org").replace(/\/$/, "")}/route/v1/driving/${roadRouteKey(points.data)}`);
+    const url = new URL(
+      `${(provider || "https://router.project-osrm.org").replace(/\/$/, "")}/route/v1/driving/${roadRouteKey(points.data)}`,
+    );
     url.search = new URLSearchParams({
       geometries: "geojson",
       overview: "full",
@@ -46,10 +70,15 @@ export async function GET(request: Request) {
     });
     if (!response.ok) throw new Error("Routing provider unavailable");
     const route = parseRoadRoute(await response.json(), points.data.length);
-    return Response.json(route, { headers: { "Cache-Control": "private, max-age=3600" } });
+    return Response.json(route, {
+      headers: { "Cache-Control": "private, max-age=3600" },
+    });
   } catch {
     return Response.json(
-      { message: "Unable to find a driving route. Check the stop locations or try again." },
+      {
+        message:
+          "Unable to find a driving route. Check the stop locations or try again.",
+      },
       { status: 502 },
     );
   }

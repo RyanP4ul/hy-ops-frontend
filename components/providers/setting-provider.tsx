@@ -8,6 +8,7 @@ type Result = Record<
   | "high_stock_threshold"
   | "refresh_interval_ms"
   | "mobile_automatic_refresh_interval_ms"
+  | "mobile_offline_delivery_recording_enabled"
   | "is_form_validation_debug_enabled"
   | "order_limit_per_day"
   | "max_order_per_vehicle"

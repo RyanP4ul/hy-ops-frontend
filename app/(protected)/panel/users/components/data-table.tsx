@@ -1,5 +1,7 @@
 "use client";
 
+import { LifecycleActions } from "@/components/lifecycle-actions";
+
 import { useAuth } from "@/components/providers/auth-provider";
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
@@ -83,6 +85,7 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
+            <LifecycleActions resource="users" record={row.original} />
             {row.original.role !== "customer" && (
               <Button
                 variant="ghost"
@@ -125,16 +128,16 @@ export default function DataTable() {
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={`Deactivate user ${row.original.name}`}
+              aria-label={`Archive user ${row.original.name}`}
               disabled={row.original.id === actorId}
-              title={row.original.id === actorId ? "You cannot deactivate your own account." : "Deactivate this account while retaining its history"}
+              title={row.original.id === actorId ? "You cannot archive your own account." : "Archive this account while retaining its history"}
               onClick={() => {
                 setSelected(row.original);
 
                 openModal(DialogMode.ARCHIVE, {
-                  title: "Deactivate User",
-                  description: `Deactivate ${row.original.name} (${row.original.email})? They will no longer be able to sign in. The account can be restored from Archives, and existing records are retained.`,
-                  action: "Deactivate User",
+                  title: "Archive User",
+                  description: `Archive ${row.original.name} (${row.original.email})? They will no longer be able to sign in. The account can be restored from Archives, and existing records are retained.`,
+                  action: "Archive User",
                 });
               }}
             >

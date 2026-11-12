@@ -99,6 +99,7 @@ export default function DeliveryScheduleDialog() {
   const { state, dispatch } = useModal();
   const { send } = useWebSocket();
   const {
+    isStaff,
     form,
     step,
     setStep,
@@ -165,7 +166,7 @@ export default function DeliveryScheduleDialog() {
   }
 
   const steps: WorkflowStep[] = [
-    { title: "Warehouse", description: "Choose where this delivery run will start.", icon: ClipboardCheck,
+    { title: "Warehouse", description: isStaff ? "This delivery run starts from your assigned warehouse." : "Choose where this delivery run will start.", icon: ClipboardCheck,
       details: ["Orders, drivers and vehicles must belong to the selected warehouse.", "Check the warehouse before selecting orders for this run."] },
     { title: "Departure", description: "Choose the delivery date and departure time.", icon: CalendarIcon,
       details: ["All departure times use Manila time (UTC+8).", "Choose a future departure on a date with available delivery slots."] },
@@ -299,7 +300,8 @@ export default function DeliveryScheduleDialog() {
 
         {step === 0 && (
           <>
-            <Controller
+            {isStaff && <div><QueryFeedback query={warehouseQuery} label="assigned warehouse" />{warehouseQuery.isError && <p role="alert" className="mt-2 text-sm text-destructive">{warehouseQuery.error.message}</p>}{warehouseCB.inputValue && <p className="text-sm">Assigned warehouse: {warehouseCB.inputValue}</p>}</div>}
+            {!isStaff && <Controller
               name="warehouse_id"
               control={form.control}
               render={({ field, fieldState }) => (
@@ -358,7 +360,7 @@ export default function DeliveryScheduleDialog() {
                 />
 
               )}
-            />
+            />}
           </>
         )}
 

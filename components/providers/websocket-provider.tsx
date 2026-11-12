@@ -30,6 +30,11 @@ const wsMessageSchema = z.object({
   payload: z.unknown().optional(),
 });
 
+function resolveWsTopic(path: string): string {
+  const segment = path.split("/panel/")[1]?.split("/")[0] || "dashboard";
+  return segment === "fleet-map-1" ? "fleet-map" : segment;
+}
+
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -180,9 +185,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
           const currentPath = pathnameRef.current;
           if (currentPath === "/panel" || currentPath.startsWith("/panel/")) {
-            const subPath = currentPath.split("/panel/")[1]?.split("/")[0] || "dashboard";
             ws.send(
-              JSON.stringify({ type: "CHANGE_PAGE", payload: [subPath] }),
+              JSON.stringify({ type: "CHANGE_PAGE", payload: [resolveWsTopic(currentPath)] }),
             );
           }
           return;
@@ -292,7 +296,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     if (pathname !== "/panel" && !pathname.startsWith("/panel/")) return;
     send({
       type: "CHANGE_PAGE",
-      payload: [pathname.split("/panel/")[1]?.split("/")[0] || "dashboard"],
+      payload: [resolveWsTopic(pathname)],
     });
   }, [pathname, send]);
 

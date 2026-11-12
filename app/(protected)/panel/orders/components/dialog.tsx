@@ -46,6 +46,7 @@ export default function OrderDialog() {
   const { state, dispatch } = useModal();
   const [actionPending, setActionPending] = useState(false);
   const [nextPending, setNextPending] = useState(false);
+  const [invoiceActionContainer, setInvoiceActionContainer] = useState<HTMLSpanElement | null>(null);
   const initializedEdit = useRef<object | null>(null);
   const {
     form,
@@ -332,7 +333,7 @@ export default function OrderDialog() {
         ) : state.mode === DialogMode.CUSTOM &&
           state.title === "Invoice" &&
           state.isOpen ? (
-          <Invoice orderId={selected.id} />
+          <Invoice orderId={selected.id} actionContainer={invoiceActionContainer} />
         ) : (
           [DialogMode.CANCEL].includes(state.mode) &&
           state.isOpen && (
@@ -417,13 +418,16 @@ export default function OrderDialog() {
               )}
             </>
           ) : state.mode === DialogMode.VIEW || state.title === "Invoice" ? (
-            <DialogClose
-              render={
-                <Button type="button" variant="outline">
-                  Close
-                </Button>
-              }
-            />
+            <>
+              <DialogClose
+                render={
+                  <Button type="button" variant="outline">
+                    Close
+                  </Button>
+                }
+              />
+              {state.title === "Invoice" && <span ref={setInvoiceActionContainer} className="contents" />}
+            </>
           ) : (
             <>
               <DialogClose

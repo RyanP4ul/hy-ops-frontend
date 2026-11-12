@@ -7,6 +7,7 @@ export const settingSchema = z.object({
 });
 
 export const generalSettingSchema = z.object({
+  mobile_offline_delivery_recording_enabled: z.boolean(),
   is_form_validation_debug_enabled: z.boolean(),
   refresh_interval_ms: z.number().nonnegative(),
   mobile_automatic_refresh_interval_ms: z.number().int().positive().max(2147483647),

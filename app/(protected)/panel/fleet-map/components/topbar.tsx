@@ -13,47 +13,35 @@ import {
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatAgo } from "../lib/format";
 import { FLEET_POLL_MS, LIVE_POLL_MS } from "../constants";
-
-export type FleetCounts = {
-  delivering: number;
-  returning: number;
-  available: number;
-};
-
-export type FleetView = "split" | "map" | "list";
-
-export type RealtimeStatus =
-  | "connected"
-  | "connecting"
-  | "reconnecting"
-  | "disconnected";
+import { formatAgo } from "../lib/format";
+import type {
+  FleetCounts,
+  FleetView,
+  RealtimeStatus,
+  VehicleFilter,
+} from "../types";
 
 type TopbarProps = {
   simulationOn: boolean;
   feedError: boolean;
   gpsError: boolean;
   realtimeStatus: RealtimeStatus;
-  /** Epoch ms of the last successful fleet API poll (0 = none yet). */
   feedUpdatedAt: number;
-  /** Epoch ms of the last successful GPS API poll (0 = none yet). */
   gpsUpdatedAt: number;
   now: number;
   counts: FleetCounts;
+  activeFilter: VehicleFilter;
+  onFilterSelect: (filter: VehicleFilter) => void;
   onOpenList: () => void;
   view: FleetView;
   onViewChange: (view: FleetView) => void;
-  expanded: boolean;
-  onToggleExpanded: () => void;
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
   onRetry: () => void;
   onReconnect: () => void;
-  /** The testing-tools control, rendered on the right. */
-  tools: ReactNode;
+  tools?: ReactNode;
 };
-
-const PILL =
-  "inline-flex items-center gap-1.5 rounded-full border bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm backdrop-blur";
 
 export function Topbar({
   simulationOn,
@@ -64,80 +52,216 @@ export function Topbar({
   gpsUpdatedAt,
   now,
   counts,
+  activeFilter,
+  onFilterSelect,
   onOpenList,
   view,
   onViewChange,
-  expanded,
-  onToggleExpanded,
+  fullscreen,
+  onToggleFullscreen,
   onRetry,
   onReconnect,
   tools,
 }: TopbarProps) {
+  const summaryItems: {
+    key: VehicleFilter;
+    label: string;
+    count: number;
+    dot: string;
+    activeClass: string;
+  }[] = [
+    {
+      key: "all",
+      label: "All",
+      count: counts.total,
+      dot: "bg-slate-500",
+      activeClass: "border-primary bg-primary/10 text-primary",
+    },
+    {
+      key: "delivering",
+      label: "On route",
+      count: counts.delivering,
+      dot: "bg-blue-600",
+      activeClass: "border-blue-600 bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-200",
+    },
+    {
+      key: "returning",
+      label: "Returning",
+      count: counts.returning,
+      dot: "bg-indigo-500",
+      activeClass: "border-indigo-600 bg-indigo-50 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200",
+    },
+    {
+      key: "available",
+      label: "Available",
+      count: counts.available,
+      dot: "bg-emerald-600",
+      activeClass: "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200",
+    },
+    {
+      key: "blocked",
+      label: "Out of service",
+      count: counts.blocked,
+      dot: "bg-amber-600",
+      activeClass: "border-amber-600 bg-amber-50 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
+    },
+    {
+      key: "gps_attention",
+      label: "GPS attention",
+      count: counts.gpsAttention,
+      dot: "bg-orange-600",
+      activeClass: "border-orange-600 bg-orange-50 text-orange-900 dark:bg-orange-950/60 dark:text-orange-200",
+    },
+  ];
+
   return (
-    <header className="shrink-0 space-y-3 border-b bg-background p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="mr-auto">
-          <h1 className="text-base font-semibold">Fleet tracking</h1>
-          <p className="hidden text-xs text-muted-foreground sm:block">Track vehicles, review trips, and manage return pickups.</p>
+    <header className="shrink-0 border-b bg-background">
+      {/* Row 1: Identity, Sync Health, View Mode Switcher & Fullscreen */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base">
+              Fleet dispatch
+            </h1>
+          </div>
+
+          <div className="hidden items-center gap-1.5 md:flex">
+            <FeedStatus
+              simulationOn={simulationOn}
+              feedError={feedError}
+              gpsError={gpsError}
+              realtimeStatus={realtimeStatus}
+              feedUpdatedAt={feedUpdatedAt}
+              gpsUpdatedAt={gpsUpdatedAt}
+              now={now}
+              onRetry={onRetry}
+              onReconnect={onReconnect}
+            />
+          </div>
         </div>
-        <div role="group" aria-label="Fleet view" className="flex items-center gap-1 rounded-lg border p-1">
-          {([
-            { value: "split", label: "Map & list", icon: Columns2 },
-            { value: "map", label: "Map only", icon: MapIcon },
-            { value: "list", label: "List only", icon: List },
-          ] as const).map(({ value, label, icon: Icon }) => (
-            <Button key={value} type="button" size="sm" variant={view === value ? "secondary" : "ghost"} className="h-8 gap-1.5 px-2 text-xs" aria-pressed={view === value} onClick={() => onViewChange(value)}>
-              <Icon className="size-3.5" aria-hidden="true" />{label}
-            </Button>
-          ))}
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div
+            role="group"
+            aria-label="Workspace view mode"
+            className="inline-flex items-center rounded-md border bg-muted/40 p-0.5"
+          >
+            {(
+              [
+                { value: "split", label: "Map & List", shortLabel: "Split", icon: Columns2 },
+                { value: "map", label: "Map Only", shortLabel: "Map", icon: MapIcon },
+                { value: "list", label: "List Only", shortLabel: "List", icon: List },
+              ] as const
+            ).map(({ value, label, shortLabel, icon: Icon }) => {
+              const active = view === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onViewChange(value)}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:bg-background hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="hidden sm:inline">{label}</span>
+                  <span className="sm:hidden">{shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={fullscreen ? "default" : "outline"}
+            onClick={onToggleFullscreen}
+            aria-pressed={fullscreen}
+            aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+            className="h-8 gap-1.5 px-2.5 text-xs"
+          >
+            {fullscreen ? (
+              <Minimize2 className="size-3.5" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="size-3.5" aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">
+              {fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            </span>
+          </Button>
+
+          {tools}
         </div>
-        <Button type="button" size="sm" variant="outline" onClick={onToggleExpanded} aria-pressed={expanded} aria-label={expanded ? "Exit expanded workspace" : "Expand workspace"} title={expanded ? "Exit expanded workspace (Esc)" : "Expand workspace"}>
-          {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          <span className="hidden sm:inline">{expanded ? "Exit expanded" : "Expand"}</span>
+      </div>
+
+      {/* Row 2: Operational Fleet Summary + Mobile Sync & Browse */}
+      <div className="flex flex-wrap items-center gap-1.5 border-t bg-muted/20 px-3 py-1.5 sm:px-4">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onOpenList}
+          className={cn(
+            "h-7 gap-1.5 px-2.5 text-xs lg:hidden",
+            view !== "split" && "hidden",
+          )}
+        >
+          <List className="size-3.5" aria-hidden="true" />
+          Browse fleet ({counts.total})
         </Button>
-        {tools}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={onOpenList}
-        className={cn("gap-1.5 lg:hidden", view !== "split" && "hidden")}
-      >
-        <List className="size-4" />
-        Browse fleet
-      </Button>
 
-      <div className="pointer-events-auto">
-        <FeedStatus
-          simulationOn={simulationOn}
-          feedError={feedError}
-          gpsError={gpsError}
-          realtimeStatus={realtimeStatus}
-          feedUpdatedAt={feedUpdatedAt}
-          gpsUpdatedAt={gpsUpdatedAt}
-          now={now}
-          onRetry={onRetry}
-          onReconnect={onReconnect}
-        />
-      </div>
+        <nav
+          aria-label="Fleet status summary"
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          {summaryItems.map((item) => {
+            const selected = activeFilter === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                aria-pressed={selected}
+                aria-label={`${item.label}: ${item.count}`}
+                onClick={() => onFilterSelect(item.key)}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  selected
+                    ? item.activeClass
+                    : "border-transparent bg-background/80 text-muted-foreground hover:border-border hover:text-foreground",
+                )}
+              >
+                <span
+                  className={cn("size-1.5 rounded-full", item.dot)}
+                  aria-hidden="true"
+                />
+                <span>{item.label}</span>{" "}
+                <span className="tabular-nums font-semibold text-foreground/90">
+                  {item.count}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
 
-      <div className="ml-auto hidden flex-wrap items-center gap-2 xl:flex">
-        <span className={PILL}>
-          <span className="size-2 rounded-full bg-blue-500" />
-          {counts.delivering} on route
-        </span>
-        <span className={PILL}>
-          <span className="size-2 rounded-full bg-violet-500" />
-          {counts.returning} returning
-        </span>
-        <span className={PILL}>
-          <span className="size-2 rounded-full bg-emerald-500" />
-          {counts.available} available fleet-wide
-        </span>
-      </div>
-
+        <div className="ml-auto flex items-center gap-1.5 md:hidden">
+          <FeedStatus
+            simulationOn={simulationOn}
+            feedError={feedError}
+            gpsError={gpsError}
+            realtimeStatus={realtimeStatus}
+            feedUpdatedAt={feedUpdatedAt}
+            gpsUpdatedAt={gpsUpdatedAt}
+            now={now}
+            onRetry={onRetry}
+            onReconnect={onReconnect}
+            compact
+          />
+        </div>
       </div>
     </header>
   );
@@ -153,6 +277,7 @@ function FeedStatus({
   now,
   onRetry,
   onReconnect,
+  compact = false,
 }: Pick<
   TopbarProps,
   | "simulationOn"
@@ -164,16 +289,11 @@ function FeedStatus({
   | "now"
   | "onRetry"
   | "onReconnect"
->) {
+> & { compact?: boolean }) {
   if (simulationOn) {
     return (
-      <span
-        className={cn(
-          PILL,
-          "border-violet-500/40 text-violet-700 dark:text-violet-300",
-        )}
-      >
-        Simulation mode
+      <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-violet-300 bg-violet-50 px-2 text-[11px] font-medium text-violet-800 dark:border-violet-800 dark:bg-violet-950/60 dark:text-violet-200">
+        Simulation active
       </span>
     );
   }
@@ -181,63 +301,72 @@ function FeedStatus({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span
+        title="Realtime WebSocket event channel (separate from vehicle GPS)"
         className={cn(
-          PILL,
+          "inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] font-medium",
           realtimeStatus === "connected"
-            ? "text-emerald-700 dark:text-emerald-400"
+            ? "border-emerald-200 bg-emerald-50/80 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
             : realtimeStatus === "connecting"
-              ? "text-blue-700 dark:text-blue-400"
-              : "border-amber-500/40 text-amber-700 dark:text-amber-400",
+              ? "border-blue-200 bg-blue-50/80 text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
+              : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
         )}
       >
         {realtimeStatus === "connected" ? (
-          <Radio className="size-3.5" />
+          <Radio className="size-3" aria-hidden="true" />
         ) : realtimeStatus === "disconnected" ? (
-          <WifiOff className="size-3.5" />
+          <WifiOff className="size-3" aria-hidden="true" />
         ) : (
-          <Wifi className="size-3.5" />
+          <Wifi className="size-3" aria-hidden="true" />
         )}
         {realtimeStatus === "connected"
-          ? "Live updates connected"
+          ? compact
+            ? "Channel OK"
+            : "Channel connected"
           : realtimeStatus === "connecting"
-            ? "Connecting live updates…"
+            ? "Connecting…"
             : realtimeStatus === "reconnecting"
-              ? "Reconnecting live updates…"
-              : "Live updates offline"}
+              ? "Reconnecting…"
+              : "Channel offline"}
       </span>
+
       {realtimeStatus !== "connected" ? (
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 gap-1 bg-background/95 px-2 text-xs"
+          className="h-6 gap-1 px-2 text-[11px]"
           onClick={onReconnect}
         >
-          <RefreshCw className="size-3" />
+          <RefreshCw className="size-3" aria-hidden="true" />
           Reconnect
         </Button>
       ) : null}
-      <FreshnessStatus
-        label="Fleet"
-        error={feedError}
-        updatedAt={feedUpdatedAt}
-        now={now}
-        staleAfterMs={FLEET_POLL_MS * 2}
-        onRetry={onRetry}
-      />
-      <FreshnessStatus
-        label="GPS"
-        error={gpsError}
-        updatedAt={gpsUpdatedAt}
-        now={now}
-        staleAfterMs={LIVE_POLL_MS * 2}
-        onRetry={onRetry}
-      />
+
+      {!compact ? (
+        <>
+          <SyncFreshnessPill
+            label="Fleet"
+            error={feedError}
+            updatedAt={feedUpdatedAt}
+            now={now}
+            staleAfterMs={FLEET_POLL_MS * 2}
+            onRetry={onRetry}
+          />
+          <SyncFreshnessPill
+            label="GPS"
+            error={gpsError}
+            updatedAt={gpsUpdatedAt}
+            now={now}
+            staleAfterMs={LIVE_POLL_MS * 2}
+            onRetry={onRetry}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
 
-function FreshnessStatus({
+function SyncFreshnessPill({
   label,
   error,
   updatedAt,
@@ -258,32 +387,32 @@ function FreshnessStatus({
   return (
     <span
       className={cn(
-        PILL,
+        "inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] font-medium",
         error || stale
-          ? "border-amber-500/40 text-amber-700 dark:text-amber-400"
-          : "text-muted-foreground",
+          ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+          : "border-border bg-background text-muted-foreground",
       )}
     >
       {error || stale ? (
-        <AlertTriangle className="size-3.5" />
-      ) : (
-        <Radio className="size-3.5" />
-      )}
-      {error
-        ? `${label} sync failed${ageMs === null ? "" : ` · ${formatAgo(ageMs)}`}`
-        : ageMs === null
-          ? `${label} not synced`
-          : stale
-            ? `${label} stale · ${formatAgo(ageMs)}`
-            : `${label} checked ${formatAgo(ageMs)}`}
+        <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
+      ) : null}
+      <span>
+        {error
+          ? `${label} sync failed${ageMs === null ? "" : ` · ${formatAgo(ageMs)}`}`
+          : ageMs === null
+            ? `${label} syncing…`
+            : stale
+              ? `${label} stale · ${formatAgo(ageMs)}`
+              : `${label} ${formatAgo(ageMs)}`}
+      </span>
       {error || stale ? (
         <button
           type="button"
-          className="ml-0.5 rounded-sm p-0.5 hover:bg-muted"
+          className="ml-0.5 rounded p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
           onClick={onRetry}
           aria-label={`Retry ${label.toLowerCase()} sync`}
         >
-          <RefreshCw className="size-3" />
+          <RefreshCw className="size-2.5" aria-hidden="true" />
         </button>
       ) : null}
     </span>

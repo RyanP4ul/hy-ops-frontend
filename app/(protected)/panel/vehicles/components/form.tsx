@@ -17,8 +17,6 @@ import { DialogMode } from "@/types/dialog";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { ToastValidationError } from "@/components/util";
 import { useVehicles } from "../provider";
-import { useWebSocket } from "@/components/providers/websocket-provider";
-import { REQUESTS } from "@/constant/request";
 import { VehicleForm } from "@/schema/vehicle";
 import {
   Combobox,
@@ -31,7 +29,6 @@ import {
 import {
   Item,
   ItemContent,
-  ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
 import { Button } from "@/components/ui/button";
@@ -62,7 +59,7 @@ export default function Form() {
         plate_number: "",
         status: "available",
         type: "truck",
-        image: "",
+
       });
       warehouseCB.setInputValue("");
     }
@@ -76,9 +73,9 @@ export default function Form() {
         : "/api/vehicles",
       state.mode === DialogMode.EDIT
         ? { ...data, version: selected.version }
-        : data,
+        : { warehouse_id: data.warehouse_id, plate_number: data.plate_number, type: data.type },
     );
-    await requestWithErrorHandling(response, form, (result) => {
+    await requestWithErrorHandling(response, form, () => {
       vehicleQuery.refetch();
       dispatch({ type: "CLOSE" });
     });
@@ -92,7 +89,7 @@ export default function Form() {
       className="grid gap-4 md:grid-cols-2"
     >
       {state.mode === DialogMode.EDIT && <div className="md:col-span-2"><QueryFeedback query={vehicleDetailQuery} label="vehicle details" /></div>}
-      <p className="text-sm text-muted-foreground md:col-span-2">Dispatch manages on-delivery status. Vehicles with delivery history are retained. Reassign scheduled trips before changing the vehicle status or warehouse.</p>
+      <p className="text-sm text-muted-foreground md:col-span-2">New vehicles start Available. Dispatch manages on-delivery status. Vehicles with delivery history are retained. Reassign scheduled trips before changing the vehicle status or warehouse.</p>
       <Controller
         name="warehouse_id"
         control={form.control}
@@ -224,6 +221,7 @@ export default function Form() {
           </Field>
         )}
       />
+      {state.mode === DialogMode.EDIT && (
       <Controller
         name="status"
         control={form.control}
@@ -245,17 +243,8 @@ export default function Form() {
           </Field>
         )}
       />
-      <Controller
-        name="image"
-        control={form.control}
-        render={({ field, fieldState }) => (
-          <Field data-invalid={fieldState.invalid}>
-            <FieldLabel htmlFor="vehicle-image">Image path (optional)</FieldLabel>
-            <Input id="vehicle-image" {...field} placeholder="/vehicles/truck.svg" />
-            {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-          </Field>
-        )}
-      />
+      )}
+
     </form>
   );
 }

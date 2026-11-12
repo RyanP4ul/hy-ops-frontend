@@ -16,6 +16,7 @@ export const productVariantSchema = z.object({
 
 export const productSchema = z.object({
   id: z.number().nonnegative().optional(),
+  is_active: z.boolean().optional(),
   name: z.string().nonempty({ message: "Name is required" }),
   variants: z.array(productVariantSchema),
   version: z.number().nonnegative(),

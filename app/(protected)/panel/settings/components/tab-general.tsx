@@ -16,6 +16,7 @@ function number(value: string | undefined, fallback: number) {
 
 function readSettings(data: NonNullable<ReturnType<typeof useSetting>["settingQuery"]["data"]>): GeneralSettingSchema {
   return {
+    mobile_offline_delivery_recording_enabled: data.mobile_offline_delivery_recording_enabled?.value === "true",
     is_form_validation_debug_enabled: data.is_form_validation_debug_enabled?.value === "true",
     refresh_interval_ms: number(data.refresh_interval_ms?.value, 30000),
     mobile_automatic_refresh_interval_ms: number(data.mobile_automatic_refresh_interval_ms?.value, 30000),
@@ -44,6 +45,18 @@ export default function TabGeneral() {
             <NumberSetting control={form.control} name="mobile_automatic_refresh_interval_ms" label="Mobile refresh interval" description="Time between automatic driver app updates." unit="ms" min={1} max={2147483647} step={1} hint="Default: 30,000 ms (30 seconds)." />
           </div>
           <p className="mt-5 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">After changing the mobile interval, restart the driver app or sign in again to load the saved value.</p>
+        </SettingsSection>
+        <SettingsSection title="Offline deliveries" description="Let drivers save delivery work when they lose their connection." icon={RefreshCw}>
+          <Controller name="mobile_offline_delivery_recording_enabled" control={form.control} render={({ field }) => (
+            <Field orientation="horizontal" className="items-center">
+              <FieldContent>
+                <FieldLabel htmlFor={field.name}>Offline delivery recording</FieldLabel>
+                <FieldDescription id="offline-delivery-description">Allow drivers to save proof, delivery outcomes and return collections offline. Saved work synchronizes when connected. Turning this off stops new offline recording; already saved work can still synchronize.</FieldDescription>
+              </FieldContent>
+              <Switch id={field.name} checked={field.value} onCheckedChange={field.onChange} aria-describedby="offline-delivery-description" />
+            </Field>
+          )} />
+          <p className="mt-5 text-xs leading-relaxed text-muted-foreground">Save changes, then refresh the driver app while connected to load this setting. Drivers need a remembered sign-in and a downloaded, active trip. Trip start still requires a connection.</p>
         </SettingsSection>
         <SettingsSection title="Order limits" description="Set capacity limits for daily orders and vehicles. Customers can have multiple active orders." icon={ShoppingBag}>
           <div className="grid gap-6 [&>div:not(:first-child)]:border-t [&>div:not(:first-child)]:pt-6">

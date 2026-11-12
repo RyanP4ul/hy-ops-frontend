@@ -36,7 +36,7 @@ import {
   ComboboxList,
 } from "@/components/ui/combobox";
 import { PaginatedCombobox } from "@/components/paginated-combobox";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   Item,
   ItemContent,
@@ -46,7 +46,6 @@ import {
 
 export default function DialogPage() {
   const { state, dispatch } = useModal();
-  const [deleting, setDeleting] = useState(false);
   const {
     setVariantWarehouseId,
     inventoryQuery,
@@ -58,7 +57,6 @@ export default function DialogPage() {
     productVariantCB,
     createInventory,
     updateInventory,
-    deleteInventory,
   } = useInventory();
 
   const form = useForm<InventoryType>({
@@ -128,21 +126,6 @@ export default function DialogPage() {
     dispatch({ type: "CLOSE" });
     } catch (error) {
       form.setError("root", { message: error instanceof Error ? error.message : "Unable to save inventory. Try again." });
-    }
-  }
-
-  async function onDelete() {
-    if (deleting) return;
-    setDeleting(true);
-    form.clearErrors("root");
-    try {
-      await deleteInventory();
-      await inventoryQuery.refetch();
-      dispatch({ type: "CLOSE" });
-    } catch (error) {
-      form.setError("root", { message: error instanceof Error ? error.message : "Unable to delete inventory. Try again." });
-    } finally {
-      setDeleting(false);
     }
   }
 
@@ -397,63 +380,14 @@ export default function DialogPage() {
       </>
     );
 
-  return (
-    <>
-      <DialogContent
-        className={
-          state.mode === DialogMode.DELETE ? "sm:max-w-md" : "sm:max-w-2xl"
-        }
-      >
-        <DialogHeader>
-          <DialogTitle>{state.title}</DialogTitle>
-          <DialogDescription>{state.description}</DialogDescription>
-        </DialogHeader>
-
-        {!state.isOpen ? (
-          <Loader2
-            className="mx-auto size-6 animate-spin"
-            aria-label="Loading"
-          />
-        ) : state.mode !== DialogMode.DELETE && state.isOpen ? (
-          formContent
-        ) : (
-          state.mode === DialogMode.DELETE &&
-          state.isOpen && (
-            <>
-              <form
-                id="form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  onDelete();
-
-                }}
-              >
-                {form.formState.errors.root && <p role="alert" className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
-              </form>
-            </>
-          )
-        )}
-
-        <DialogFooter>
-          <DialogClose
-            render={
-              <Button type="button" variant="outline">
-                Cancel
-              </Button>
-            }
-          />
-          <Button
-            variant={
-              state.mode === DialogMode.DELETE ? "destructive" : "default"
-            }
-            disabled={!state.isOpen || form.formState.isSubmitting || deleting || (state.mode === DialogMode.EDIT && (inventoryDetailQuery.isFetching || inventoryDetailQuery.isError || !inventoryDetailQuery.data))}
-            type="submit"
-            form="form"
-          >
-            {form.formState.isSubmitting || deleting ? "Saving..." : state.action}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </>
-  );
+  return <DialogContent className="sm:max-w-2xl">
+    <DialogHeader><DialogTitle>{state.title}</DialogTitle><DialogDescription>{state.description}</DialogDescription></DialogHeader>
+    {!state.isOpen ? <Loader2 className="mx-auto size-6 animate-spin" aria-label="Loading" /> : formContent}
+    <DialogFooter>
+      <DialogClose render={<Button type="button" variant="outline">Cancel</Button>} />
+      <Button disabled={!state.isOpen || form.formState.isSubmitting || (state.mode === DialogMode.EDIT && (inventoryDetailQuery.isFetching || inventoryDetailQuery.isError || !inventoryDetailQuery.data))} type="submit" form="form">
+        {form.formState.isSubmitting ? "Saving..." : state.action}
+      </Button>
+    </DialogFooter>
+  </DialogContent>;
 }

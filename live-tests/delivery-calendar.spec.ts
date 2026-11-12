@@ -23,7 +23,7 @@ test("Delivery calendars show real runs and read-only details in Calendar and da
     const [warehouse] = await sql`insert into warehouses(name,street_address,city,state,zip_code,created_at,updated_at) values('Private warehouse','Other street','City','Province','0000',0,0) returning id`;
     const [driver] = await sql`insert into users(email,name,password_hash,role,created_at,updated_at) values('private-driver@example.test','Private driver','fixture','driver',0,0) returning id`;
     await sql`insert into drivers(user_id,warehouse_id,phone_number) values(${driver.id},${warehouse.id},'0900')`;
-    const [vehicle] = await sql`insert into vehicles(warehouse_id,plate_number,image,created_at,updated_at) values(${warehouse.id},'PRIVATE-001','',0,0) returning id`;
+    const [vehicle] = await sql`insert into vehicles(warehouse_id,plate_number,created_at,updated_at) values(${warehouse.id},'PRIVATE-001',0,0) returning id`;
     const [otherRun] = await sql`insert into deliveries(driver_id,vehicle_id,scheduled_date,departure_time,status) values(${driver.id},${vehicle.id},${day},'00:30','completed') returning id`;
     otherRunId = otherRun.id;
   } finally { await sql.end(); }

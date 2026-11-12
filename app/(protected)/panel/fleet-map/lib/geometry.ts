@@ -1,6 +1,28 @@
-import { DEFAULT_MAP_CENTER, FALLBACK_WAREHOUSE } from "../constants";
-import type { Coordinates, Vehicle, WarehouseLocation } from "../types";
+import {
+  CO_LOCATION_RADIUS_M,
+  DEFAULT_MAP_CENTER,
+  FALLBACK_WAREHOUSE,
+} from "../constants";
+import type {
+  Coordinates,
+  ResolvedPosition,
+  Vehicle,
+  WarehouseLocation,
+} from "../types";
 import type { RoadRoute } from "./road-routing";
+
+export function isValidCoordinate(
+  point: Coordinates | null | undefined,
+): point is Coordinates {
+  return (
+    Array.isArray(point) &&
+    point.length === 2 &&
+    Number.isFinite(point[0]) &&
+    Number.isFinite(point[1]) &&
+    Math.abs(point[0]) <= 180 &&
+    Math.abs(point[1]) <= 90
+  );
+}
 
 export function interpolate(
   start: Coordinates,
@@ -24,7 +46,6 @@ export function getWarehouse(
   );
 }
 
-// Route: assigned warehouse -> delivery stops -> assigned warehouse.
 export function getRoute(
   vehicle: Vehicle,
   warehouses: WarehouseLocation[],
@@ -59,15 +80,21 @@ export function getPosition(
   }
 
   const leg = roadRoute?.legs[vehicle.legIndex];
-  // Keep the marker at the last known waypoint until a road route is ready.
   return leg ? pointAlongRoad(leg.coordinates, vehicle.progress) : start;
 }
 
 /** Interpolate by distance along the road polyline rather than across the block. */
-export function pointAlongRoad(points: Coordinates[], progress: number): Coordinates {
+export function pointAlongRoad(
+  points: Coordinates[],
+  progress: number,
+): Coordinates {
   if (!points.length) throw new Error("A road leg must have coordinates.");
-  const lengths = points.slice(1).map((point, index) => distanceMeters(points[index], point));
-  let remaining = lengths.reduce((sum, length) => sum + length, 0) * Math.min(1, Math.max(0, progress));
+  const lengths = points
+    .slice(1)
+    .map((point, index) => distanceMeters(points[index], point));
+  let remaining =
+    lengths.reduce((sum, length) => sum + length, 0) *
+    Math.min(1, Math.max(0, progress));
   for (let index = 0; index < lengths.length; index++) {
     const length = lengths[index];
     if (length > 0 && remaining <= length) {
@@ -78,17 +105,6 @@ export function pointAlongRoad(points: Coordinates[], progress: number): Coordin
   return points[points.length - 1];
 }
 
-export function getNextDestination(
-  vehicle: Vehicle,
-  warehouses: WarehouseLocation[],
-) {
-  if (vehicle.status === "available" || vehicle.status === "returning") {
-    return getWarehouse(vehicle, warehouses);
-  }
-
-  return vehicle.stops[vehicle.legIndex];
-}
-
 /** Great-circle distance in metres (haversine). */
 export function distanceMeters(a: Coordinates, b: Coordinates): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -97,17 +113,62 @@ export function distanceMeters(a: Coordinates, b: Coordinates): number {
   const h =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(a[1])) * Math.cos(toRad(b[1])) * Math.sin(dLng / 2) ** 2;
-  return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(Math.min(1, h)));
 }
 
 export function getBounds(
   points: Coordinates[],
 ): [Coordinates, Coordinates] | null {
-  if (points.length === 0) return null;
-  const lngs = points.map((point) => point[0]);
-  const lats = points.map((point) => point[1]);
+  const valid = points.filter(isValidCoordinate);
+  if (valid.length === 0) return null;
+  const lngs = valid.map((point) => point[0]);
+  const lats = valid.map((point) => point[1]);
   return [
     [Math.min(...lngs), Math.min(...lats)],
     [Math.max(...lngs), Math.max(...lats)],
   ];
+}
+
+export type CoLocatedVehicleGroup = {
+  key: string;
+  coordinates: Coordinates;
+  vehicles: Vehicle[];
+};
+
+/**
+ * Groups vehicles sharing identical or very close coordinates without altering
+ * their underlying coordinates, preventing unreadable stacked markers.
+ */
+export function clusterCoLocatedVehicles(
+  vehicles: Vehicle[],
+  positions: Map<string, ResolvedPosition>,
+  selectedId: string | null,
+  radiusMeters = CO_LOCATION_RADIUS_M,
+): CoLocatedVehicleGroup[] {
+  const groups: CoLocatedVehicleGroup[] = [];
+
+  for (const vehicle of vehicles) {
+    const pos = positions.get(vehicle.id);
+    if (!pos || !isValidCoordinate(pos.coordinates)) continue;
+
+    const existing = groups.find(
+      (group) => distanceMeters(group.coordinates, pos.coordinates) <= radiusMeters,
+    );
+    if (existing) {
+      existing.vehicles.push(vehicle);
+    } else {
+      groups.push({
+        key: `cluster-${vehicle.id}`,
+        coordinates: pos.coordinates,
+        vehicles: [vehicle],
+      });
+    }
+  }
+
+  // Sort so groups containing the selected vehicle render last (highest z-order).
+  return groups.sort((a, b) => {
+    const aSelected = a.vehicles.some((v) => v.id === selectedId);
+    const bSelected = b.vehicles.some((v) => v.id === selectedId);
+    return Number(aSelected) - Number(bSelected);
+  });
 }

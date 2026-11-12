@@ -20,6 +20,8 @@ import {
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useOrders } from "../../provider";
+import { QueryFeedback } from "@/components/query-feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -86,6 +88,7 @@ export function WalkInSaleDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const { isStaff, assignedWarehouse, warehouseQuery } = useOrders();
   const { send } = useWebSocket();
 
   const [selectedWarehouseId, setWarehouseId] = useState<number>(-1);
@@ -131,7 +134,7 @@ export function WalkInSaleDialog({
     enabled: open && buyerMode === "REGISTERED",
   });
 
-  const warehouseId = selectedWarehouseId > 0 ? selectedWarehouseId : warehousesQuery.data?.rows[0]?.id ?? -1;
+  const warehouseId = isStaff ? assignedWarehouse?.id ?? -1 : selectedWarehouseId > 0 ? selectedWarehouseId : warehousesQuery.data?.rows[0]?.id ?? -1;
 
   const catalogQuery = useQuery({
     queryKey: ["walk_in_catalog", warehouseId, catalogSearch],
@@ -140,6 +143,7 @@ export function WalkInSaleDialog({
         page: "0",
         limit: "40",
         warehouse_id: String(warehouseId),
+        active_only: "true",
       });
       if (catalogSearch.trim()) {
         params.set("search", catalogSearch.trim());
@@ -538,7 +542,8 @@ export function WalkInSaleDialog({
               <div className="min-w-0 space-y-4">
                 {/* Warehouse & Buyer Mode */}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
+                  {isStaff && <div><QueryFeedback query={warehouseQuery} label="assigned warehouse" />{warehouseQuery.isError && <p role="alert" className="mt-2 text-sm text-destructive">{warehouseQuery.error.message}</p>}{assignedWarehouse && <p className="text-sm">Assigned warehouse: {assignedWarehouse.name}</p>}</div>}
+                  {!isStaff && <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">
                       Warehouse <span className="text-destructive">*</span>
                     </label>
@@ -568,7 +573,7 @@ export function WalkInSaleDialog({
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </div>
+                  </div>}
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">

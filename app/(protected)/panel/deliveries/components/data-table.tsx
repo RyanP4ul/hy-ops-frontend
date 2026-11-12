@@ -1,6 +1,7 @@
 "use client";
 
 import { OrderDetailsAction } from "./order-details-action";
+import { DeliveryExpensesAction } from "./delivery-expenses-action";
 import { ProofOfDeliveryAction } from "./proof-of-delivery-action";
 import { RefundPickupAction } from "./refund-pickup-action";
 import { RunActions } from "./run-actions";
@@ -168,6 +169,7 @@ export default function DataTable() {
 
           return (
             <div className="flex flex-wrap gap-2">
+              <DeliveryExpensesAction deliveryId={row.original.delivery_id} />
               <RefundPickupAction orders={row.original.orders} />
               <RunActions
                 id={row.original.delivery_id}

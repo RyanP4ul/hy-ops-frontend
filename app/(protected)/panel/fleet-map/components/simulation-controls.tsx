@@ -1,4 +1,4 @@
-import { FlaskConical, Pause, Play } from "lucide-react";
+import { FlaskConical, Pause, Play, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -18,8 +18,8 @@ type SimulationControlsProps = {
 };
 
 /**
- * Testing tools. Off by default: the map shows real-time GPS positions. Turning
- * simulation on swaps them for animated fake movement and never saves anything.
+ * Development / testing simulation sandbox. Kept discreet in a secondary popover
+ * so everyday dispatch operations remain uncluttered.
  */
 export function SimulationControls({
   enabled,
@@ -31,40 +31,47 @@ export function SimulationControls({
 }: SimulationControlsProps) {
   return (
     <Popover>
-      <PopoverTrigger render={
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={cn(
-            "gap-1.5 bg-background/95 shadow-sm backdrop-blur",
-            enabled &&
-              "border-violet-500/50 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-          )}
-          aria-label="Testing tools"
-        >
-          <FlaskConical className="size-4" />
-          <span className="hidden sm:inline">
-            {enabled ? "Simulation on" : "Testing tools"}
-          </span>
-        </Button>
-      } />
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            size="sm"
+            variant={enabled ? "outline" : "ghost"}
+            className={cn(
+              "h-8 gap-1.5 px-2 text-xs",
+              enabled &&
+                "border-violet-500/60 bg-violet-500/10 text-violet-800 dark:text-violet-200",
+            )}
+            aria-label="Development testing tools"
+            title="Development testing tools"
+          >
+            {enabled ? (
+              <FlaskConical className="size-3.5" aria-hidden="true" />
+            ) : (
+              <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+            )}
+            <span className="hidden xl:inline">
+              {enabled ? "Simulating" : "Dev tools"}
+            </span>
+          </Button>
+        }
+      />
 
       <PopoverContent align="end" className="w-80 space-y-4">
         <div>
-          <p className="text-sm font-semibold">Testing tools</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Animate vehicles with fake movement to try out the interface. While
-            this is on, real-time positions are ignored and nothing is saved.
+          <p className="text-sm font-semibold">Sandbox simulation</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Testing only. Replaces real GPS fixes with simulated client-side
+            movement. Changes are never saved to the server.
           </p>
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <label htmlFor="sim-enabled" className="text-sm font-medium">
+          <label htmlFor="sim-1-enabled" className="text-sm font-medium">
             Simulate vehicle movement
           </label>
           <Switch
-            id="sim-enabled"
+            id="sim-1-enabled"
             checked={enabled}
             onCheckedChange={onEnabledChange}
           />
@@ -81,21 +88,23 @@ export function SimulationControls({
             >
               {running ? (
                 <>
-                  <Pause className="size-4" /> Pause simulation
+                  <Pause className="size-4" aria-hidden="true" /> Pause
+                  simulation
                 </>
               ) : (
                 <>
-                  <Play className="size-4" /> Resume simulation
+                  <Play className="size-4" aria-hidden="true" /> Resume
+                  simulation
                 </>
               )}
             </Button>
 
             <div className="flex items-center justify-between gap-3">
-              <label htmlFor="sim-auto" className="text-xs">
+              <label htmlFor="sim-1-auto" className="text-xs">
                 Auto-start next scheduled trip
               </label>
               <Switch
-                id="sim-auto"
+                id="sim-1-auto"
                 checked={autoDispatch}
                 onCheckedChange={onAutoDispatchChange}
               />

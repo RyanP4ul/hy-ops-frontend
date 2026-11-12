@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export type DeliveryExpense = {
+  id: number;
+  delivery_allowance: string;
+  fuel: string;
+  toll: string;
+  status: "pending" | "approved" | "rejected";
+};
+
 export type DeliveriesRow = {
   delivery_id: number;
   driver_name: string;

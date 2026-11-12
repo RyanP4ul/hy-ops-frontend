@@ -1,7 +1,5 @@
 import type { Vehicle } from "../types";
 
-// Moves the next (or a specific) scheduled trip onto the vehicle and sends it out.
-// The trip that just finished is dropped from the vehicle.
 export function dispatchNextTrip(vehicle: Vehicle, tripId?: string): Vehicle {
   if (vehicle.status !== "available" || vehicle.blockedReason) return vehicle;
 
@@ -30,11 +28,9 @@ export function advanceVehicle(
   autoDispatch: boolean,
 ): Vehicle {
   if (vehicle.status === "available") {
-    // Idle at the warehouse: optionally pick up the next scheduled trip.
     return autoDispatch ? dispatchNextTrip(vehicle) : vehicle;
   }
 
-  // Increase movement progress every tick.
   const nextProgress = vehicle.progress + 0.025;
 
   if (nextProgress < 1) {
@@ -45,10 +41,8 @@ export function advanceVehicle(
     };
   }
 
-  // The vehicle has reached its current destination.
   const nextLegIndex = vehicle.legIndex + 1;
 
-  // Reached a delivery stop.
   if (vehicle.status === "delivering") {
     const arrivedStopIndex = vehicle.legIndex;
     const updatedStops = vehicle.stops.map((stop, index) =>
@@ -76,7 +70,6 @@ export function advanceVehicle(
     };
   }
 
-  // The vehicle is returning and has reached its warehouse.
   return {
     ...vehicle,
     legIndex: 0,
@@ -86,14 +79,6 @@ export function advanceVehicle(
   };
 }
 
-/**
- * Brings a fresh server snapshot into local state.
- *
- * Live mode (simulation off): the server is the single source of truth, so the snapshot
- * replaces local state. Simulation mode: while a vehicle is still on the same trip, the
- * locally animated legIndex/progress/stop statuses win, because the animation is ahead
- * of (and never written to) the database. A different trip id means the server moved on.
- */
 export function syncVehicles(
   local: Vehicle[],
   server: Vehicle[],

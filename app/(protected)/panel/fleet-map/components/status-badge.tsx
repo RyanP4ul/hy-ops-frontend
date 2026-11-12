@@ -1,39 +1,54 @@
+import {
+  CheckCircle2,
+  Navigation,
+  RotateCcw,
+  Wrench,
+  Ban,
+  Truck,
+} from "lucide-react";
+import type { ElementType } from "react";
 import { cn } from "@/lib/utils";
 import type { BlockedReason, Vehicle } from "../types";
 
 const STYLES: Record<
   Vehicle["status"] | BlockedReason,
-  { label: string; dot: string; className: string }
+  { label: string; icon: ElementType; className: string }
 > = {
   delivering: {
     label: "On route",
-    dot: "bg-blue-500",
-    className: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    icon: Navigation,
+    className:
+      "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-200",
   },
   returning: {
     label: "Returning",
-    dot: "bg-violet-500",
-    className: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+    icon: RotateCcw,
+    className:
+      "border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-200",
   },
   available: {
     label: "Available",
-    dot: "bg-emerald-500",
-    className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    icon: CheckCircle2,
+    className:
+      "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200",
   },
   maintenance: {
     label: "Maintenance",
-    dot: "bg-orange-500",
-    className: "bg-orange-500/10 text-orange-700 dark:text-orange-300",
+    icon: Wrench,
+    className:
+      "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
   },
   unavailable: {
     label: "Unavailable",
-    dot: "bg-zinc-400",
-    className: "bg-muted text-muted-foreground",
+    icon: Ban,
+    className:
+      "border-border bg-muted text-muted-foreground",
   },
   on_delivery: {
     label: "On delivery",
-    dot: "bg-blue-500",
-    className: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    icon: Truck,
+    className:
+      "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-200",
   },
 };
 
@@ -45,15 +60,16 @@ export function StatusBadge({
   className?: string;
 }) {
   const style = STYLES[status];
+  const Icon = style.icon;
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
+        "inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap",
         style.className,
         className,
       )}
     >
-      <span className={cn("size-1.5 rounded-full", style.dot)} />
+      <Icon className="size-3 shrink-0" aria-hidden="true" />
       {style.label}
     </span>
   );

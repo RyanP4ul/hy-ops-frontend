@@ -1,5 +1,7 @@
 "use client";
 
+import { LifecycleActions } from "@/components/lifecycle-actions";
+
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 
@@ -10,7 +12,7 @@ import {
   getCoreRowModel,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowDownUp, Edit, Plus, Trash2 } from "lucide-react";
+import { ArrowDownUp, Edit, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DialogMode } from "@/types/dialog";
@@ -83,6 +85,7 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
+            <LifecycleActions resource="vehicles" record={row.original} archive />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -101,25 +104,7 @@ export default function DataTable() {
             >
               <Edit className="size-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Delete vehicle"
-              className="text-destructive"
-              onClick={() => {
-                setSelected({
-                  id: row.original.id,
-                  version: row.original.version,
-                });
-                openModal(DialogMode.DELETE, {
-                  title: "Delete Vehicle",
-                  description: `Delete vehicle "${row.original.plate_number}"?`,
-                  action: "Delete",
-                });
-              }}
-            >
-              <Trash2 className="size-4" />
-            </Button>
+
           </div>
         ),
       },

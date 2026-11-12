@@ -6,14 +6,13 @@ const TICK_MS = 1000;
 
 type Options = {
   setVehicles: Dispatch<SetStateAction<Vehicle[]>>;
-  /** Simulation mode is on AND not paused. */
   enabled: boolean;
   autoDispatch: boolean;
 };
 
 /**
  * TESTING TOOL. Animates vehicles along their routes once per second, purely in the
- * browser. It never calls the API, so nothing it does is saved.
+ * browser. Never calls the API or persists changes.
  */
 export function useFleetSimulation({
   setVehicles,

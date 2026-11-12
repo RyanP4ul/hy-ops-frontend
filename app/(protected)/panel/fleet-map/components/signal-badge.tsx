@@ -1,20 +1,32 @@
-import { FlaskConical, Radio, WifiOff } from "lucide-react";
+import {
+  Clock,
+  FlaskConical,
+  MapPinOff,
+  Radio,
+  WifiOff,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatAgo } from "../lib/format";
 import type { ResolvedPosition } from "../types";
 
-/** Tells the dispatcher how much to trust the position drawn on the map. */
+/**
+ * Independent GPS health indicator. Never conflates vehicle operational status
+ * or WebSocket channel state with GPS fix freshness.
+ */
 export function SignalBadge({
   position,
+  compact = false,
   className,
 }: {
   position: ResolvedPosition;
+  compact?: boolean;
   className?: string;
 }) {
-  const base = "inline-flex items-center gap-1 text-xs font-medium";
+  const base =
+    "inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap";
 
-  switch (position.signal) {
-    case "live":
+  switch (position.health) {
+    case "fresh":
       return (
         <span
           className={cn(
@@ -23,19 +35,40 @@ export function SignalBadge({
             className,
           )}
         >
-          <Radio className="size-3.5" />
-          Live · {formatAgo(position.ageMs ?? 0)}
+          <Radio className="size-3.5 shrink-0" aria-hidden="true" />
+          {compact
+            ? `GPS fresh · ${formatAgo(position.ageMs ?? 0)}`
+            : `GPS fresh · ${formatAgo(position.ageMs ?? 0)}`}
+        </span>
+      );
+    case "delayed":
+      return (
+        <span
+          className={cn(
+            base,
+            "text-amber-700 dark:text-amber-400",
+            className,
+          )}
+        >
+          <Clock className="size-3.5 shrink-0" aria-hidden="true" />
+          {compact
+            ? `GPS delayed · ${formatAgo(position.ageMs ?? 0)}`
+            : `Delayed · ${formatAgo(position.ageMs ?? 0)}`}
         </span>
       );
     case "stale":
       return (
         <span
-          className={cn(base, "text-amber-700 dark:text-amber-400", className)}
+          className={cn(
+            base,
+            "text-orange-700 dark:text-orange-400",
+            className,
+          )}
         >
-          <WifiOff className="size-3.5" />
+          <WifiOff className="size-3.5 shrink-0" aria-hidden="true" />
           {position.ageMs === null
-            ? "GPS timestamp unavailable"
-            : `Last seen ${formatAgo(position.ageMs)}`}
+            ? "GPS timestamp invalid"
+            : `Last known · ${formatAgo(position.ageMs)}`}
         </span>
       );
     case "simulated":
@@ -47,15 +80,15 @@ export function SignalBadge({
             className,
           )}
         >
-          <FlaskConical className="size-3.5" />
+          <FlaskConical className="size-3.5 shrink-0" aria-hidden="true" />
           Simulated
         </span>
       );
     case "none":
       return (
         <span className={cn(base, "text-muted-foreground", className)}>
-          <WifiOff className="size-3.5" />
-          No signal
+          <MapPinOff className="size-3.5 shrink-0" aria-hidden="true" />
+          {compact ? "No GPS" : "No GPS signal"}
         </span>
       );
   }

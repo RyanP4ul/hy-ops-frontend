@@ -15,6 +15,7 @@ export const warehouseSchema = z.object({
 export type WarehouseForm = z.infer<typeof warehouseSchema>;
 export type WarehouseRow = WarehouseForm & {
   id: number;
+  is_active?: boolean;
   created_at: number;
   updated_at: number;
 };

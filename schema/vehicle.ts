@@ -5,7 +5,6 @@ export const vehicleSchema = z.object({
   plate_number: z.string().trim().min(1, "Plate number is required"),
   status: z.enum(["available", "unavailable", "maintenance", "on_delivery"]),
   type: z.enum(["truck", "van", "other"]),
-  image: z.string().max(255),
 });
 
 export type VehicleForm = z.infer<typeof vehicleSchema>;
@@ -14,6 +13,8 @@ export type VehicleRow = VehicleForm & {
   warehouse_id: number;
   warehouse_name: string;
   version: number;
+  is_active?: boolean;
+  is_operational?: boolean;
   created_at: number;
   updated_at: number;
 };

@@ -80,12 +80,12 @@ test("UIUX Products creates, edits and removes draft variants without duplicatio
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.getByPlaceholder("Search products or variants...").fill("UIUX created product");
-  await row.getByRole("button", { name: "Delete", exact: true }).click();
-  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0); await expect(row).toHaveCount(0);
 });
 
-test("UIUX Products preserves stale drafts, offers detail retry and protects inventory-linked deletion", async ({ page }) => {
+test("UIUX Products preserves stale drafts, offers detail retry and protects inventory-linked records", async ({ page }) => {
   await browserLogin(page);
   const created = await json(page.request, "POST", "/products", { name: "UIUX stale product", version: 0, variants: [sampleVariant("UIUX-STALE-SKU")] });
   await page.goto("/panel/products"); await page.getByPlaceholder("Search products or variants...").fill("UIUX stale product");
@@ -102,9 +102,8 @@ test("UIUX Products preserves stale drafts, offers detail retry and protects inv
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await json(page.request, "POST", "/inventory", { warehouse_id: 1, product_variant_id: current.variants[0].id, quantity: 1 });
   await expect(row).toContainText("other editor");
-  await row.getByRole("button", { name: "Delete", exact: true }).click(); await dialog.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText(/inventory|stock|history/i);
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  expect((await page.request.delete(`/api/products/${created.id}?version=${current.version}`)).status()).toBe(405);
   let fail = true;
   await page.route(`**/api/products/${created.id}`, route => route.request().method() === "GET" && fail ? route.fulfill({ status: 503, json: { message: "Fixture detail failure" } }) : route.continue());
   await row.getByRole("button", { name: "Edit", exact: true }).click();
@@ -161,7 +160,7 @@ test("UIUX Inventory adjusts with reasons, preserves history and reviews legacy 
   await expect(page.getByRole("status").filter({ hasText: "Reservations reconciled" })).toBeVisible();
   const current = await json(page.request, "GET", `/inventory/${stock.id}`); expect(current.quantity).toBe(8); expect(current.reserved).toBe(2);
   await page.getByText("Replenishment suggestions", { exact: true }).click(); await expect(page.getByText(/UIUX-STOCK-SKU.*suggested/)).toBeVisible();
-  await row.getByRole("button", { name: "Delete inventory", exact: true }).click(); await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await row.getByRole("button", { name: "Archive", exact: true }).click(); await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText(/history|stock|reserved|empty/i);
 });
 

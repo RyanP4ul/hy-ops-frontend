@@ -2,6 +2,8 @@ import z from "zod";
 
 export const inventoryTableSchema = z.object({
   id: z.number().nonnegative(),
+  is_active: z.boolean().optional(),
+  is_operational: z.boolean().optional(),
   product_name: z.string().min(1).nonempty(),
   description: z.string().nullable().optional(),
   sku: z.string().min(1).nonempty(),

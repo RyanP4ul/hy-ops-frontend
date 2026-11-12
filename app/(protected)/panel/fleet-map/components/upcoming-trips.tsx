@@ -3,22 +3,16 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  formatCurrency,
-  formatDay,
-  formatTime,
-  pluralize,
-} from "../lib/format";
-import { getTripValue } from "../lib/vehicle";
+import { formatDay, formatTime, pluralize } from "../lib/format";
 import type { Trip } from "../types";
 import { EmptyState } from "./empty-state";
 
 type UpcomingTripsProps = {
   trips: Trip[];
   previewTripId: string | null;
-  /** null = the vehicle can be dispatched; otherwise the reason it can't. */
   dispatchBlockedReason: string | null;
   simulationOn: boolean;
+  dispatching: boolean;
   onPreview: (tripId: string | null) => void;
   onDispatch: (tripId: string) => void;
 };
@@ -28,6 +22,7 @@ export function UpcomingTrips({
   previewTripId,
   dispatchBlockedReason,
   simulationOn,
+  dispatching,
   onPreview,
   onDispatch,
 }: UpcomingTripsProps) {
@@ -42,7 +37,7 @@ export function UpcomingTrips({
   }
 
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-2.5">
       {trips.map((trip) => {
         const previewing = previewTripId === trip.id;
         const confirming = confirmingId === trip.id;
@@ -51,54 +46,61 @@ export function UpcomingTrips({
           <li
             key={trip.id}
             className={cn(
-              "rounded-xl border bg-card p-3",
+              "rounded-lg border bg-card p-3",
               previewing && "border-primary ring-1 ring-primary",
             )}
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold">
-                  {trip.phase === "overdue" ? "Overdue" : "Upcoming"} ·{" "}
-                  {trip.label}
-                </p>
-                <p className="text-xs text-muted-foreground">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                      trip.phase === "overdue"
+                        ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-200"
+                        : "bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-200",
+                    )}
+                  >
+                    {trip.phase === "overdue" ? "Overdue" : "Upcoming"}
+                  </span>
+                  <p className="truncate text-sm font-semibold">{trip.label}</p>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {formatDay(trip.scheduledAt)} · {formatTime(trip.scheduledAt)}
                 </p>
               </div>
-              <p className="text-right text-xs text-muted-foreground">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">
                 {pluralize(trip.stops.length, "stop")}
-                <br />
-                {formatCurrency(getTripValue(trip.stops))}
-              </p>
+              </span>
             </div>
 
             <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
               {trip.stops.map((stop) => stop.name).join(" → ")}
             </p>
 
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
-                className="gap-1.5"
+                variant={previewing ? "default" : "outline"}
+                className="h-7 gap-1.5 px-2.5 text-xs"
                 onClick={() => onPreview(previewing ? null : trip.id)}
               >
                 {previewing ? (
-                  <EyeOff className="size-3.5" />
+                  <EyeOff className="size-3.5" aria-hidden="true" />
                 ) : (
-                  <Eye className="size-3.5" />
+                  <Eye className="size-3.5" aria-hidden="true" />
                 )}
-                {previewing ? "Hide on map" : "Preview"}
+                {previewing ? "Hide preview" : "Preview route"}
               </Button>
 
               {trip.phase === "overdue" ? (
                 <Button
-                  type="button"
                   size="sm"
                   variant="outline"
-                  className="ml-auto"
-                  render={<Link href="/panel/deliveries" />}
+                  className="ml-auto h-7 px-2.5 text-xs"
+                  nativeButton={false}
+                  render={<Link href="/panel/deliveries?overdue=true" />}
                 >
                   Reschedule in Deliveries
                 </Button>
@@ -108,6 +110,8 @@ export function UpcomingTrips({
                     type="button"
                     size="sm"
                     variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    disabled={dispatching}
                     onClick={() => setConfirmingId(null)}
                   >
                     Cancel
@@ -115,24 +119,26 @@ export function UpcomingTrips({
                   <Button
                     type="button"
                     size="sm"
+                    className="h-7 px-2.5 text-xs"
+                    disabled={dispatching}
                     onClick={() => {
                       setConfirmingId(null);
                       onDispatch(trip.id);
                     }}
                   >
-                    Confirm dispatch
+                    {dispatching ? "Dispatching…" : "Confirm dispatch"}
                   </Button>
                 </div>
               ) : (
                 <Button
                   type="button"
                   size="sm"
-                  className="ml-auto gap-1.5"
-                  disabled={dispatchBlockedReason !== null}
+                  className="ml-auto h-7 gap-1.5 px-2.5 text-xs"
+                  disabled={dispatchBlockedReason !== null || dispatching}
                   title={dispatchBlockedReason ?? undefined}
                   onClick={() => setConfirmingId(trip.id)}
                 >
-                  <Send className="size-3.5" />
+                  <Send className="size-3.5" aria-hidden="true" />
                   Dispatch
                 </Button>
               )}
@@ -143,11 +149,11 @@ export function UpcomingTrips({
 
       {dispatchBlockedReason ? (
         <li className="text-xs text-muted-foreground">
-          Can&rsquo;t dispatch: {dispatchBlockedReason}.
+          Dispatch unavailable: {dispatchBlockedReason}.
         </li>
       ) : simulationOn ? (
         <li className="text-xs text-violet-700 dark:text-violet-300">
-          Simulation mode: dispatching here is not saved.
+          Simulation mode: dispatching here is local only and not saved.
         </li>
       ) : null}
     </ul>

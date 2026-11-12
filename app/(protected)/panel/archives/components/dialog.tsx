@@ -5,7 +5,6 @@ import { ArchiveRestore, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { request } from "@/components/http";
 import { useModal } from "@/components/providers/modal-provider";
-import { useWebSocket } from "@/components/providers/websocket-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,12 +13,11 @@ import { useArchive } from "../provider";
 
 export default function ArchiveDialog() {
   const { state, closeModal } = useModal();
-  const { send } = useWebSocket();
   const { archivesQuery, selected } = useArchive();
   const queryClient = useQueryClient();
   const record = archivesQuery.data?.rows.find((row) => row.id === selected.archived_id);
   const details = record?.data as Record<string, unknown> | undefined;
-  const name = typeof details?.name === "string" ? details.name : `Record #${selected.entity_id}`;
+  const name = typeof details?.name === "string" ? details.name : typeof details?.plate_number === "string" ? details.plate_number : `Record #${selected.entity_id}`;
   const restoreMutation = useMutation({
     mutationFn: async (target: typeof selected) => {
       const response = await request("PUT", `/api/archives/${target.archived_id}/restore`);
@@ -27,10 +25,9 @@ export default function ArchiveDialog() {
       if (!response.ok) throw new Error(result?.message ?? "Unable to restore this record. Please try again.");
       return result;
     },
-    onSuccess: (result, target) => {
+    onSuccess: (result) => {
       closeModal();
-      void queryClient.invalidateQueries({ queryKey: ["archives"] });
-      send({ type: "ARCHIVE_RESTORED", payload: [Number(target.archived_id), Number(target.entity_id), target.entity_table] });
+      void queryClient.invalidateQueries();
       toast.success(result?.message ?? "Record restored");
     },
     onError: (error) => toast.error(error.message),
@@ -62,7 +59,7 @@ export default function ArchiveDialog() {
             </details>
           </> : <p role="status" className="text-sm text-muted-foreground">This record is no longer on the current page. Close this dialog and refresh the list.</p>
         )}
-        {state.mode === DialogMode.ARCHIVE && <p className="text-sm text-muted-foreground">Restoring makes this record available again. Review its details before confirming.</p>}
+        {state.mode === DialogMode.ARCHIVE && <p className="text-sm text-muted-foreground">Restoring returns this record to its management list as inactive. Activate it there when ready. Any scheduled deletion will be cancelled.</p>}
         {restoreMutation.isError && state.mode === DialogMode.ARCHIVE && <p role="alert" className="text-sm text-destructive">{restoreMutation.error.message}</p>}
       </div>
       <DialogFooter>

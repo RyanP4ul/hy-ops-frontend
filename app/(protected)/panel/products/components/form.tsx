@@ -37,7 +37,6 @@ export default function Form() {
     form,
     createProduct,
     updateProduct,
-    deleteProduct,
     selected,
     setVariant,
   } = useProducts();

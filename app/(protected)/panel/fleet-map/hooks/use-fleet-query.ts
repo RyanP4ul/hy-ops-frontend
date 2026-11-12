@@ -1,18 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { fleetApi } from "../api/fleet.api";
 import { useConnectionStore } from "@/stores/connection-store";
+import { fleetApi } from "../api/fleet.api";
 
 export const fleetKeys = {
   all: ["fleet"] as const,
   positions: ["fleet", "positions"] as const,
+  enrichment: ["fleet", "active-deliveries-enrichment"] as const,
 };
 
-/**
- * One request hydrates the whole map (vehicles + trips + stops + orders + warehouses).
- * `pollMs` keeps trip/stop/status changes (e.g. a driver completing a stop) flowing in;
- * pass `false` to stop polling (simulation mode).
- */
 export function useFleetQuery({ pollMs }: { pollMs: number | false }) {
   const queryClient = useQueryClient();
   const connected = useConnectionStore((state) => state.connected);

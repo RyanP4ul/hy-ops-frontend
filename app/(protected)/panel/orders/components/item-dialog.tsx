@@ -18,7 +18,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Controller, useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { ProductVariantType, productVariantSchema } from "@/schema/product";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -69,6 +69,7 @@ export default function OrderItemDialog() {
     orderItemDetailQuery,
     inventoryItem,
     setInventoryItem,
+    getAvailableStock,
   } = useOrders();
 
   const item_form = useForm<OrderItem>({
@@ -85,6 +86,11 @@ export default function OrderItemDialog() {
     name: "items",
   });
 
+  const inventoryId = useWatch({ control: item_form.control, name: "inventory_id" });
+  const quantityInput = useWatch({ control: item_form.control, name: "quantity" });
+  const selectedStock = inventoryQuery.data?.rows.find(item => item.id === inventoryId);
+  const available = selectedStock ? getAvailableStock(inventoryId, selectedStock.quantity, sub.mode === DialogMode.EDIT) : undefined;
+
   async function onSubmit(data: OrderItem) {
     item_form.clearErrors("root");
     try {
@@ -95,7 +101,8 @@ export default function OrderItemDialog() {
       const current = form.getValues("items");
       const existing = current.find((item) => item.inventory_id === data.inventory_id);
       const quantity = sub.mode === DialogMode.EDIT ? data.quantity : (existing?.quantity ?? 0) + data.quantity;
-      if (quantity > stock.quantity) { item_form.setError("quantity", { message: `Only ${stock.quantity} units are currently available.` }); return; }
+      const available = getAvailableStock(data.inventory_id, stock.quantity, true);
+      if (quantity > available) { item_form.setError("quantity", { message: `Only ${available} units are currently available across this submission.` }); return; }
       const item = { ...stock, description: stock.description ?? "", price: Number(stock.price), quantity };
       form.setValue("items", existing ? current.map((row) => row.inventory_id === data.inventory_id ? item : row) : [...current, item], { shouldValidate: true });
       item_form.reset();
@@ -161,12 +168,12 @@ export default function OrderItemDialog() {
                       <ComboboxContent>
                         <ComboboxList>
                           {inventoryQuery.data?.rows?.map((item) => (
-                            <ComboboxItem key={item.id} value={String(item.id)}>
+                            <ComboboxItem key={item.id} value={String(item.id)} disabled={getAvailableStock(item.id, item.quantity) === 0}>
                               <Item size="xs" className="p-0">
                                 <ItemContent>
                                   <ItemTitle className="whitespace-nowrap">
                                     ({item.id}) {item.sku} -{" "}
-                                    {item.quantity || 0}
+                                    {getAvailableStock(item.id, item.quantity)}
                                   </ItemTitle>
                                   <ItemDescription>{item.name}</ItemDescription>
                                 </ItemContent>
@@ -240,6 +247,7 @@ export default function OrderItemDialog() {
                       {...field}
                       id="quantity"
                       min={1}
+                      max={available}
                       step={1}
                       type="number"
                       aria-invalid={fieldState.invalid}
@@ -249,6 +257,9 @@ export default function OrderItemDialog() {
                         field.onChange(event.target.valueAsNumber);
                       }}
                     />
+                    {available !== undefined && <FieldDescription>
+                      {Math.max(0, available - (Number.isFinite(quantityInput) ? quantityInput : 0))} units remaining after this selection.
+                    </FieldDescription>}
                     {fieldState.invalid && (
                       <FieldError errors={[fieldState.error]} />
                     )}

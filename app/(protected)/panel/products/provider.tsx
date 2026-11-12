@@ -67,9 +67,7 @@ type ProductContextType = {
   updateProduct: ReturnType<
     typeof useMutation<ProductType, Error, ProductType>
   >;
-  deleteProduct: ReturnType<
-    typeof useMutation<ProductType, Error, ProductType>
-  >;
+
 };
 
 export const ProductContext = createContext<ProductContextType | null>(null);
@@ -234,33 +232,6 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const deleteProduct = useMutation({
-    mutationFn: async (data: ProductType) => {
-      const response = await fetch(
-        `/api/products/${data.id}?version=${data.version}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        },
-      );
-      const result = await response.json();
-
-      if (!response.ok) {
-        if (result?.errors) {
-          throw new Error(JSON.stringify(result));
-        }
-        throw new Error(result?.message || result?.error || "Failed to delete product");
-      }
-      return result as ProductType;
-    },
-    onSuccess: async (_, product) => {
-      await query.refetch();
-      send({
-        type: REQUESTS.PRODUCT_DELETED,
-        payload: [product.id],
-      });
-    },
-  });
 
   return (
     <ProductContext.Provider
@@ -281,7 +252,6 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         selected,
         setSelected,
         updateProduct,
-        deleteProduct,
       }}
     >
       {children}

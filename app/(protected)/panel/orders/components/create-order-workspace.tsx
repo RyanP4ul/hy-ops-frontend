@@ -8,6 +8,7 @@ import { OrderBatchReview } from "./order-batch-review";
 import { BatchPaymentOptions } from "./batch-payment-options";
 import { orderTotal } from "@/schema/order-batch";
 import { formatCurrency } from "@/utils/date-util";
+import { QueryFeedback } from "@/components/query-feedback";
 
 const stages = [
   { label: "Destination", title: "Customer & destination", description: "Choose who this order is for, where it is going, and the warehouse supplying it.", icon: MapPin },
@@ -17,7 +18,7 @@ const stages = [
 ];
 
 export function CreateOrderWorkspace({ disabled, error, children }: { disabled: boolean; error?: string; children: ReactNode }) {
-  const { step, setStep, activeDraftIndex, orderCount, form } = useOrders();
+  const { step, setStep, activeDraftIndex, orderCount, form, isStaff, assignedWarehouse, warehouseQuery } = useOrders();
   const content = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const previous = useRef(`${activeDraftIndex}:${step}`);
@@ -54,11 +55,12 @@ export function CreateOrderWorkspace({ disabled, error, children }: { disabled: 
         <div className="min-w-0">
           <p className="mb-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Order {activeDraftIndex + 1} of {orderCount} / Step {step + 1} of 4</p>
           <h3 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none sm:text-2xl">{stage.title}</h3>
-          <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted-foreground">{stage.description}</p>
+          <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted-foreground">{isStaff && step === 0 ? "Choose the customer and destination. Your assigned warehouse supplies this order." : stage.description}</p>
         </div>
       </header>
       {error && <p role="alert" className="mb-5 rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">{error}</p>}
       <div className="space-y-6">
+        {isStaff && step === 0 && <div><QueryFeedback query={warehouseQuery} label="assigned warehouse" />{warehouseQuery.isError && <p role="alert" className="mt-2 text-sm text-destructive">{warehouseQuery.error.message}</p>}{assignedWarehouse && <p className="text-sm text-muted-foreground">Assigned warehouse: {assignedWarehouse.name}</p>}</div>}
         {step === 2 && orderCount > 1 && <BatchPaymentOptions disabled={disabled} />}
         {children}
         {step === 0 && <label className="block space-y-2 text-sm"><span className="font-medium">Delivery method</span><select className="h-10 w-full rounded-md border bg-background px-3" disabled={disabled} {...form.register("delivery_type")}><option value="INTERNAL">Company delivery</option><option value="PICKUP">Customer pickup</option><option value="LALAMOVE">Lalamove</option></select><p className="text-xs text-muted-foreground">Lalamove is quoted and booked separately after the order is ready for scheduling.</p></label>}

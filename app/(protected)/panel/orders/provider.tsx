@@ -2,7 +2,8 @@
 import { useSearchParams } from "next/navigation";
 
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import { useAuth } from "@/components/providers/auth-provider";
 import {
   OrderDetail,
   OrderForm,
@@ -24,6 +25,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useSetting } from "@/components/providers/setting-provider";
 import { useComboBoxPagination } from "@/components/base-pagination";
 import { DialogMode } from "@/types/dialog";
+import { remainingDraftStock } from "@/lib/order-stock";
 
 type FormSelected = {
   id: number;
@@ -70,6 +72,9 @@ export type OrderDraft = {
 };
 
 type OrdersContext = {
+  isStaff: boolean;
+  assignedWarehouse: { id: number; name: string } | undefined;
+  getAvailableStock: (inventoryId: number, available: number, excludeActive?: boolean) => number;
   paymentMode: PaymentMode;
   setPaymentMode: React.Dispatch<React.SetStateAction<PaymentMode>>;
   combinedPayment: CombinedPayment;
@@ -163,6 +168,8 @@ export function useOrders() {
 }
 
 export function OrdersProvider({ children }: { children: React.ReactNode }) {
+  const { userQuery } = useAuth();
+  const isStaff = userQuery.data?.role === "staff";
   const { settingQuery } = useSetting();
   const filters = useSearchParams();
   const { send } = useWebSocket();
@@ -196,6 +203,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   });
 
   const warehouseCB = useComboBoxPagination();
+  const setWarehouseLabel = warehouseCB.setInputValue;
   const customerCB = useComboBoxPagination();
   const inventoryCB = useComboBoxPagination();
 
@@ -232,9 +240,16 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     name: "warehouse_id",
   });
 
+  const draftItems = useWatch({ control: form.control, name: "items" });
+  const getAvailableStock = (inventoryId: number, available: number, excludeActive = false) => {
+    const drafts = draftOrders.filter((_, index) => index !== activeDraftIndex).map(draft => draft.data);
+    return remainingDraftStock(available, inventoryId, excludeActive ? drafts : [...drafts, { items: draftItems }]);
+  };
+
   const ordersQuery = useQuery({
     queryKey: [
       "orders",
+      userQuery.data?.sub,
       page.pageIndex,
       page.pageSize,
       search,
@@ -306,18 +321,33 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   });
 
   const warehouseQuery = useQuery({
-    queryKey: ["warehouses", "order-options", warehouseCB.page],
+    queryKey: ["warehouses", "order-options", userQuery.data?.sub, warehouseCB.page],
     queryFn: async () => {
       const response = await request(
         "GET",
         `/api/warehouses/names?page=${warehouseCB.page}&limit=10`,
       );
-      if (!response.ok) throw new Error("Unable to load warehouses.");
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.message || "Unable to load warehouses.");
+      }
       const result = await response.json();
       warehouseCB.setTotalPages(Math.max(1, Math.ceil(result.total / 10)));
       return result;
     },
+    enabled: !!userQuery.data,
   });
+
+  const assignedWarehouse = isStaff && !warehouseQuery.isError ? warehouseQuery.data?.rows[0] : undefined;
+  useEffect(() => {
+    if (!isStaff) return;
+    const assignedId = assignedWarehouse?.id ?? -1;
+    if (form.getValues("warehouse_id") !== assignedId) {
+      form.setValue("warehouse_id", assignedId);
+      form.setValue("items", []);
+    }
+    setWarehouseLabel(assignedWarehouse?.name ?? "");
+  }, [isStaff, assignedWarehouse?.id, assignedWarehouse?.name, form, setWarehouseLabel]);
 
   const inventoryQuery = useQuery({
     queryKey: ["inventory_query", selectedWarehouseId, inventoryCB.page],
@@ -537,7 +567,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     setDraftOrders([]);
     setActiveDraftIndex(0);
     form.reset({
-      warehouse_id: -1,
+      warehouse_id: assignedWarehouse?.id ?? -1,
       customer_id: -1,
       delivery_type: "INTERNAL",
       payment_arrangement: "NET_30",
@@ -563,11 +593,15 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       combo.setPage(0);
       combo.setOpen(false);
     }
+    warehouseCB.setInputValue(assignedWarehouse?.name ?? "");
   };
 
   return (
     <OrdersContext.Provider
       value={{
+        isStaff,
+        assignedWarehouse,
+        getAvailableStock,
         startOrder,
         paymentMode,
         setPaymentMode,

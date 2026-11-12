@@ -13,7 +13,10 @@ export type WarehouseLocation = {
 };
 
 export type PaymentArrangement =
-  "FULLY_PAID" | "PARTIALLY_PAID" | "PAY_ON_DELIVERY" | "NET_30";
+  | "FULLY_PAID"
+  | "PARTIALLY_PAID"
+  | "PAY_ON_DELIVERY"
+  | "NET_30";
 
 export type PaymentMethod = "CASH" | "BANK_TRANSFER" | "CARD";
 
@@ -43,6 +46,8 @@ export type OrderDetails = {
 };
 
 export type DeliveryStop = {
+  skippedForNow?: boolean;
+  deliverNext?: boolean;
   id: string;
   name: string;
   address: string;
@@ -64,18 +69,28 @@ export type Trip = TripMeta & {
 
 export type BlockedReason = "maintenance" | "unavailable" | "on_delivery";
 
+export type VehicleReturnPickup = {
+  id: number;
+  orderNumber: string;
+  customer: string;
+  address: string;
+  status: string;
+  coordinates: Coordinates | null;
+  version: number;
+};
+
 export type Vehicle = {
-  pickups?: { id: number; orderNumber: string; customer: string; address: string; status: string; coordinates: Coordinates | null; version: number }[];
+  pickups?: VehicleReturnPickup[];
   id: string;
   driver: string;
   plate: string;
-  color: string; // REQUIRED
+  color: string;
   warehouseId: string;
-  trip: TripMeta | null; // the trip the vehicle is running (or just finished); null if it has none yet
-  stops: DeliveryStop[]; // stops of the current trip
-  scheduledTrips: Trip[]; // upcoming trips, earliest first
-  legIndex: number; // by default use 0 and no need to put this in json property
-  progress: number; // NOT REQUIRED
+  trip: TripMeta | null;
+  stops: DeliveryStop[];
+  scheduledTrips: Trip[];
+  legIndex: number;
+  progress: number;
   completedStops: number;
   status: "delivering" | "returning" | "available";
   /** Set when the vehicle is idle but cannot take a trip. */
@@ -102,22 +117,105 @@ export type LivePosition = {
   sampleIntervalSeconds?: number | null;
 };
 
-/**
- * How trustworthy the on-map position of a vehicle is.
- * - live: a recent real GPS fix
- * - stale: a real fix, but older than STALE_AFTER_MS
- * - none: no fix known (position is estimated from trip progress)
- * - simulated: simulation mode is on (test data, not real)
- */
 export type SignalState = "live" | "stale" | "none" | "simulated";
+
+/**
+ * Granular GPS health modeled independently from vehicle operational status
+ * and WebSocket connection state.
+ */
+export type GpsHealth = "fresh" | "delayed" | "stale" | "none" | "simulated";
 
 export type ResolvedPosition = {
   coordinates: Coordinates;
   signal: SignalState;
+  health: GpsHealth;
+  /** True when coordinates are estimated from warehouse/stop progress (never live GPS). */
+  isEstimated: boolean;
   speedKph: number | null;
   heading: number | null;
   /** Age of the last real fix in ms; null when unavailable or in simulation mode. */
   ageMs: number | null;
+  recordedAt: string | null;
   sampleIntervalSeconds?: number | null;
   accuracyM?: number | null;
+};
+
+export type FleetView = "split" | "map" | "list";
+
+export type FollowMode = "off" | "active" | "paused";
+
+export type RealtimeStatus =
+  | "connected"
+  | "connecting"
+  | "reconnecting"
+  | "disconnected";
+
+export type VehicleFilter =
+  | "all"
+  | "delivering"
+  | "returning"
+  | "available"
+  | "blocked"
+  | "gps_attention";
+
+export type VehicleSortKey = "priority" | "plate" | "gps" | "progress";
+
+export type StopOutcomeStatus = "pending" | "delivered" | "failed";
+
+export type StopEnrichment = {
+  stopId: string;
+  orderId: number;
+  orderNumber: string;
+  actualStatus: StopOutcomeStatus;
+  failureReason: string | null;
+  orderGroupId: string | null;
+  orderGroupNumber: string | null;
+  orderGroupPosition: number | null;
+  returnId: number | null;
+  returnStatus: string | null;
+};
+
+export type ActiveDeliveryStopApiRow = {
+  stop_id: number;
+  return_id: number | null;
+  return_status: string | null;
+  order_id: number;
+  order_number: string;
+  order_group_id: string | null;
+  order_group_position: number | null;
+  order_group_number: string | null;
+  status: StopOutcomeStatus;
+  failure_reason: string | null;
+};
+
+export type ActiveDeliveryApiRow = {
+  delivery_id: number;
+  status: string;
+  is_overdue: boolean;
+  orders: ActiveDeliveryStopApiRow[];
+};
+
+export type DeliveryProofMeta = {
+  id: string;
+  kind: "photo" | "signature";
+  contentType: string;
+  byteSize: number;
+  createdAt: string;
+};
+
+export type MapLayers = {
+  routes: boolean;
+  allActiveRoutes: boolean;
+  stops: boolean;
+  warehouses: boolean;
+  returns: boolean;
+};
+
+export type FleetCounts = {
+  total: number;
+  delivering: number;
+  returning: number;
+  available: number;
+  blocked: number;
+  gpsAttention: number;
 };

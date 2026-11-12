@@ -1,21 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { fleetApi } from "../api/fleet.api";
 import { LIVE_POLL_MS } from "../constants";
+import { mergeMonotonicPositions } from "../lib/live";
 import type { LivePosition } from "../types";
 import { fleetKeys } from "./use-fleet-query";
 
-/**
- * Real-time vehicle coordinates, keyed by vehicle id.
- *
- * This is the only place the web app learns where vehicles are. Polling is the default;
- * to use a websocket / SSE feed instead, replace the body of this hook and keep the
- * return shape (a Map plus status fields) and nothing else needs to change.
- */
+const EMPTY_POSITIONS = new Map<string, LivePosition>();
+
 export function useLivePositions(enabled: boolean) {
+  const acceptedRef = useRef<Map<string, LivePosition>>(new Map());
+
   const query = useQuery({
     queryKey: fleetKeys.positions,
-    queryFn: ({ signal }) => fleetApi.getPositions(signal),
+    queryFn: async ({ signal }) => {
+      const data = await fleetApi.getPositions(signal);
+      const merged = mergeMonotonicPositions(
+        acceptedRef.current,
+        data.positions ?? [],
+      );
+      acceptedRef.current = merged;
+      return merged;
+    },
     enabled,
     refetchInterval: enabled ? LIVE_POLL_MS : false,
     refetchOnReconnect: true,
@@ -23,10 +29,7 @@ export function useLivePositions(enabled: boolean) {
   });
 
   const positions = useMemo(
-    () =>
-      new Map<string, LivePosition>(
-        (query.data?.positions ?? []).map((p) => [p.vehicleId, p]),
-      ),
+    () => query.data ?? EMPTY_POSITIONS,
     [query.data],
   );
 
@@ -34,7 +37,6 @@ export function useLivePositions(enabled: boolean) {
     positions,
     isError: query.isError,
     isFetched: query.isFetched,
-    /** Epoch ms of the last successful poll (0 if none yet). */
     updatedAt: query.dataUpdatedAt,
     refetch: query.refetch,
   };

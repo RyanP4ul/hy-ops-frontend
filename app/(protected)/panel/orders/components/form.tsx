@@ -95,6 +95,7 @@ export default function Form() {
     return () => { mounted.current = false; };
   }, []);
   const {
+    isStaff,
     form,
     step,
     setStep,
@@ -244,7 +245,7 @@ export default function Form() {
           {step === 0 && (
             <>
               <div className="grid gap-5 sm:grid-cols-2 [&>*]:min-w-0">
-                <Controller
+                {!isStaff && <Controller
                   name="warehouse_id"
                   control={form.control}
                   render={({ field, fieldState }) => (
@@ -354,7 +355,7 @@ export default function Form() {
                       </Field>
                     </Combobox>
                   )}
-                />
+                />}
                 <Controller
                   name="customer_id"
                   control={form.control}

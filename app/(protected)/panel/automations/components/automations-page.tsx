@@ -38,7 +38,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
 type TaskStatus = "Enabled" | "Disabled" | "Failed";
-type Frequency = "1" | "5" | "10" | "30" | "60" | "daily";
+type Frequency = "1" | "5" | "10" | "30" | "60" | "daily" | "weekly" | "monthly";
 type TaskIcon = typeof PackageSearch;
 
 type AutomationTask = {
@@ -76,9 +76,16 @@ const frequencyLabels: Record<Frequency, string> = {
   "30": "Every 30 minutes",
   "60": "Every hour",
   daily: "Daily",
+  weekly: "Every Monday at 06:00 (Asia/Manila)",
+  monthly: "1st of each month at 06:00 (Asia/Manila)",
 };
 
+function isReportTask(name: string) {
+  return name === "Weekly Analysis & Reports" || name === "Monthly Analysis & Reports";
+}
+
 function taskIcon(name: string): TaskIcon {
+  if (isReportTask(name)) return FileText;
   if (name.includes("Stock")) return PackageSearch;
   if (name.includes("Payment")) return MailCheck;
   if (name.includes("Delivery")) return Truck;
@@ -96,7 +103,9 @@ function formatDate(value: string | null, fallback: string) {
 }
 
 function toTask(record: AutomationRecord): AutomationTask {
-  const frequency = record.daily_time
+  const frequency = isReportTask(record.name)
+    ? record.name.startsWith("Weekly") ? "weekly" : "monthly"
+    : record.daily_time
     ? "daily"
     : String((record.interval_ms ?? 300000) / 60000) as Frequency;
   return {
@@ -165,7 +174,7 @@ export default function AutomationsPage() {
           name: task.name,
           description: task.description,
           schedule: task.frequency === "daily" ? `Daily at ${task.dailyTime || "02:00"}` : frequencyLabels[task.frequency],
-          interval_ms: task.frequency === "daily" ? null : Number(task.frequency) * 60000,
+          interval_ms: isReportTask(task?.name ?? "") || task.frequency === "daily" ? null : Number(task.frequency) * 60000,
           daily_time: task.frequency === "daily" ? task.dailyTime || "02:00" : null,
           status: task.status === "Enabled" ? "ENABLED" : task.status === "Failed" ? "FAILED" : "DISABLED",
           notes: task.notes || null,
@@ -307,5 +316,5 @@ function TaskDialog({ task, open, onOpenChange, onSave, isSaving }: { task: Auto
   const [form, setForm] = useState<AutomationTask | null>(task);
   if (!form) return null;
   const setField = <K extends keyof AutomationTask>(key: K, value: AutomationTask[K]) => setForm((current) => current ? { ...current, [key]: value } : current);
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{form.name}</DialogTitle><DialogDescription>Update the schedule and configuration of this existing task.</DialogDescription></DialogHeader><div className="space-y-4"><StatusBadge status={form.status} /><Separator /><div className="space-y-2"><Label htmlFor="task-name">Task name</Label><Input id="task-name" value={form.name} onChange={(event) => setField("name", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="task-description">Description</Label><Textarea id="task-description" value={form.description} onChange={(event) => setField("description", event.target.value)} /></div><div className="flex items-center justify-between rounded-lg border p-3"><div><Label htmlFor="task-enabled">Enable task</Label><p className="text-xs text-muted-foreground">Updates the persisted automation status.</p></div><Switch id="task-enabled" checked={form.status === "Enabled"} onCheckedChange={(checked) => setField("status", checked ? "Enabled" : "Disabled")} /></div><div className="space-y-2"><Label htmlFor="task-frequency">Frequency</Label><Select value={form.frequency} onValueChange={(value) => setField("frequency", value as Frequency)}><SelectTrigger id="task-frequency" className="w-full"><SelectValue placeholder="Choose frequency" /></SelectTrigger><SelectContent>{Object.entries(frequencyLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>{form.frequency === "daily" && <div className="space-y-2"><Label htmlFor="task-daily-time">Daily execution time</Label><Input id="task-daily-time" type="time" value={form.dailyTime || "02:00"} onChange={(event) => setField("dailyTime", event.target.value)} /></div>}<div className="space-y-2"><Label htmlFor="task-notes">Notes <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="task-notes" value={form.notes} onChange={(event) => setField("notes", event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!form.name.trim() || !form.description.trim() || isSaving} onClick={() => onSave(form)}>Save Changes</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{form.name}</DialogTitle><DialogDescription>Update the schedule and configuration of this existing task.</DialogDescription></DialogHeader><div className="space-y-4"><StatusBadge status={form.status} /><Separator /><div className="space-y-2"><Label htmlFor="task-name">Task name</Label><Input id="task-name" disabled={isReportTask(task?.name ?? "")} value={form.name} onChange={(event) => setField("name", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="task-description">Description</Label><Textarea id="task-description" value={form.description} onChange={(event) => setField("description", event.target.value)} /></div><div className="flex items-center justify-between rounded-lg border p-3"><div><Label htmlFor="task-enabled">Enable task</Label><p className="text-xs text-muted-foreground">Updates the persisted automation status.</p></div><Switch id="task-enabled" checked={form.status === "Enabled"} onCheckedChange={(checked) => setField("status", checked ? "Enabled" : "Disabled")} /></div><div className="space-y-2"><Label htmlFor="task-frequency">Frequency</Label><Select disabled={isReportTask(task?.name ?? "")} value={form.frequency} onValueChange={(value) => setField("frequency", value as Frequency)}><SelectTrigger id="task-frequency" className="w-full"><SelectValue placeholder="Choose frequency" /></SelectTrigger><SelectContent>{Object.entries(frequencyLabels).filter(([value]) => isReportTask(task?.name ?? "") || (value !== "weekly" && value !== "monthly")).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>{form.frequency === "daily" && <div className="space-y-2"><Label htmlFor="task-daily-time">Daily execution time</Label><Input id="task-daily-time" type="time" value={form.dailyTime || "02:00"} onChange={(event) => setField("dailyTime", event.target.value)} /></div>}<div className="space-y-2"><Label htmlFor="task-notes">Notes <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="task-notes" value={form.notes} onChange={(event) => setField("notes", event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!form.name.trim() || !form.description.trim() || isSaving} onClick={() => onSave(form)}>Save Changes</Button></DialogFooter></DialogContent></Dialog>;
 }

@@ -23,10 +23,12 @@ import {
   Dispatch,
   SetStateAction,
   useContext,
+  useEffect,
   useState,
 } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { useAuth } from "@/components/providers/auth-provider";
 
 type WarehouseOption = { id: number; name: string; latitude?: string | null; longitude?: string | null };
 type DriverOption = { id: number; name: string; phone_number: string | null };
@@ -40,6 +42,7 @@ type SubType = {
 };
 
 type DeliveryScheduleType = {
+  isStaff: boolean;
   removeSelection: (orderId: number) => void;
   startSchedule: (warehouseId?: number, orderIds?: number[]) => void;
   addReadyGroup: (groupId: string) => Promise<boolean>;
@@ -130,6 +133,8 @@ export function DeliveryScheduleProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const { userQuery } = useAuth();
+  const isStaff = userQuery.data?.role === "staff";
   const [groupPending, setGroupPending] = useState(false);
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
@@ -142,6 +147,7 @@ export function DeliveryScheduleProvider({
   });
 
   const warehouseCB = useComboBoxPagination();
+  const setWarehouseLabel = warehouseCB.setInputValue;
   const orderCB = useComboBoxPagination();
   const driverCB = useComboBoxPagination();
   const vehicleCB = useComboBoxPagination();
@@ -166,14 +172,33 @@ export function DeliveryScheduleProvider({
   const warehouseId = form.watch("warehouse_id");
 
   const warehouseQuery = useQuery({
-    queryKey: ["warehouses", warehouseCB.searchQuery],
+    queryKey: ["warehouses", "schedule-options", userQuery.data?.sub, warehouseCB.searchQuery],
     queryFn: async () => {
       const response = await fetch("/api/warehouses/names");
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.message || "Unable to load warehouses.");
+      }
       return await response.json();
     },
+    enabled: !!userQuery.data,
   });
 
+  const assignedWarehouse = isStaff && !warehouseQuery.isError ? warehouseQuery.data?.rows[0] : undefined;
+  useEffect(() => {
+    if (!isStaff) return;
+    const assignedId = assignedWarehouse?.id ?? -1;
+    if (form.getValues("warehouse_id") !== assignedId) {
+      form.setValue("warehouse_id", assignedId);
+      form.setValue("order_ids", []);
+      form.setValue("driver_id", -1);
+      form.setValue("vehicle_id", -1);
+    }
+    setWarehouseLabel(assignedWarehouse?.name ?? "");
+  }, [isStaff, assignedWarehouse?.id, assignedWarehouse?.name, form, setWarehouseLabel]);
+
   function startSchedule(warehouseId = -1, orderIds: number[] = []) {
+    warehouseId = isStaff ? assignedWarehouse?.id ?? -1 : warehouseId;
     form.reset({ warehouse_id: warehouseId, order_ids: orderIds, scheduled_date: undefined,
       scheduled_time: "", delivery_type: "INTERNAL", driver_id: -1, vehicle_id: -1,
       delivery_allowance: 0, fuel: 0, toll: 0 });
@@ -185,7 +210,7 @@ export function DeliveryScheduleProvider({
   }
 
   const deliveryScheduleQuery = useQuery({
-    queryKey: ["deliveryScheduleQuery", page.pageIndex, page.pageSize, search],
+    queryKey: ["deliveryScheduleQuery", userQuery.data?.sub, page.pageIndex, page.pageSize, search],
 
     queryFn: async () => {
       const url_params = new URLSearchParams();
@@ -527,6 +552,7 @@ export function DeliveryScheduleProvider({
   return (
     <DeliveryScheduleContext.Provider
       value={{
+        isStaff,
         removeSelection, startSchedule, addReadyGroup, groupPending,
         deliveryScheduleQuery,
         form,

@@ -14,7 +14,7 @@ import {
 
 type SelectedType = {
   archived_id: number;
-  entity_id: number;
+  entity_id: number | string;
   entity_table: string;
 };
 

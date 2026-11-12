@@ -32,15 +32,12 @@ export async function request<T>(
       headers:
         body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
-      // Only a real AbortSignal is forwarded; anything else (e.g. a TanStack Query context
-      // object passed by mistake) is ignored instead of crashing fetch().
       signal: signal instanceof AbortSignal ? signal : undefined,
-      // If you add cookie auth, also set `credentials: "include"` here and enable
-      // `credentials: true` in the API's cors() options.
     });
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError")
+    if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
+    }
     throw new ApiRequestError("Can't reach the server. Check your connection.");
   }
 

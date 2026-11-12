@@ -12,13 +12,13 @@ import {
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useWarehouses } from "../provider";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import Form from "./form";
 import { useWatch } from "react-hook-form";
-import { Map, MapMarker, MapRef, MarkerContent } from "@/components/ui/map";
+import { Map, MapMarker, MarkerContent } from "@/components/ui/map";
 
 export default function WarehouseDialog() {
   const { state, dispatch } = useModal();
@@ -30,28 +30,6 @@ export default function WarehouseDialog() {
   const point = useWatch({ control: form.control, name: ["longitude", "latitude"] });
   const hasPoint = point.every((value) => typeof value === "number" && Number.isFinite(value));
   useEffect(() => { if (state.isOpen) form.clearErrors(); }, [state.isOpen, state.mode, selected.id, form]);
-
-  async function onDelete() {
-    await requestWithErrorHandling(
-      await request(
-        "DELETE",
-        `/api/warehouses/${selected.id}?version=${selected.version}`,
-      ),
-      form,
-      (_) => {
-        warehouseQuery.refetch();
-
-        dispatch({
-          type: "CLOSE",
-        });
-
-        send({
-          type: "WAREHOUSE_DELETED",
-          payload: [selected.id],
-        });
-      },
-    );
-  }
 
   async function onArchive() {
     await requestWithErrorHandling(
@@ -77,7 +55,6 @@ export default function WarehouseDialog() {
   const getModalSize = () => {
     switch (state.mode) {
       case DialogMode.ARCHIVE:
-      case DialogMode.DELETE:
         return "sm:max-w-md";
       case DialogMode.CUSTOM:
         return "sm:max-w-3xl";
@@ -94,7 +71,7 @@ export default function WarehouseDialog() {
             className="mx-auto size-6 animate-spin"
             aria-label="Loading"
           />
-        ) : ![DialogMode.ARCHIVE, DialogMode.DELETE].includes(state.mode) &&
+        ) : state.mode !== DialogMode.ARCHIVE &&
           state.isOpen ? (
           <div className="grid md:grid-cols-2">
             <div className="relative h-48 bg-muted md:h-auto md:min-h-130">
@@ -119,7 +96,7 @@ export default function WarehouseDialog() {
             </div>
           </div>
         ) : (
-          [DialogMode.ARCHIVE, DialogMode.DELETE].includes(state.mode) &&
+          state.mode === DialogMode.ARCHIVE &&
           state.isOpen && (
             <>
               <DialogHeader>
@@ -131,11 +108,9 @@ export default function WarehouseDialog() {
                 onSubmit={(event) => {
                   event.preventDefault();
 
-                  if (state.mode === DialogMode.DELETE) {
-                    if (pending) return; setPending(true); void onDelete().finally(() => setPending(false));
-                  } else {
-                    if (pending) return; setPending(true); void onArchive().finally(() => setPending(false));
-                  }
+                  if (pending) return;
+                  setPending(true);
+                  void onArchive().finally(() => setPending(false));
                 }}
               ></form>
             </>
@@ -153,7 +128,6 @@ export default function WarehouseDialog() {
           />
           <Button
             variant={
-              state.mode === DialogMode.DELETE ||
               state.mode === DialogMode.ARCHIVE
                 ? "destructive"
                 : "default"

@@ -1,8 +1,14 @@
 "use client";
 
-import { QueryFeedback } from "@/components/query-feedback";
-import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableState } from "@/components/management-list";
+import { LifecycleActions } from "@/components/lifecycle-actions";
 
+import { QueryFeedback } from "@/components/query-feedback";
+import {
+  ManagementListHeader,
+  ManagementListFooter,
+  ManagementSearch,
+  ManagementTableState,
+} from "@/components/management-list";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -13,14 +19,8 @@ import {
   getSortedRowModel,
 } from "@tanstack/react-table";
 
-
-
 import { Button } from "@/components/ui/button";
-import {
-  Edit,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { Edit, Plus } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -43,18 +43,41 @@ import { debounce } from "@/utils/debounce";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 
-
 export default function DataTable() {
   const { openModal } = useModal();
-  const { query, page, setPage, setSelected, setSearchQuery, searchQuery, variantFilter, setVariantFilter } =
-    useProducts();
+  const {
+    query,
+    page,
+    setPage,
+    setSelected,
+    setSearchQuery,
+    searchQuery,
+    variantFilter,
+    setVariantFilter,
+  } = useProducts();
 
   const columns: ColumnDef<ProductType>[] = [
     {
       accessorKey: "name",
       header: "Product",
       cell: ({ row }) => (
-        <Button variant="link" className="h-auto whitespace-normal p-0 text-left font-medium" onClick={() => { setSelected({ id: row.original.id || -1, version: row.original.version || 0 }); openModal(DialogMode.EDIT, { title: "Edit Product", description: "Update this product and its variants.", action: "Save changes" }); }}>{row.original.name}</Button>
+        <Button
+          variant="link"
+          className="h-auto whitespace-normal p-0 text-left font-medium"
+          onClick={() => {
+            setSelected({
+              id: row.original.id || -1,
+              version: row.original.version || 0,
+            });
+            openModal(DialogMode.EDIT, {
+              title: "Edit Product",
+              description: "Update this product and its variants.",
+              action: "Save changes",
+            });
+          }}
+        >
+          {row.original.name}
+        </Button>
       ),
     },
     {
@@ -62,8 +85,23 @@ export default function DataTable() {
       header: "Variants",
       cell: ({ row }) => (
         <div className="flex flex-col gap-1">
-          <details><summary className="w-fit cursor-pointer rounded-full border bg-muted/40 px-2.5 py-1 text-xs font-medium">{row.original.variants.length} {row.original.variants.length === 1 ? "variant" : "variants"}</summary>
-            <ul className="min-w-64 space-y-2 py-2 text-sm">{row.original.variants.map((variant) => <li key={variant.id ?? variant.sku}><p className="font-medium">{variant.name} - {variant.sku}</p><p className="text-xs text-muted-foreground">{variant.price} PHP / {variant.unit}</p></li>)}</ul>
+          <details>
+            <summary className="w-fit cursor-pointer rounded-full border bg-muted/40 px-2.5 py-1 text-xs font-medium">
+              {row.original.variants.length}{" "}
+              {row.original.variants.length === 1 ? "variant" : "variants"}
+            </summary>
+            <ul className="min-w-64 space-y-2 py-2 text-sm">
+              {row.original.variants.map((variant) => (
+                <li key={variant.id ?? variant.sku}>
+                  <p className="font-medium">
+                    {variant.name} - {variant.sku}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {variant.price} PHP / {variant.unit}
+                  </p>
+                </li>
+              ))}
+            </ul>
           </details>
         </div>
       ),
@@ -89,28 +127,10 @@ export default function DataTable() {
               });
             }}
           >
-            <Edit className="size-4" /> <span className="hidden sm:inline">Edit</span>
+            <Edit className="size-4" />{" "}
+            <span className="hidden sm:inline">Edit</span>
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSelected({
-                id: row.original.id || -1,
-                version: row.original.version || 0,
-              });
-
-              openModal(DialogMode.DELETE, {
-                title: "Delete Product",
-                description: "Delete this product.",
-                action: "Delete",
-              });
-            }}
-            aria-label={`Delete ${row.original.name}`}
-            className="text-destructive hover:text-destructive"
-          >
-            <Trash2 className="size-4" /> <span className="hidden sm:inline">Delete</span>
-          </Button>
+          <LifecycleActions resource="products" record={row.original} archive />
         </div>
       ),
     },
@@ -159,28 +179,129 @@ export default function DataTable() {
         total={query.data?.total}
         isFetching={query.isFetching}
         onRefresh={() => void query.refetch()}
-        actions={<Button size="sm" onClick={() => openModal(DialogMode.INSERT, { title: "Add Product", description: "Create a new product.", action: "Add Product" })}><Plus className="size-4" aria-hidden="true" />Add product</Button>}
+        actions={
+          <Button
+            size="sm"
+            onClick={() =>
+              openModal(DialogMode.INSERT, {
+                title: "Add Product",
+                description: "Create a new product.",
+                action: "Add Product",
+              })
+            }
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Add product
+          </Button>
+        }
       />
       <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
-        <ManagementSearch id="product-search" value={search} placeholder="Search products, variants, or SKU…" onChange={(value) => { setSearch(value); debouncedSearch(value); }} onClear={() => { debouncedSearch.cancel(); setSearch(""); setSearchQuery(""); setPage((current) => ({ ...current, pageIndex: 0 })); }} />
-        <Select items={[{ value: "all", label: "All products" }, { value: "with", label: "With variants" }, { value: "without", label: "Without variants" }]} value={variantFilter} onValueChange={(value) => { if (value) { setVariantFilter(value); setPage((current) => ({ ...current, pageIndex: 0 })); } }}>
-          <SelectTrigger aria-label="Filter products by variants" className="h-10 w-full bg-background sm:w-44"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All products</SelectItem><SelectItem value="with">With variants</SelectItem><SelectItem value="without">Without variants</SelectItem></SelectContent>
+        <ManagementSearch
+          id="product-search"
+          value={search}
+          placeholder="Search products, variants, or SKU…"
+          onChange={(value) => {
+            setSearch(value);
+            debouncedSearch(value);
+          }}
+          onClear={() => {
+            debouncedSearch.cancel();
+            setSearch("");
+            setSearchQuery("");
+            setPage((current) => ({ ...current, pageIndex: 0 }));
+          }}
+        />
+        <Select
+          items={[
+            { value: "all", label: "All products" },
+            { value: "with", label: "With variants" },
+            { value: "without", label: "Without variants" },
+          ]}
+          value={variantFilter}
+          onValueChange={(value) => {
+            if (value) {
+              setVariantFilter(value);
+              setPage((current) => ({ ...current, pageIndex: 0 }));
+            }
+          }}
+        >
+          <SelectTrigger
+            aria-label="Filter products by variants"
+            className="h-10 w-full bg-background sm:w-44"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All products</SelectItem>
+            <SelectItem value="with">With variants</SelectItem>
+            <SelectItem value="without">Without variants</SelectItem>
+          </SelectContent>
         </Select>
-        {(filtered || search) && <Button variant="ghost" size="sm" onClick={clearFilters}>Reset filters</Button>}
+        {(filtered || search) && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            Reset filters
+          </Button>
+        )}
       </div>
       <QueryFeedback query={query} label="products" />
       <div aria-busy={query.isFetching}>
         <Table>
           <TableHeader className="bg-muted/30">
-            {table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id} className="px-5">{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}
+            {table.getHeaderGroups().map((group) => (
+              <TableRow key={group.id}>
+                {group.headers.map((header) => (
+                  <TableHead key={header.id} className="px-5">
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
           </TableHeader>
           <TableBody>
-            {query.isPending ? <TableRow><TableCell colSpan={columns.length}><ManagementTableState loading label="products" /></TableCell></TableRow> : table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="px-5 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={columns.length}><ManagementTableState error={query.isError} filtered={filtered} label="products" /></TableCell></TableRow>}
+            {query.isPending ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <ManagementTableState loading label="products" />
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="px-5 py-4">
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <ManagementTableState
+                    error={query.isError}
+                    filtered={filtered}
+                    label="products"
+                  />
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>
-      <ManagementListFooter table={table} total={query.data?.total ?? 0} isFetching={query.isFetching} label="Products" />
+      <ManagementListFooter
+        table={table}
+        total={query.data?.total ?? 0}
+        isFetching={query.isFetching}
+        label="Products"
+      />
     </section>
   );
 }

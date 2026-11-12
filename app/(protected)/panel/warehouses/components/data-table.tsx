@@ -1,5 +1,7 @@
 "use client";
 
+import { LifecycleActions } from "@/components/lifecycle-actions";
+
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableState } from "@/components/management-list";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +29,6 @@ import {
   ArrowDownUp,
   Edit,
   Plus,
-  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
@@ -106,6 +107,7 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
+            <LifecycleActions resource="warehouses" record={row.original} />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -124,22 +126,7 @@ export default function DataTable() {
             >
               <Edit className="size-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Delete warehouse"
-              className="text-destructive"
-              onClick={() => {
-                setSelected(row.original);
-                openModal(DialogMode.DELETE, {
-                  title: "Delete Warehouse",
-                  description: `Are you sure you want to delete the warehouse "${row.original.name}"? This action cannot be undone.`,
-                  action: "Delete",
-                });
-              }}
-            >
-              <Trash2 className="size-4" />
-            </Button>
+
             <Button
               variant="ghost"
               size="icon-sm"
@@ -149,7 +136,7 @@ export default function DataTable() {
 
                 openModal(DialogMode.ARCHIVE, {
                   title: "Archive Warehouse",
-                  description: `Are you sure you want to archive the warehouse "${row.original.name}"? This action cannot be undone.`,
+                  description: `Are you sure you want to archive the warehouse "${row.original.name}"? You can restore it from Archives.`,
                   action: "Archive",
                 });
               }}

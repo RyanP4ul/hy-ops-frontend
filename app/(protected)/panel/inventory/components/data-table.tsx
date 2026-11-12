@@ -1,5 +1,7 @@
 "use client";
 
+import { LifecycleActions } from "@/components/lifecycle-actions";
+
 import { StockHistory } from "./stock-history";
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementTableState } from "@/components/management-list";
@@ -14,7 +16,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Edit, Plus, Trash2 } from "lucide-react";
+import { Edit, Plus } from "lucide-react";
 import { useInventory } from "../provider";
 import { useMemo, useState } from "react";
 import { useEffect } from "react";
@@ -123,7 +125,7 @@ export function DataTable() {
     {
       id: "available",
       header: "Available",
-      cell: ({ row }) => <span title="On hand minus reserved">{row.original.quantity - row.original.reserved}</span>,
+      cell: ({ row }) => <span title={row.original.is_operational === false ? "Unavailable while this stock, product or warehouse is inactive." : "On hand minus reserved"}>{row.original.is_operational === false ? 0 : row.original.quantity - row.original.reserved}</span>,
     },
     {
       accessorKey: "reserved",
@@ -154,6 +156,7 @@ export function DataTable() {
       header: "Actions",
       cell: ({ row }) => (
         <div className="flex space-x-2">
+            <LifecycleActions resource="inventory" record={row.original} archive />
           <Button
             aria-label="Edit inventory"
             variant="ghost"
@@ -174,27 +177,7 @@ export function DataTable() {
           >
             <Edit className="h-3 w-3" />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive cursor-pointer"
-            aria-label="Delete inventory"
-            onClick={() => {
-              // console.log("Delete action for product:", row.original.id);
-              openModal(DialogMode.DELETE, {
-                title: "Delete Inventory",
-                description: "Are you sure you want to delete this inventory?",
-                action: "Delete",
-              });
 
-              setInventoryDetail({
-                id: row.original.id,
-                version: row.original.version,
-              });
-            }}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
         </div>
       ),
     },

@@ -2,6 +2,7 @@
 import type { CombinedPaymentInfo } from "@/schema/order";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Download, LoaderCircle, Printer } from "lucide-react";
 import { jsPDF } from "jspdf";
@@ -9,7 +10,7 @@ import autoTable from "jspdf-autotable";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardFooter, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -174,7 +175,7 @@ function statusBadgeVariant(status: string) {
   }
 }
 
-export default function Invoice({ orderId }: { orderId: number }) {
+export default function Invoice({ orderId, actionContainer }: { orderId: number; actionContainer?: HTMLElement | null }) {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const invoiceQuery = useQuery({
     queryKey: ["invoice", orderId],
@@ -401,24 +402,6 @@ export default function Invoice({ orderId }: { orderId: number }) {
         align: "right",
       });
 
-      totalsY += 6;
-      doc.text("Discount", labelX, totalsY);
-      doc.text(`-${formatPdfCurrency(invoice.discount)}`, rightEdge, totalsY, {
-        align: "right",
-      });
-
-      totalsY += 6;
-      doc.text("Tax", labelX, totalsY);
-      doc.text(formatPdfCurrency(invoice.tax), rightEdge, totalsY, {
-        align: "right",
-      });
-
-      totalsY += 6;
-      doc.text("Other charges", labelX, totalsY);
-      doc.text(formatPdfCurrency(invoice.otherCharges), rightEdge, totalsY, {
-        align: "right",
-      });
-
       totalsY += 3;
       doc.setDrawColor(180, 180, 180);
       doc.line(labelX, totalsY, rightEdge, totalsY);
@@ -447,38 +430,6 @@ export default function Invoice({ orderId }: { orderId: number }) {
         align: "right",
       });
 
-      if (invoice.combinedPayment) {
-        totalsY += 12;
-        if (totalsY > pageHeight - 35) { doc.addPage(); totalsY = 25; }
-        doc.setFontSize(9);
-        doc.text(`Combined payment: ${invoice.combinedPayment.payment_number}`, margin, totalsY);
-        totalsY += 5;
-        doc.text(`Original allocation to this order: ${formatPdfCurrency(invoice.combinedPayment.allocated_amount)}`, margin, totalsY);
-        if (invoice.combinedPayment.reference_number) {
-          totalsY += 5;
-          const referenceLines = doc.splitTextToSize(`Payment reference: ${invoice.combinedPayment.reference_number}`, pageWidth - margin * 2);
-          doc.text(referenceLines, margin, totalsY);
-          totalsY += referenceLines.length * 5;
-        }
-      }
-      if (invoice.notes) {
-        totalsY += 15;
-        if (totalsY > pageHeight - 20) {
-          doc.addPage();
-          totalsY = 22;
-        }
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.text("Notes", margin, totalsY);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.text(
-          doc.splitTextToSize(invoice.notes, pageWidth - margin * 2),
-          margin,
-          totalsY + 5,
-        );
-      }
-
       // Footer on every page
       const pageCount = doc.getNumberOfPages();
       for (let page = 1; page <= pageCount; page += 1) {
@@ -505,15 +456,14 @@ export default function Invoice({ orderId }: { orderId: number }) {
     }
   }
 
+  const pdfButton = (
+    <Button type="button" onClick={() => void handleGeneratePdf()} disabled={isGeneratingPdf}>
+      {isGeneratingPdf ? "Generating PDF…" : "Generate PDF"}
+    </Button>
+  );
+
   return (
     <>
-      <Button
-        type="button"
-        onClick={() => void handleGeneratePdf()}
-        disabled={isGeneratingPdf}
-      >
-        {isGeneratingPdf ? "Generating PDF…" : "Generate PDF"}
-      </Button>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">
@@ -653,6 +603,9 @@ export default function Invoice({ orderId }: { orderId: number }) {
       <p className="border-t pt-4 text-center text-xs text-muted-foreground">
         Thank you for your business.
       </p>
+      {actionContainer === undefined
+        ? <CardFooter className="justify-end border-t-0 bg-transparent px-0 py-0">{pdfButton}</CardFooter>
+        : actionContainer && createPortal(pdfButton, actionContainer)}
     </>
   );
 }

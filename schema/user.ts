@@ -64,6 +64,8 @@ export type UserForm = z.infer<typeof userSchema>;
 export type UserRow = UserForm & {
   id: number;
   password?: never;
+  is_active?: boolean;
+  is_operational?: boolean;
   last_login: number | null;
   created_at: number;
   updated_at: number;

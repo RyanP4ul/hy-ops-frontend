@@ -1,24 +1,10 @@
-import type { PaymentArrangement } from "../types";
-
 import { formatCurrency as money } from "@/utils/date-util";
-export function formatCurrency(value: number | null): string { return value === null ? "Unverified" : money(value); }
 
-export function getPaymentArrangementLabel(
-  arrangement: PaymentArrangement,
-): string {
-  switch (arrangement) {
-    case "FULLY_PAID":
-      return "Fully paid";
-    case "PARTIALLY_PAID":
-      return "Partially paid";
-    case "PAY_ON_DELIVERY":
-      return "Pay on delivery";
-    case "NET_30":
-      return "Net 30";
-  }
+export const SCHEDULE_TIME_ZONE = "Asia/Manila";
+
+export function formatCurrency(value: number | null): string {
+  return value === null ? "Unverified" : money(value);
 }
-
-export const SCHEDULE_TIME_ZONE = "Asia/Manila"; // fixed zone keeps SSR and client output identical
 
 export function formatSchedule(iso: string): string {
   return new Intl.DateTimeFormat("en-PH", {
@@ -28,6 +14,15 @@ export function formatSchedule(iso: string): string {
     minute: "2-digit",
     timeZone: SCHEDULE_TIME_ZONE,
   }).format(new Date(iso));
+}
+
+export function formatManilaClockTime(isoOrEpochMs: string | number): string {
+  return new Intl.DateTimeFormat("en-PH", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone: SCHEDULE_TIME_ZONE,
+  }).format(new Date(isoOrEpochMs));
 }
 
 export function formatDay(iso: string): string {
@@ -51,18 +46,8 @@ export function pluralize(
   count: number,
   singular: string,
   plural = `${singular}s`,
-) {
+): string {
   return `${count} ${count === 1 ? singular : plural}`;
-}
-
-/** Formats an ISO date (YYYY-MM-DD) such as an order's due date. */
-export function formatDueDate(isoDate: string): string {
-  return new Intl.DateTimeFormat("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: SCHEDULE_TIME_ZONE,
-  }).format(new Date(`${isoDate}T00:00:00+08:00`));
 }
 
 /** "just now", "42s ago", "5m ago", "3h ago". */
@@ -72,9 +57,26 @@ export function formatAgo(ageMs: number): string {
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.round(minutes / 60)}h ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 export function formatSpeed(speedKph: number | null): string {
   return speedKph === null ? "—" : `${Math.round(speedKph)} km/h`;
+}
+
+export function formatDistance(meters: number): string {
+  if (!Number.isFinite(meters) || meters < 0) return "—";
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  const mins = Math.max(1, Math.round(seconds / 60));
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
 }

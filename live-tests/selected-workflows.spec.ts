@@ -68,8 +68,8 @@ test("Users saves edits and role profiles, changes password and deactivates with
   const other = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3100" });
   try {
     expect((await other.post("/api/auth/login", { data: { email: "selected-staff@example.test", password: "Changed-fixture-password", is_mobile: true } })).status()).toBe(200);
-    await row.getByRole("button", { name: "Deactivate user Selected Staff Edited", exact: true }).click();
-    await dialog.getByRole("button", { name: "Deactivate User", exact: true }).click();
+    await row.getByRole("button", { name: "Archive user Selected Staff Edited", exact: true }).click();
+    await dialog.getByRole("button", { name: "Archive User", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(row).toHaveCount(0);
     expect((await other.get("/api/auth/me")).status()).toBe(401);
@@ -78,7 +78,7 @@ test("Users saves edits and role profiles, changes password and deactivates with
   } finally { await other.dispose(); }
 });
 
-test("Vehicles creates, edits and deletes an unused vehicle through rendered controls", async ({ page }) => {
+test("Vehicles creates, edits and archives an unused vehicle through rendered controls", async ({ page }) => {
   await navigate(page, "/panel/vehicles");
   await page.getByRole("button", { name: "Add Vehicle", exact: true }).click();
   const dialog = page.getByRole("dialog");
@@ -97,15 +97,15 @@ test("Vehicles creates, edits and deletes an unused vehicle through rendered con
   await expect(dialog).toHaveCount(0);
   await expect(row).toContainText("maintenance");
   await expect(row).toContainText("van");
-  await row.getByRole("button", { name: "Delete vehicle", exact: true }).click();
-  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toHaveCount(0);
 });
 
 test("Scheduled assignments protect driver and vehicle edits and preserve delivery history", async ({ page }) => {
   const driver = await json(page.request, "POST", "/users", { name: "Selected Driver", email: "selected-driver@example.test", password, role: "driver", profile: { warehouse_id: 1, warehouse_name: "Live warehouse", status: "available", phone_number: "09000000001" } });
-  const vehicle = await json(page.request, "POST", "/vehicles", { warehouse_id: 1, plate_number: "ASSIGNED-001", type: "truck", status: "available", image: "" });
+  const vehicle = await json(page.request, "POST", "/vehicles", { warehouse_id: 1, plate_number: "ASSIGNED-001", type: "truck", status: "available" });
   const trip = await createTrip(page, driver.id, vehicle.id);
   await navigate(page, "/panel/users");
   await page.getByPlaceholder("Search users...").fill("Selected Driver");
@@ -125,8 +125,8 @@ test("Scheduled assignments protect driver and vehicle edits and preserve delive
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText(/assign|trip|deliver/i);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await row.getByRole("button", { name: "Delete vehicle", exact: true }).click();
-  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText(/history|deliver/i);
   expect((await json(page.request, "GET", `/vehicles/${vehicle.id}`)).status).toBe("available");
   expect((await json(page.request, "GET", "/deliveries?limit=50")).some((entry: { delivery_id: number }) => entry.delivery_id === trip.id)).toBe(true);
@@ -157,9 +157,8 @@ test("Warehouses creates, clears coordinates, archives and protects linked recor
   await expect(dialog).toHaveCount(0);
   await expect(row).toHaveCount(0);
   await page.getByPlaceholder("Search warehouses...").fill("Live warehouse");
-  await rowFor(page, "Live warehouse").getByRole("button", { name: "Delete warehouse", exact: true }).click();
-  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText(/linked|history|inventory|record/i);
+  await expect(rowFor(page, "Live warehouse").getByRole("button", { name: "Delete warehouse", exact: true })).toHaveCount(0);
+  expect((await page.request.delete("/api/warehouses/1?version=1")).status()).toBe(405);
 });
 
 test("Warehouse address selection applies a successful provider response and persists the location", async ({ page }) => {
@@ -182,7 +181,7 @@ test("Warehouse address selection applies a successful provider response and per
   await expect(rowFor(page, "Selected Geocoded Warehouse")).toContainText("77 Selected Road");
 });
 
-test("Warehouse stale edits retain drafts and an unused warehouse can be deleted", async ({ page }) => {
+test("Warehouse stale edits retain drafts and an unused warehouse can be archived", async ({ page }) => {
   const data = warehouse("Selected Stale Warehouse");
   const created = await json(page.request, "POST", "/warehouses", data);
   await navigate(page, "/panel/warehouses");
@@ -199,8 +198,8 @@ test("Warehouse stale edits retain drafts and an unused warehouse can be deleted
   await row.getByRole("button", { name: "Edit warehouse", exact: true }).click();
   await expect(dialog.getByLabel("City", { exact: false })).toHaveValue("Saved by another editor");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await row.getByRole("button", { name: "Delete warehouse", exact: true }).click();
-  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await row.getByRole("button", { name: "Archive warehouse", exact: true }).click();
+  await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toHaveCount(0);
 });

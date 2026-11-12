@@ -1,5 +1,7 @@
 "use client";
 
+import { ArchiveDeletionAction, ArchiveDeletionDate } from "@/components/archive-deletion-action";
+
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
@@ -22,7 +24,7 @@ function recordType(value: string) {
 
 function recordName(record: ArchiveTable) {
   const data = record.data as Record<string, unknown>;
-  return typeof data?.name === "string" && data.name.trim() ? data.name : `${recordType(record.entity_type)} #${record.entity_id}`;
+  return typeof data?.name === "string" && data.name.trim() ? data.name : typeof data?.plate_number === "string" ? data.plate_number : `${recordType(record.entity_type)} #${record.entity_id}`;
 }
 
 export default function DataTable() {
@@ -77,10 +79,12 @@ export default function DataTable() {
         </time>;
       },
     },
+    { id: "delete_after", header: "Permanent deletion", cell: ({ row }) => <ArchiveDeletionDate record={row.original} /> },
     {
       id: "actions",
       header: "Actions",
       cell: ({ row }) => <div className="flex items-center gap-2">
+        <ArchiveDeletionAction record={row.original} />
         <Button variant="ghost" size="sm" aria-label={`View details for ${recordName(row.original)}`} onClick={() => {
           setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
           openModal(DialogMode.DEFAULT, { title: "Archive details", description: `Review the archived record for ${recordName(row.original)}.`, action: "none" });
@@ -89,7 +93,7 @@ export default function DataTable() {
         </Button>
         <Button variant="outline" size="sm" aria-label={`Restore ${recordName(row.original)}`} onClick={() => {
           setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
-          openModal(DialogMode.ARCHIVE, { title: "Restore record?", description: `Restore ${recordName(row.original)}? This record will become active again and will be removed from Archives.`, action: "Restore record" });
+          openModal(DialogMode.ARCHIVE, { title: "Restore record?", description: `Restore ${recordName(row.original)}? This record will return to its management list as inactive. Activate it there when ready. Restoring cancels any scheduled permanent deletion.`, action: "Restore record" });
         }}>
           <ArchiveRestore className="size-4" aria-hidden="true" /><span>Restore</span>
         </Button>
@@ -119,7 +123,7 @@ export default function DataTable() {
 
   return (
     <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      <ManagementListHeader title="Archived records" description="Review record details before restoring an account or warehouse."
+      <ManagementListHeader title="Archived records" description="Review record details before restoring products, inventory, accounts, warehouses, and vehicles."
         total={archivesQuery.data?.total} isFetching={archivesQuery.isFetching} onRefresh={() => void archivesQuery.refetch()} />
       <div className="space-y-3 border-b bg-muted/20 p-4 md:px-5">
         <div className="flex flex-wrap items-center gap-3">
