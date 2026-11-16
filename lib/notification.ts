@@ -1,5 +1,9 @@
 export function notificationPresentation(type: string, role?: string) {
   switch (type.trim().toUpperCase()) {
+    case "DELIVERY_LOCATION_STOPPED":
+      return { href: "/panel/fleet-map", action: "View fleet map", icon: "delivery", tone: "warning" } as const;
+    case "DELIVERY_COMPLETED":
+      return { href: "/panel/deliveries", action: "View deliveries", icon: "delivery", tone: "success" } as const;
     case "LOW_STOCK":
       return { href: "/panel/inventory", action: "View inventory", icon: "inventory", tone: "warning" } as const;
     case "OVERDUE_PAYMENT":

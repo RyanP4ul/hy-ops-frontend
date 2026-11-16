@@ -16,6 +16,7 @@ import {
 } from "@/schema/s&l";
 import { DialogMode } from "@/types/dialog";
 import { EstimateResponse } from "@/types/estimate";
+import { useExpenseSettings } from "@/components/delivery-estimate-settings";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, UseQueryResult } from "@tanstack/react-query";
 import {
@@ -110,6 +111,7 @@ type DeliveryScheduleType = {
 
   sortDistanceMutation: ReturnType<typeof useMutation<SortedRoute>>;
 
+  expenseSettings: ReturnType<typeof useExpenseSettings>;
   driverExpensesMutation: ReturnType<typeof useMutation<EstimateResponse>>;
 };
 
@@ -135,6 +137,7 @@ export function DeliveryScheduleProvider({
 }) {
   const { userQuery } = useAuth();
   const isStaff = userQuery.data?.role === "staff";
+  const expenseSettings = useExpenseSettings();
   const [groupPending, setGroupPending] = useState(false);
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
@@ -493,22 +496,21 @@ export function DeliveryScheduleProvider({
 
   const driverExpensesMutation = useMutation({
     mutationFn: async () => {
-      const points: {
-        latitude: number;
-        longitude: number;
-      }[] = [];
+      const warehouse = warehouseQuery.data?.rows.find((row: WarehouseOption) => row.id === form.getValues("warehouse_id"));
+      const coordinate = (latitude: string | null | undefined, longitude: string | null | undefined, label: string) => {
+        if (!latitude?.trim() || !longitude?.trim()) throw new Error(`Missing coordinates for ${label}.`);
+        const lat = Number(latitude), lng = Number(longitude);
+        if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180) throw new Error(`Invalid coordinates for ${label}.`);
+        return { latitude: lat, longitude: lng };
+      };
+      const points = [coordinate(warehouse?.latitude, warehouse?.longitude, "the warehouse")];
+      if (!order_ids.length) throw new Error("Select at least one delivery order.");
       for (const order_id of order_ids) {
-        const orderDetail = orderDetailQuery.data?.find(
-          (order: DeliveryScheduleOrderDetail) => order.id === order_id,
-        );
-
-        if (orderDetail) {
-          points.push({
-            latitude: Number(orderDetail.shipping_latitude),
-            longitude: Number(orderDetail.shipping_longitude),
-          });
-        }
+        const order = orderDetailQuery.data?.find(order => order.id === order_id);
+        if (!order) throw new Error("Order destinations are still loading. Please retry.");
+        points.push(coordinate(order.shipping_latitude, order.shipping_longitude, order.order_number));
       }
+      if (points.length > 26) throw new Error("Google supports up to 25 delivery stops per estimate.");
 
       const response = await fetch("/api/delivery-estimates", {
         method: "POST",
@@ -517,20 +519,13 @@ export function DeliveryScheduleProvider({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          points: points,
-          isRoundTrip: false,
+          points,
+          ...expenseSettings.requestOptions(),
         }),
       });
 
       const result = await response.json();
-
-      if (!response.ok) {
-        if (result?.errors) {
-          throw new Error(JSON.stringify(result));
-        }
-
-        throw new Error("Unable to calculate the route. Please retry.");
-      }
+      if (!response.ok) throw new Error(result?.message || "Unable to calculate expenses. Please retry.");
 
       return result;
     },
@@ -539,13 +534,14 @@ export function DeliveryScheduleProvider({
     onSuccess: async (estimate: EstimateResponse) => {
       form.setValue(
         "delivery_allowance",
-        Math.round(estimate.expenses.driverAllowance) || 0,
+        Math.round(estimate.expenses.driverAllowance * 100) / 100,
       );
       form.setValue(
         "fuel",
-        Math.round(estimate.expenses.estimatedFuelCost) || 0,
+        Math.round(estimate.expenses.estimatedFuelCost * 100) / 100,
       );
-      form.setValue("toll", 0);
+      form.setValue("toll", estimate.expenses.estimatedTollFee === null ? Number.NaN : Math.round(estimate.expenses.estimatedTollFee * 100) / 100);
+      if (estimate.expenses.estimatedTollFee === null) toast.warning("Toll price unavailable. Enter the toll amount before scheduling.");
     },
   });
 
@@ -576,6 +572,7 @@ export function DeliveryScheduleProvider({
         setSub,
         sortDistanceMutation,
         driverExpensesMutation,
+        expenseSettings,
       }}
     >
       {children}

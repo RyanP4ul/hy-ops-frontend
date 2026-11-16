@@ -1,3 +1,5 @@
+import type { QueryClient } from "@tanstack/react-query";
+
 type Event = { type: string; payload?: unknown };
 
 /** Per-connection, bounded deduplication. Unversioned updates must always pass. */
@@ -24,7 +26,8 @@ export function createEventDeduplicator(limit = 1000, ttl = 30_000) {
 }
 
 // Existing query roots are intentionally retained to avoid splitting caches.
-export const resourceQueryRoots: Record<string, readonly string[]> = {
+const resourceQueries: Record<string, readonly string[]> = {
+  notifications: ["notification"],
   lalamove: ["lalamove", "orders", "order", "order_view", "deliveries", "deliveryScheduleQuery", "inventory", "reports"],
   users: ["walk_in_customers", "communication-recipients", "customer-order-eligibility","delivery-calendar", "users", "userDetail", "customer_query", "drivers", "delivery-assignment-drivers", "archives"],
   archives: ["products", "edit_product", "product_variants", "inventory", "edit_inventory", "inventory-available-variants", "inventory-reorder", "reports", "dashboard_query","walk_in_warehouses", "walk_in_customers", "walk_in_catalog","vehicles", "vehicle_detail", "fleet", "inventory_query", "inventory-summary", "drivers", "delivery-assignment-vehicles", "delivery-assignment-drivers", "archives", "users", "warehouses", "userDetail", "warehouse_detail"],
@@ -42,13 +45,56 @@ export const resourceQueryRoots: Record<string, readonly string[]> = {
   settings: ["setting", "customer-order-eligibility", "inventory", "inventory-summary", "dashboard_query"],
 };
 
+// A resource can appear on several pages. Refresh every dependent query,
+// including cached filters/details, rather than just the current page's table.
+const pageDependencies: Record<string, readonly string[]> = {
+  dashboard: ["dashboard_query"],
+  users: ["dashboard_query", "reports", "fleet", "event_query", "orders", "order_view", "order_detail", "invoice", "auditLogsQuery"],
+  products: ["orders", "order_view", "order_detail", "invoice"],
+  inventory: ["reports", "products", "product_variants"],
+  orders: ["delivery-calendar", "product_variants"],
+  payments: ["order", "order_detail", "invoice"],
+  deliveries: ["reports", "order_detail", "invoice"],
+  "delivery-schedules": ["reports", "order_detail"],
+  vehicles: ["reports", "delivery-calendar"],
+  settings: ["reports", "inventory-reorder", "deliveryScheduleQuery", "availableDateQuery"],
+  calendar: ["dashboard_query"],
+  "audit-logs": ["auditLogsQuery"],
+  reports: ["reports"],
+  automations: ["automations", "backup-schedule"],
+};
+
+export const resourceQueryRoots: Record<string, readonly string[]> = Object.fromEntries(
+  [...new Set([...Object.keys(resourceQueries), ...Object.keys(pageDependencies)])].map(resource => [
+    resource, [...new Set([...(resourceQueries[resource] ?? []), ...(pageDependencies[resource] ?? [])])],
+  ]),
+);
+
+const resourceAliases: Record<string, string> = { product_variants: "products", customers: "users", driver: "deliveries", "analysis-reports": "reports" };
+
+function rootsForResource(resource: string): readonly string[] {
+  const canonical = Object.hasOwn(resourceAliases, resource) ? resourceAliases[resource] : resource;
+  return Object.hasOwn(resourceQueryRoots, canonical) ? resourceQueryRoots[canonical] : [];
+}
+
 export function affectedQueryRoots(message: Event): readonly string[] {
   if (message.type === "RESOURCE_CHANGED" && message.payload && typeof message.payload === "object") {
     const resource = (message.payload as { resource?: unknown }).resource;
-    return typeof resource === "string" ? resourceQueryRoots[resource] ?? [] : [];
+    return typeof resource === "string" ? rootsForResource(resource) : [];
   }
   if (message.type === "DRIVER_LOCATION_UPDATE") return ["fleet"];
   const prefix = message.type.split("_")[0];
-  const resource = ({ USER: "users", PRODUCT: "products", INVENTORY: "inventory", ORDER: "orders", PAYMENT: "payments", DELIVERY: "deliveries", VEHICLE: "vehicles", WAREHOUSE: "warehouses", ARCHIVE: "archives" } as Record<string, string>)[prefix];
-  return resourceQueryRoots[resource] ?? [];
+  const resource = ({ USER: "users", PRODUCT: "products", INVENTORY: "inventory", ORDER: "orders", PAYMENT: "payments", DELIVERY: "deliveries", VEHICLE: "vehicles", WAREHOUSE: "warehouses", ARCHIVE: "archives", CALENDAR: "calendar", SETTING: "settings", SETTINGS: "settings", AUDIT: "audit-logs", DASHBOARD: "dashboard", REPORT: "reports" } as Record<string, string>)[prefix];
+  return resource ? rootsForResource(resource) : [];
+}
+
+/** Active views refetch immediately. Inactive filters refetch when opened again.
+ * Reconnecting reconciles all supported pages because events are not replayed.
+ */
+export async function refreshRealtimeQueries(client: QueryClient, message: Event) {
+  const roots = new Set(message.type === "WS_READY"
+    ? Object.values(resourceQueryRoots).flat()
+    : affectedQueryRoots(message));
+  if (!roots.size) return;
+  await client.invalidateQueries({ predicate: query => roots.has(String(query.queryKey[0])) });
 }

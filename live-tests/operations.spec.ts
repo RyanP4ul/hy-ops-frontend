@@ -1,10 +1,10 @@
+import { mockGoogleMaps } from "./google-maps";
 import { expect, test, type Page } from "@playwright/test";
 import { createRequire } from "node:module";
 import { browserLogin, connectSocket, json, order, password } from "./helpers";
 
 test.use({ timezoneId: "America/Los_Angeles", actionTimeout: 15_000 });
 test.setTimeout(100_000);
-const blankStyle = { version: 8, sources: {}, layers: [{ id: "background", type: "background", paint: { "background-color": "#f5f5f5" } }] };
 function fixtureSql() {
   const url = new URL(process.env.HYOPS_TEST_DATABASE_URL!);
   expect(url.hostname).toBe("127.0.0.1"); expect(url.pathname).toBe("/hyops_test");
@@ -139,7 +139,7 @@ test("HY GPS fix age is independent from successful API sync and live socket con
     await sendFix(old);
     await expect.poll(async () => (await json(page.request, "GET", "/fleet/positions")).positions[0]?.recordedAt).toBe(old);
     await page.bringToFront(); // GPS polling intentionally pauses in background tabs.
-    await page.route("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", route => route.fulfill({ json: blankStyle })); await page.goto("/panel/fleet-map");
+ await page.goto("/panel/fleet-map");
     await page.getByRole("button").filter({ hasText: "LIVE-001" }).first().click();
     await expect(page.getByText(/Last seen 3m ago/).first()).toBeVisible(); await expect(page.getByText(/^GPS checked/)).toBeVisible();
     const before = (await json(page.request, "GET", "/fleet/positions")).positions[0]; await sendFix(old, 10);
@@ -185,3 +185,6 @@ test("HY deactivation revokes a real browser socket on a different backend and r
     expect(JSON.stringify(await json(admin.request, "GET", "/archives?limit=100"))).toContain("HY revoked staff");
   } finally { await admin.close(); await target.close(); }
 });
+
+// Maps run without public tile requests or billable SDK traffic in browser tests.
+test.beforeEach(async ({ page }) => { await mockGoogleMaps(page); });

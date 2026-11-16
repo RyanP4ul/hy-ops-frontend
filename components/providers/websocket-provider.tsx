@@ -15,7 +15,7 @@ import { usePathname } from "next/navigation";
 import type { WsMessage } from "@/types/ws";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { affectedQueryRoots, createEventDeduplicator, resourceQueryRoots } from "@/lib/realtime";
+import { createEventDeduplicator, refreshRealtimeQueries } from "@/lib/realtime";
 
 type WebSocketContextType = {
   send: (data: unknown) => void;
@@ -174,14 +174,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         };
 
         if (isDuplicate(message)) return;
+        void refreshRealtimeQueries(queryClient, message);
 
         if (message.type === "WS_READY") {
           clearHandshakeTimeout();
           attempts = 0;
           setConnected(true);
-          // Reconcile missed events on every successful connection.
-          const roots = new Set(Object.values(resourceQueryRoots).flat());
-          void queryClient.invalidateQueries({ predicate: (query) => roots.has(String(query.queryKey[0])) });
 
           const currentPath = pathnameRef.current;
           if (currentPath === "/panel" || currentPath.startsWith("/panel/")) {
@@ -192,8 +190,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const roots = affectedQueryRoots(message);
-        if (roots.length) void queryClient.invalidateQueries({ predicate: (query) => roots.includes(String(query.queryKey[0])) });
         const listeners = listenersRef.current.get(message.type);
         listeners?.forEach((handler) => handler(message));
       };

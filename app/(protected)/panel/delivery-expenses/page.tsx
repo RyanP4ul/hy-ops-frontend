@@ -2,6 +2,9 @@
 
 import { formatCurrency as peso } from "@/utils/date-util";
 import { useState } from "react";
+import type { EstimateResponse } from "@/types/estimate";
+import { ExpenseSettings, useExpenseSettings } from "@/components/delivery-estimate-settings";
+import { DeliveryEstimateMap } from "@/components/delivery-estimate-map";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -12,62 +15,7 @@ type RoutePoint = {
   longitude: string;
 };
 
-type TollDetection = {
-  status: "DETECTED" | "NO_TOLL_TAG_FOUND" | "UNAVAILABLE";
-  hasToll: boolean | null;
-  source: string;
-  note: string;
-  roads: {
-    osmWayId: number;
-    name: string | null;
-    ref: string | null;
-    tollTag: string;
-    matchedRouteEdges: number;
-  }[];
-  tollPoints: {
-    osmNodeId: number;
-    type: "TOLL_BOOTH" | "TOLL_GANTRY";
-    name: string | null;
-    ref: string | null;
-  }[];
-  matchedRoadNames: {
-    expressway: string;
-    name: string | null;
-    ref: string | null;
-    matchedStepCount: number;
-    distanceKm: number;
-  }[];
-};
-
-type EstimateResponse = {
-  route: {
-    distanceKm: number;
-    durationMinutes: number;
-    inputPointCount: number;
-    routeWaypointCount: number;
-    legCount: number;
-    isRoundTrip: boolean;
-    geometry: { type: "LineString"; coordinates: [number, number][] };
-    waypoints: {
-      name: string | null;
-      location: [number, number];
-      distanceFromRoadMeters: number;
-    }[];
-  };
-  tollDetection: TollDetection;
-  expenses: {
-    driverAllowance: number;
-    estimatedFuelLiters: number;
-    estimatedFuelCost: number;
-    hasToll: boolean | null;
-    estimatedTollFee: number | null;
-    estimatedTotal: number | null;
-    estimatedTotalExcludingUnknownToll: number;
-    tollFeeStatus: string;
-  };
-};
-
-const MAX_POINTS = 30;
+const MAX_POINTS = 26;
 
 
 const initialPoints: RoutePoint[] = [
@@ -78,7 +26,7 @@ const initialPoints: RoutePoint[] = [
 export default function Page() {
   const [points, setPoints] = useState<RoutePoint[]>(initialPoints);
   const [nextId, setNextId] = useState(3);
-  const [isRoundTrip, setIsRoundTrip] = useState(true);
+  const settings = useExpenseSettings(true);
   const [estimate, setEstimate] = useState<EstimateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +121,7 @@ export default function Page() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points: coordinates, isRoundTrip }),
+        body: JSON.stringify({ points: coordinates, ...settings.requestOptions() }),
       });
 
       const raw = await response.text();
@@ -206,7 +154,7 @@ export default function Page() {
       <div>
         <h1 className="text-2xl font-semibold">Delivery Expense Estimator</h1>
         <p className="text-sm text-muted-foreground">
-          Add the warehouse and every order destination. OSRM calculates one
+          Add the warehouse and every order destination. Google calculates one
           route through the points in the order shown below.
         </p>
       </div>
@@ -339,27 +287,11 @@ export default function Page() {
             </div>
           ))}
 
-          <label className="flex cursor-pointer items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isRoundTrip}
-              onChange={(event) => setIsRoundTrip(event.target.checked)}
-              className="mt-1"
-            />
-            <span>
-              <span className="font-medium">
-                Return to warehouse after the last delivery
-              </span>
-              <span className="block text-muted-foreground">
-                When enabled, the backend adds the starting coordinate to the
-                end of the route.
-              </span>
-            </span>
-          </label>
+          <ExpenseSettings settings={settings} disabled={loading} />
 
           <Button
             onClick={calculateEstimate}
-            disabled={loading}
+            disabled={loading || settings.config.isPending}
             className="w-full sm:w-auto"
           >
             {loading ? "Calculating route..." : "Calculate Expenses"}
@@ -370,6 +302,7 @@ export default function Page() {
 
       {estimate && (
         <div className="space-y-4">
+          <DeliveryEstimateMap coordinates={estimate.route.geometry.coordinates} />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader>
@@ -393,7 +326,7 @@ export default function Page() {
                   {estimate.route.durationMinutes} min
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  OSRM route estimate
+                  Google Routes estimate
                 </p>
               </CardContent>
             </Card>
@@ -426,11 +359,7 @@ export default function Page() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="font-medium">
-                {estimate.tollDetection.status === "DETECTED"
-                  ? "Toll road likely detected"
-                  : estimate.tollDetection.status === "UNAVAILABLE"
-                    ? "Detection unavailable"
-                    : "No toll tags matched"}
+                {estimate.tollDetection.hasToll ? "Tolls reported" : "No toll expected by Google"}
               </p>
               <p className="text-sm text-muted-foreground">
                 Source: {estimate.tollDetection.source}
@@ -438,45 +367,6 @@ export default function Page() {
               <p className="text-sm text-muted-foreground">
                 {estimate.tollDetection.note}
               </p>
-              {estimate.tollDetection.matchedRoadNames.map((road, index) => (
-                <div
-                  key={`${road.expressway}-${index}`}
-                  className="rounded-md border p-3 text-sm"
-                >
-                  <p className="font-medium">{road.expressway}</p>
-                  <p className="text-muted-foreground">
-                    OSRM name: {road.name ?? "Not provided"} · Ref:{" "}
-                    {road.ref ?? "Not provided"}
-                  </p>
-                  <p className="text-muted-foreground">
-                    Matched steps: {road.matchedStepCount} · Distance:{" "}
-                    {road.distanceKm.toFixed(2)} km
-                  </p>
-                </div>
-              ))}
-              {estimate.tollDetection.roads.map((road) => (
-                <div
-                  key={road.osmWayId}
-                  className="rounded-md border p-3 text-sm"
-                >
-                  <p className="font-medium">
-                    {road.name ?? road.ref ?? `OSM way ${road.osmWayId}`}
-                  </p>
-                  <p className="text-muted-foreground">
-                    {road.tollTag} · matched route edges:{" "}
-                    {road.matchedRouteEdges}
-                  </p>
-                </div>
-              ))}
-              {estimate.tollDetection.tollPoints.map((point) => (
-                <div
-                  key={point.osmNodeId}
-                  className="rounded-md border p-3 text-sm"
-                >
-                  {point.name ?? point.ref ?? `OSM node ${point.osmNodeId}`} —{" "}
-                  {point.type}
-                </div>
-              ))}
             </CardContent>
           </Card>
 
@@ -487,7 +377,7 @@ export default function Page() {
             <CardContent>
               <p className="text-2xl font-semibold">
                 {estimate.expenses.estimatedTollFee === null
-                  ? "Unknown — fee lookup needed"
+                  ? "Unknown - enter a manual toll above and recalculate"
                   : peso(estimate.expenses.estimatedTollFee)}
               </p>
             </CardContent>

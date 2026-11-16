@@ -22,6 +22,7 @@ import {
 import {
   compareVehicles,
   computeFleetCounts,
+  getStopProgress,
   groupStopsByVerifiedDestination,
   matchesFilter,
   matchesSearch,
@@ -282,8 +283,8 @@ test("fleet counts account for all operational states without gaps", () => {
     counts.delivering + counts.returning + counts.available + counts.blocked,
   ).toBe(counts.total);
   expect(counts.blocked).toBe(2);
-  // Delivering vehicle (#1) has no GPS + blocked vehicles (#4, #5) have no GPS
-  expect(counts.gpsAttention).toBe(3);
+  // Only the delivering unit is expected to report GPS.
+  expect(counts.gpsAttention).toBe(1);
   expect(matchesFilter(fleet[3], "available")).toBe(false);
   expect(matchesFilter(fleet[3], "blocked")).toBe(true);
 });
@@ -533,4 +534,17 @@ test("liveRoutePoints handles active GPS trips and idle scheduled previews witho
     warehouse,
     stop.coordinates,
   ]);
+});
+
+test("physical stop identity requires backend group data and counts completed orders separately", () => {
+  const a = makeStop({ id: "1" });
+  const b = makeStop({ id: "2", status: "completed" });
+  expect(groupStopsByVerifiedDestination([a, b], new Map())).toHaveLength(2);
+  const metadata = (stopId: string, actualStatus: "pending" | "delivered"): StopEnrichment => ({ stopId, orderId: Number(stopId), orderNumber: `ORD-${stopId}`, actualStatus, failureReason: null, orderGroupId: "physical-1", orderGroupNumber: "GRP-1", orderGroupPosition: Number(stopId), returnId: null, returnStatus: null });
+  const enrichment = new Map([["1", metadata("1", "pending")], ["2", metadata("2", "delivered")]]);
+  const vehicle = makeVehicle({ stops: [a,b], completedStops: 1 });
+  expect(groupStopsByVerifiedDestination(vehicle.stops, enrichment)).toHaveLength(1);
+  expect(getStopProgress(vehicle, enrichment)).toEqual({ totalStops: 1, completedStops: 0, totalOrders: 2, completedOrders: 1 });
+  enrichment.set("1", metadata("1", "delivered"));
+  expect(getStopProgress(vehicle, enrichment).completedStops).toBe(1);
 });

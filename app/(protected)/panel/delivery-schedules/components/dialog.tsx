@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { ExpenseSettings } from "@/components/delivery-estimate-settings";
+import { DeliveryEstimateMap } from "@/components/delivery-estimate-map";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -116,6 +118,7 @@ export default function DeliveryScheduleDialog() {
     vehicleQuery,
     sortDistanceMutation,
     driverExpensesMutation,
+    expenseSettings,
   } = useDeliverySchedule();
   const queryClient = useQueryClient();
   const reviewOrders = orderDetailQuery.data ?? [];
@@ -818,7 +821,7 @@ export default function DeliveryScheduleDialog() {
                 <Button
                   size="lg"
                   onClick={() => driverExpensesMutation.mutate()}
-                  disabled={driverExpensesMutation.isPending}
+                  disabled={driverExpensesMutation.isPending || expenseSettings.config.isPending}
                 >
                   {driverExpensesMutation.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -829,8 +832,13 @@ export default function DeliveryScheduleDialog() {
                 </Button>
               </div>
 
+              <ExpenseSettings settings={expenseSettings} disabled={driverExpensesMutation.isPending} showTollOverride={false} />
+              {driverExpensesMutation.error && <p role="alert" className="text-sm text-destructive">{driverExpensesMutation.error.message}</p>}
               {driverExpensesMutation.data && (
                 <>
+                  <DeliveryEstimateMap coordinates={driverExpensesMutation.data.route.geometry.coordinates} />
+                  <p className="text-xs text-muted-foreground">{driverExpensesMutation.data.tollDetection.note}</p>
+                  {driverExpensesMutation.data.expenses.estimatedTollFee === null && <p role="alert" className="text-sm text-destructive">Toll amount unknown. Enter the full trip toll below, or confirm zero after checking the route.</p>}
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-lg border p-3">
                       <p className="text-xs text-muted-foreground">Distance</p>
@@ -866,7 +874,7 @@ export default function DeliveryScheduleDialog() {
                         {driverExpensesMutation.data?.tollDetection.status ===
                         "DETECTED"
                           ? "Yes"
-                          : "No"}
+                          : "No toll expected by Google"}
                       </p>
                     </div>
                   </div>
@@ -888,6 +896,8 @@ export default function DeliveryScheduleDialog() {
                         {...field}
                         id="delivery_allowance"
                         type="number"
+                        min={0}
+                        step="0.01"
                         disabled={driverExpensesMutation.isPending}
                         aria-invalid={fieldState.invalid}
                         onChange={(event) => {
@@ -915,6 +925,8 @@ export default function DeliveryScheduleDialog() {
                         {...field}
                         id="fuel"
                         type="number"
+                        min={0}
+                        step="0.01"
                         disabled={driverExpensesMutation.isPending}
                         aria-invalid={fieldState.invalid}
                         onChange={(event) => {
@@ -940,11 +952,10 @@ export default function DeliveryScheduleDialog() {
                         {...field}
                         id="toll"
                         type="number"
-                        disabled={
-                          driverExpensesMutation.isPending ||
-                          driverExpensesMutation.data?.tollDetection.status !==
-                            "DETECTED"
-                        }
+                        value={Number.isFinite(field.value) ? field.value : ""}
+                        min={0}
+                        step="0.01"
+                        disabled={driverExpensesMutation.isPending}
                         aria-invalid={fieldState.invalid}
                         onChange={(event) => {
                           field.onChange(event.target.valueAsNumber);
@@ -952,7 +963,7 @@ export default function DeliveryScheduleDialog() {
                       />
 
                       <FieldDescription>
-                        Toll entry is available when the route calculation detects tolls. Review the estimate before scheduling.
+                        Review the Google toll estimate for your vehicle class. You can enter or correct the full trip toll here.
                       </FieldDescription>
 
                       {fieldState.invalid && (
@@ -971,7 +982,9 @@ export default function DeliveryScheduleDialog() {
                   <FileText className="size-4 text-muted-foreground" />
                 </div>
                 <p className="mt-3 text-2xl font-semibold">
-                  {formatCurrency(delivery_allowance + fuel + toll)}
+                  {Number.isFinite(toll)
+                    ? formatCurrency(delivery_allowance + fuel + toll)
+                    : `${formatCurrency(delivery_allowance + fuel)} + unknown toll`}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Allowance, fuel and toll estimates for this delivery run. Order values are shown separately.

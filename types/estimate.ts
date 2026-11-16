@@ -1,43 +1,30 @@
 export type EstimateResponse = {
   route: {
+    source: "Google Routes";
     distanceKm: number;
     durationMinutes: number;
     geometry: { type: "LineString"; coordinates: [number, number][] };
+    inputPointCount: number;
+    routeWaypointCount: number;
+    legCount: number;
+    isRoundTrip: boolean;
   };
   tollDetection: {
-    status: "DETECTED" | "NO_TOLL_TAG_FOUND" | "UNAVAILABLE";
-    hasToll: boolean | null;
-    source: "OpenStreetMap" | "Project OSRM (road-name heuristic)";
-    roads: {
-      osmWayId: number;
-      name: string | null;
-      ref: string | null;
-      tollTag: string;
-      matchedRouteEdges: number;
-    }[];
-    tollPoints: {
-      osmNodeId: number;
-      type: "TOLL_BOOTH" | "TOLL_GANTRY";
-      name: string | null;
-      ref: string | null;
-    }[];
-    matchedRoadNames: {
-      expressway: string;
-      name: string | null;
-      ref: string | null;
-      matchedStepCount: number;
-      distanceKm: number;
-    }[];
+    status: "DETECTED" | "NO_TOLL_EXPECTED";
+    hasToll: boolean;
+    source: "Google Routes";
     note: string;
   };
   expenses: {
     driverAllowance: number;
     estimatedFuelLiters: number;
     estimatedFuelCost: number;
-    hasToll: boolean | null;
+    hasToll: boolean;
     estimatedTollFee: number | null;
     estimatedTotal: number | null;
     estimatedTotalExcludingUnknownToll: number;
     tollFeeStatus: string;
+    fuelConsumptionKmPerLiter: number;
+    fuelPricePerLiter: number;
   };
 };

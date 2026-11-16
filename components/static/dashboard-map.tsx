@@ -1,27 +1,15 @@
 "use client";
 
-import { useTheme } from "next-themes";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { Map, MapControls, MapMarker, MarkerContent, MarkerPopup } from "@/components/ui/map";
 
 export default function DashboardMap() {
-  const { theme } = useTheme();
-
   return (
-    <>
-      <MapContainer
-        center={[14.832451, 120.882177]}
-        zoom={13}
-        style={{ height: "100%", width: "100%" }}
-      >
-        <TileLayer
-          url={`https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`}
-          // url={`https://{s}.basemaps.cartocdn.com/${theme === "dark" ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`}
-        />
-
-        <Marker position={[14.5995, 120.9842]}>
-          <Popup>Hello!</Popup>
-        </Marker>
-      </MapContainer>
-    </>
+    <Map center={[120.882177, 14.832451]} zoom={13}>
+      <MapControls />
+      <MapMarker latitude={14.5995} longitude={120.9842}>
+        <MarkerContent />
+        <MarkerPopup>Hello!</MarkerPopup>
+      </MapMarker>
+    </Map>
   );
 }

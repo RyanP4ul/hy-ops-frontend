@@ -89,7 +89,7 @@ export function useRoadRoutes(
         signal: AbortSignal;
       }): Promise<RoadRoute> => {
         const response = await fetch(
-          `/panel/fleet-map-1/road-route?${new URLSearchParams({ waypoints: key })}`,
+          `/panel/fleet-map/road-route?${new URLSearchParams({ waypoints: key })}`,
           { signal },
         );
         if (

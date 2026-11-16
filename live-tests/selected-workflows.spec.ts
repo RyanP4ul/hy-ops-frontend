@@ -1,3 +1,4 @@
+import { mockGoogleMaps } from "./google-maps";
 import { expect, test, type Page, type Locator } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import ExcelJS from "../../backend/node_modules/exceljs";
@@ -163,7 +164,7 @@ test("Warehouses creates, clears coordinates, archives and protects linked recor
 
 test("Warehouse address selection applies a successful provider response and persists the location", async ({ page }) => {
   // Only the external provider response is controlled; warehouse writes use the real API/database.
-  await page.route("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", route => route.fulfill({ json: { version: 8, sources: {}, layers: [{ id: "background", type: "background", paint: { "background-color": "#f5f5f5" } }] } }));
+
   await page.route("**/api/geocode/search?*", route => route.fulfill({ json: [{ place_id: 77, display_name: "Selected address, Fixture City", lat: "14.61", lon: "121.02", address: { house_number: "77", road: "Selected Road", city: "Selected City", state: "Selected Province", postcode: "1777" } }] }));
   await navigate(page, "/panel/warehouses");
   await page.getByRole("button", { name: "Add Warehouse", exact: true }).click();
@@ -174,7 +175,7 @@ test("Warehouse address selection applies a successful provider response and per
   await expect(dialog.getByLabel("Street Address", { exact: false })).toHaveValue("77 Selected Road");
   await expect(dialog.getByLabel("Latitude", { exact: false })).toHaveValue("14.61");
   await expect(dialog.getByLabel("Longitude", { exact: false })).toHaveValue("121.02");
-  await expect(dialog.locator("canvas.maplibregl-canvas")).toBeVisible();
+  await expect(dialog.locator('[data-map-provider="google"] .gm-style')).toBeVisible();
   await dialog.getByRole("button", { name: "Save Warehouse", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.getByPlaceholder("Search warehouses...").fill("Selected Geocoded Warehouse");
@@ -423,3 +424,6 @@ test("Report URL filters tolerate malformed values and invalid ranges show a rec
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(page.getByText("Recent orders", { exact: true })).toBeVisible();
 });
+
+// Maps run without public tile requests or billable SDK traffic in browser tests.
+test.beforeEach(async ({ page }) => { await mockGoogleMaps(page); });

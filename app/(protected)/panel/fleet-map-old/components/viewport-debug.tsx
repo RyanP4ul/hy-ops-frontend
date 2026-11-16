@@ -31,7 +31,7 @@ export default function ViewportDebug() {
           className="bg-background text-foreground rounded-md border px-2 py-1.5 text-sm shadow"
         >
           <option value="default">Default</option>
-          <option value="openstreetmap3d">3D</option>
+          <option value="google3d">Google Maps 3D</option>
         </select>
       </div>
     </>

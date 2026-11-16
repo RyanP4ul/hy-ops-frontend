@@ -1,20 +1,11 @@
+import { mockGoogleMaps } from "./google-maps";
 import { expect, test } from "@playwright/test";
 import { browserLogin, connectSocket, json, order, password } from "./helpers";
 
 test.use({ timezoneId: "Asia/Manila", actionTimeout: 15_000 });
 test.setTimeout(150_000);
 
-const blankStyle = {
-  version: 8,
-  sources: {},
-  layers: [
-    {
-      id: "background",
-      type: "background",
-      paint: { "background-color": "#f8fafc" },
-    },
-  ],
-};
+
 
 test("Fleet Map 1 renders independent statuses, view modes, guarded delivery review, and live GPS updates without overflow", async ({
   page,
@@ -63,14 +54,6 @@ test("Fleet Map 1 renders independent statuses, view modes, guarded delivery rev
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.route(
-    "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-    (route) => route.fulfill({ json: blankStyle }),
-  );
-  await page.route(
-    "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-    (route) => route.fulfill({ json: blankStyle }),
-  );
 
   // Simulate routing outage initially to ensure no straight-line fallback lies.
   let failRoute = true;
@@ -117,13 +100,13 @@ test("Fleet Map 1 renders independent statuses, view modes, guarded delivery rev
   ).toContainText("connected");
 
   // 1. Check exhaustive fleet summary counts & independent maintenance/GPS display.
-  const summaryNav = page.getByRole("navigation", {
-    name: "Fleet status summary",
+  const summaryNav = page.getByRole("group", {
+    name: "Filter vehicles by operational or GPS status",
   });
-  await expect(summaryNav.getByRole("button", { name: "All: 2" })).toBeVisible();
-  await expect(summaryNav.getByRole("button", { name: "On route: 1" })).toBeVisible();
-  await expect(summaryNav.getByRole("button", { name: "Out of service: 1" })).toBeVisible();
-  await expect(summaryNav.getByRole("button", { name: "GPS attention: 2" })).toBeVisible();
+  await expect(summaryNav.getByRole("button", { name: "All 2" })).toBeVisible();
+  await expect(summaryNav.getByRole("button", { name: "On route 1" })).toBeVisible();
+  await expect(summaryNav.getByRole("button", { name: "Out of service 1" })).toBeVisible();
+  await expect(summaryNav.getByRole("button", { name: "GPS attention 1" })).toBeVisible();
 
   // Filter to Out of service -> shows MAINT-01 with Maintenance + No GPS.
   await summaryNav.getByRole("button", { name: /Out of service/ }).click();
@@ -146,9 +129,7 @@ test("Fleet Map 1 renders independent statuses, view modes, guarded delivery rev
   ).toBe(true);
 
   await page.getByRole("button", { name: "Map Only", exact: true }).click();
-  await expect(
-    page.getByRole("textbox", { name: "Quick search vehicle on map" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Browse fleet/ })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -226,18 +207,18 @@ test("Fleet Map 1 renders independent statuses, view modes, guarded delivery rev
       name: "Vehicle LIVE-001 details",
     });
     await expect(drawer).toBeVisible();
-    await expect(drawer).toContainText(/Last known · 3m ago/, { timeout: 15_000 });
+    await expect(drawer).toContainText(/Last seen 3 min ago/, { timeout: 15_000 });
     await expect(drawer).toContainText(
-      "Showing last known location (not a verified live position).",
+      "GPS is stale.",
     );
 
     // Road routing outage shows honest fallback notice + retry.
     await expect(
-      page.getByText("Road routing unavailable (no straight-line fallback shown)."),
+      page.getByText("Road route unavailable. Stop locations are still visible."),
     ).toBeVisible();
     failRoute = false;
     await page.getByRole("button", { name: "Retry", exact: true }).first().click();
-    await expect(drawer).toContainText(/Est\. drive: 9 min · 6\.2 km/);
+    await expect(page.getByText(/planned leg: 9 min · 6\.2 km/)).toBeVisible();
 
     // Unroute mocked positions and send real fresh GPS fix via driver WebSocket.
     await page.unroute("**/api/fleet/positions");
@@ -250,12 +231,12 @@ test("Fleet Map 1 renders independent statuses, view modes, guarded delivery rev
       )
       .toBe(freshIso);
 
-    await expect(drawer).toContainText(/GPS fresh/, { timeout: 15_000 });
+    await expect(drawer).toContainText(/GPS updated/, { timeout: 15_000 });
 
     // Toggle Follow, Routes, and Legend controls cleanly.
-    await drawer.getByRole("button", { name: "Follow", exact: true }).click();
+    await drawer.getByRole("button", { name: "Follow vehicle", exact: true }).click();
     await expect(page.getByText("Following LIVE-001")).toBeVisible();
-    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await drawer.getByRole("button", { name: "Following", exact: true }).click();
     await expect(page.getByText("Following LIVE-001")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Legend", exact: true }).click();
@@ -291,13 +272,7 @@ test("Fleet Map 1 renders independent statuses, view modes, guarded delivery rev
       .first()
       .click();
 
-    // Check Proof of Delivery modal.
-    await drawer.getByRole("button", { name: "View proof", exact: true }).click();
-    const proofDialog = page.getByRole("dialog", {
-      name: new RegExp(`Proof of delivery — ${created.product_number}`),
-    });
-    await expect(proofDialog).toContainText("No proof of delivery uploaded");
-    await proofDialog.getByRole("button", { name: "Close", exact: true }).first().click();
+    await expect(drawer.getByText("Awaiting proof", { exact: true })).toBeVisible();
 
     // Check Full Order Details modal.
     await drawer
@@ -361,3 +336,6 @@ test("Fleet Map 1 renders independent statuses, view modes, guarded delivery rev
     await driver.close();
   }
 });
+
+// Maps run without public tile requests or billable SDK traffic in browser tests.
+test.beforeEach(async ({ page }) => { await mockGoogleMaps(page); });

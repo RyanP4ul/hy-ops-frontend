@@ -1,3 +1,4 @@
+import { mockGoogleMaps } from "./google-maps";
 import { expect, test } from "@playwright/test";
 import { browserLogin } from "./helpers";
 
@@ -34,3 +35,6 @@ test("Dashboard map shows actual vehicle GPS to customer route without a card at
   await expect(map.getByLabel("Destination for MAP-001", { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+// Maps run without public tile requests or billable SDK traffic in browser tests.
+test.beforeEach(async ({ page }) => { await mockGoogleMaps(page); });

@@ -12,7 +12,7 @@ import {
 
 import { Warehouse, Truck, MapPin } from "lucide-react";
 
-// Coordinates use [longitude, latitude] for mapcn routes.
+// Coordinates use [longitude, latitude]; the shared map converts them for Google Maps.
 const warehouse = {
   lng: 120.8833,
   lat: 14.8333,

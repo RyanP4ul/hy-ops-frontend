@@ -2,7 +2,7 @@ export const DEFAULT_LOCATION: Coordinate = [120.9842, 14.5995];
 
 export const styles = {
   default: undefined,
-  openstreetmap3d: "https://tiles.openfreemap.org/styles/liberty",
+  google3d: "roadmap",
 };
 
 export type StyleKey = keyof typeof styles;

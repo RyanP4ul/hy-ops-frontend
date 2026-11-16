@@ -34,7 +34,7 @@ export function FleetMapProvider({ children }: { children: React.ReactNode }) {
 
   const [style, setStyle] = useState<StyleKey>("default");
   const selectedStyle = styles[style];
-  const is3D = style === "openstreetmap3d";
+  const is3D = style === "google3d";
 
   return (
     <FleetMapContext.Provider
