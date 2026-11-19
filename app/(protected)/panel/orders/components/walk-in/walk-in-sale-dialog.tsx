@@ -380,7 +380,7 @@ export function WalkInSaleDialog({
     }
   }
 
-  function focusFirstInvalid(pathKey?: string | number) {
+  function focusFirstInvalid(pathKey?: PropertyKey) {
     requestAnimationFrame(() => {
       if (pathKey === "items") {
         searchInputRef.current?.focus();

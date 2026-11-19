@@ -172,7 +172,8 @@ export default function DeliveryScheduleDialog() {
       details: ["Check each customer's destination and map coordinates.", "Arrange stops in the order the driver should visit them."] },
     { title: "Driver & vehicle", description: "Choose a delivery type and assign the people and vehicle needed.", icon: Truck,
       details: ["Confirm the assigned driver and vehicle before continuing.", "Review availability for the selected departure before continuing."] },
-    { title: "Expenses", description: "", icon: DollarSign },
+    { title: "Expenses", description: "", icon: DollarSign,
+      details: ["Calculate expenses after confirming the route and vehicle.", "Review the amounts before continuing. Estimates are separate from order totals."] },
     { title: "Review & schedule", description: "Confirm the departure, assignments, stops and expenses.", icon: ClipboardCheck,
       details: ["Return to an earlier step to correct details before scheduling.", "The schedule is submitted only when you select Create delivery schedule."] },
   ];
