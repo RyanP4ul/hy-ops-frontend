@@ -50,14 +50,17 @@ test("HY Payments retains the amount draft and captured version when another col
   const payments = await json(page.request, "GET", "/payments?limit=100");
   const payment = payments.find((p: { order_id: number }) => p.order_id === created.id);
   const row = await payRow(page, payment.payment_number);
-  await row.getByRole("button", { name: "Details", exact: true }).click(); const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Payment Amount", { exact: false }).fill("5.25");
+  await row.getByRole("button", { name: payment.payment_number, exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Add payment", exact: true }).click();
+  const amount = dialog.getByLabel("Amount received (PHP)", { exact: false });
+  await amount.fill("5.25");
   await json(page.request, "POST", "/payments", { payment_number: payment.payment_number, payment_amount: 1, version: payment.version });
   await expect(dialog).toContainText("1.00");
-  await expect(dialog.getByLabel("Payment Amount", { exact: false })).toHaveValue("5.25");
-  await dialog.getByRole("button", { name: "Record Payment", exact: true }).click();
+  await expect(amount).toHaveValue("5.25");
+  await expect(dialog.getByRole("button", { name: "Record payment", exact: true })).toBeDisabled();
   await expect(dialog.getByRole("alert")).toContainText(/version|changed|refresh/i);
-  await expect(dialog.getByLabel("Payment Amount", { exact: false })).toHaveValue("5.25");
+  await expect(amount).toHaveValue("5.25");
   const fresh = await json(page.request, "GET", `/payments?search=${payment.payment_number}`); expect(Number(fresh[0].amount)).toBe(1);
 });
 
@@ -66,15 +69,64 @@ test("HY receipt dates remain collection dates after full refunds and money disp
   let payments = await json(page.request, "GET", "/payments?limit=100"); let payment = payments.find((p: { order_id: number }) => p.order_id === created.id);
   const receivedAt = payment.received_at; expect(receivedAt).toBeTruthy();
   const row = await payRow(page, payment.payment_number);
-  await row.getByRole("button", { name: "Refund / history", exact: true }).click();
+  await row.getByRole("button", { name: payment.payment_number, exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Refund / history", exact: true }).click();
   await page.getByLabel("Refund amount", { exact: true }).fill("12.34"); await page.getByLabel("Reason", { exact: true }).fill("HY complete refund acceptance");
   await page.getByRole("button", { name: "Record refund", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Refund recorded" })).toBeVisible();
-  await page.keyboard.press("Escape"); await expect(row).toContainText("Fully refunded"); await expect(row).toContainText("0.00");
+  await dialog.getByRole("button", { name: "Refund / history", exact: true }).click();
+  await expect(dialog).toContainText("Fully refunded");
+  await expect(dialog).toContainText("0.00");
+  await dialog.getByRole("button", { name: "Close", exact: true }).first().click();
+  await expect(row).toContainText("Fully refunded");
+  await expect(row).toContainText("12.34");
   payments = await json(page.request, "GET", `/payments?search=${payment.payment_number}`); payment = payments[0];
   expect(Number(payment.amount)).toBe(0); expect(Number(payment.gross_received)).toBe(12.34); expect(payment.received_at).toBe(receivedAt);
   const when = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }).format(new Date(receivedAt));
   await expect(row).toContainText(when);
+});
+
+test("HY Payments expands a combined receipt found through one order and collects per order", async ({ page }) => {
+  await browserLogin(page);
+  const { warehouse_id, is_custom_shipping, customer_address_id, items } = order;
+  const draft = { warehouse_id, is_custom_shipping, customer_address_id, items };
+  const { orders: [first, second] } = await json(page.request, "POST", "/orders/batch", {
+    customer_id: 1, payment_mode: "COMBINED",
+    payment: { payment_method: "BANK_TRANSFER", payment_type: "BDO", amount_paid: 10, reference_number: "GROUPED-PAYMENTS-BROWSER" },
+    orders: [draft, draft],
+  });
+  const firstOrder = await json(page.request, "GET", `/orders/${first.id}`);
+  const receiptNumber = firstOrder.combined_payment.payment_number;
+
+  await page.goto("/panel/payments");
+  await page.getByPlaceholder(/Search payments/).fill(first.product_number);
+  const table = page.getByRole("region", { name: "payments table" });
+  await expect(table.getByRole("columnheader")).toHaveCount(6);
+  const row = table.getByRole("row").filter({ hasText: receiptNumber });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("2 orders");
+  await expect(row).toContainText("₱10.00");
+  const receipt = row.getByRole("button", { name: receiptNumber, exact: true });
+  await expect(receipt).toHaveAttribute("aria-expanded", "false");
+  await receipt.click();
+  await expect(receipt).toHaveAttribute("aria-expanded", "true");
+  const allocations = table.getByRole("region", { name: `Orders for ${receiptNumber}` });
+  await expect(allocations.getByRole("listitem")).toHaveCount(2);
+  await expect(allocations).toContainText("GROUPED-PAYMENTS-BROWSER");
+  await expect(allocations.getByRole("button", { name: second.product_number, exact: true })).toBeVisible();
+  const firstAllocation = allocations.getByRole("listitem").filter({ hasText: first.product_number });
+  await expect(firstAllocation).toContainText("₱5.00");
+  await firstAllocation.getByRole("button", { name: "Add payment", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText(first.product_number);
+  await dialog.getByLabel("Amount received (PHP)", { exact: false }).fill("1.25");
+  await dialog.getByRole("button", { name: "Record payment", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(row).toContainText("₱10.00");
+  await firstAllocation.getByRole("button", { name: first.product_number, exact: true }).click();
+  await expect(dialog).toContainText("Original combined receipt");
+  await expect(dialog).toContainText("₱6.25");
 });
 
 test("HY historical prices survive catalog edits and unknown snapshots stay unverified in reports and scheduling", async ({ page }) => {

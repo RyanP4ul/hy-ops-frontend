@@ -12,7 +12,7 @@ import {
   getCoreRowModel,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowDownUp, Edit, Plus } from "lucide-react";
+import { ArrowDownUp, Edit, Plus, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DialogMode } from "@/types/dialog";
@@ -22,12 +22,43 @@ import { VehicleRow } from "@/schema/vehicle";
 import { debounce } from "@/utils/debounce";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { REQUESTS } from "@/constant/request";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { request, requestWithErrorHandling } from "@/components/http";
+import { resourceQueryRoots } from "@/lib/realtime";
 
 type VehicleQueryData = {
   rows: VehicleRow[];
   total: number;
 };
+
+function MaintenanceAction({ vehicle }: { vehicle: VehicleRow }) {
+  const queryClient = useQueryClient();
+  const inMaintenance = vehicle.status === "maintenance";
+  const onDelivery = vehicle.status === "on_delivery";
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const response = await request("PUT", `/api/vehicles/${vehicle.id}`, {
+        warehouse_id: vehicle.warehouse_id,
+        plate_number: vehicle.plate_number,
+        type: vehicle.type,
+        status: inMaintenance ? "available" : "maintenance",
+        version: vehicle.version,
+      });
+      await requestWithErrorHandling(response, null);
+    },
+    onSettled: () => queryClient.invalidateQueries({
+      predicate: query => resourceQueryRoots.vehicles.some(key => query.queryKey[0] === key),
+    }),
+  });
+
+  return (
+    <Button type="button" variant="outline" size="sm" disabled={onDelivery || mutation.isPending}
+      title={onDelivery ? "This vehicle is on delivery" : undefined} onClick={() => mutation.mutate()}>
+      <Wrench className="size-4" aria-hidden="true" />
+      {mutation.isPending ? "Updating…" : inMaintenance ? "End maintenance" : "Set maintenance"}
+    </Button>
+  );
+}
 
 export default function DataTable() {
   const {
@@ -84,7 +115,8 @@ export default function DataTable() {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <MaintenanceAction vehicle={row.original} />
             <LifecycleActions resource="vehicles" record={row.original} archive />
             <Button
               variant="ghost"
@@ -114,6 +146,7 @@ export default function DataTable() {
   const table = useReactTable({
     data: vehicleQuery.data?.rows ?? [],
     columns,
+    getRowId: vehicle => String(vehicle.id),
     pageCount: Math.ceil((vehicleQuery.data?.total ?? 0) / page.pageSize),
     state: { pagination: page },
     onPaginationChange: setPage,

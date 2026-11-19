@@ -31,6 +31,7 @@ test.beforeEach(async ({ page }) => {
       .relative{position:relative}.absolute{position:absolute}.inset-0{inset:0}.h-full{height:100%}.w-full{width:100%}
       .bottom-10{bottom:40px}.right-2{right:8px}.z-10{z-index:10}.flex{display:flex}.flex-col{flex-direction:column}
       .bottom-full{bottom:100%}.left-1\\/2{left:50%}.pointer-events-none{pointer-events:none}
+      .hidden{display:none}
       </style></head><body><div id="root"></div><script src="/harness.js"></script></body></html>` });
   });
 });
@@ -84,6 +85,28 @@ test("shows an SDK failure and retries successfully", async ({ page }) => {
   await mockGoogleMaps(page);
   await page.getByRole("button", { name: "Retry map" }).first().click();
   await expect(page.getByRole("button", { name: "Warehouse pin" })).toBeVisible();
+});
+
+test("clean dashboard map hides place labels and icons while retaining its vehicle overlay", async ({ page }) => {
+  await mockGoogleMaps(page);
+  await page.goto("https://hyops.test/");
+  const vehicle = page.getByLabel("Dashboard vehicle", { exact: true });
+  await expect(vehicle).toBeVisible();
+  const options = await page.evaluate(() => Reflect.get(window, "__googleMapsFixtureOptions") as { mapId?: string; renderingType: string; styles?: object[] }[]);
+  const clean = options.find(option => option.styles);
+  expect(clean?.mapId).toBeUndefined();
+  expect(clean?.renderingType).toBe("RASTER");
+  expect(clean?.styles).toEqual([
+    { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  ]);
+  expect(options.some(option => option.mapId === "DEMO_MAP_ID")).toBe(true);
+  const box = await vehicle.boundingBox();
+  const map = await page.locator(".gm-style").nth(1).boundingBox();
+  expect(Math.abs(box!.x + box!.width / 2 - (map!.x + map!.width / 2))).toBeLessThan(1);
+  await page.getByRole("button", { name: "Toggle second map" }).click();
+  await expect(vehicle).toHaveCount(0);
 });
 
 test("shows Google authorization errors", async ({ page }) => {

@@ -37,6 +37,7 @@ import { manilaCalendarNow } from "@/utils/date-util";
 import { format, startOfDay } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { DialogMode } from "@/types/dialog";
 import { request, requestWithErrorHandling } from "@/components/http";
 
@@ -184,6 +185,20 @@ export default function CalendarDialog() {
                         <SelectItem value="OTHER">Other</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    {field.value === "DELIVERY" && (
+                      <FieldDescription>
+                        Live delivery runs are scheduled in{" "}
+                        <Link
+                          href="/panel/delivery-schedules"
+                          className="font-medium underline underline-offset-4"
+                        >
+                          Delivery Schedules
+                        </Link>{" "}
+                        and sync automatically. Use this form for manual notes
+                        only.
+                      </FieldDescription>
+                    )}
 
                     {fieldState.invalid && (
                       <FieldError errors={[fieldState.error]} />

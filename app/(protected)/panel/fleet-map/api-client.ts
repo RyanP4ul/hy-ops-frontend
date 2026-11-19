@@ -16,10 +16,6 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
-/**
- * Minimal JSON client over fetch. Throws ApiRequestError for any non-2xx response, using
- * the `{ message }` body the API returns for validation / business-rule errors.
- */
 export async function request<T>(
   path: string,
   { method = "GET", body, signal }: RequestOptions = {},

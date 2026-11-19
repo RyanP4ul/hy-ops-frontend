@@ -2,6 +2,23 @@
  * Reference: https://developers.google.com/maps/documentation/javascript/reference
  */
 declare namespace google.maps {
+  function importLibrary(name: "places"): Promise<PlacesLibrary>;
+  interface PlacesLibrary { PlaceAutocompleteElement: typeof places.PlaceAutocompleteElement; }
+  namespace places {
+    interface AddressComponent { longText?: string; shortText?: string; types: string[]; }
+    interface Place {
+      formattedAddress?: string;
+      addressComponents?: AddressComponent[];
+      location?: LatLng;
+      fetchFields(options: { fields: string[] }): Promise<{ place: Place }>;
+    }
+    interface PlacePredictionSelectEvent extends Event { placePrediction: { toPlace(): Place }; }
+    class PlaceAutocompleteElement extends HTMLElement {
+      constructor(options?: { includedRegionCodes?: string[] });
+      placeholder: string;
+      disabled: boolean;
+    }
+  }
   interface LatLngLiteral { lat: number; lng: number; }
   interface LatLng { toJSON(): LatLngLiteral; }
   interface Padding { top: number; bottom: number; left: number; right: number; }
@@ -13,6 +30,7 @@ declare namespace google.maps {
     colorScheme?: string; disableDefaultUI?: boolean; clickableIcons?: boolean;
     gestureHandling?: string; keyboardShortcuts?: boolean;
     headingInteractionEnabled?: boolean; tiltInteractionEnabled?: boolean;
+    styles?: { featureType?: string; elementType?: string; stylers: { visibility?: string; color?: string }[] }[];
   }
   class Map {
     constructor(container: HTMLElement, options: MapOptions);
@@ -29,7 +47,16 @@ declare namespace google.maps {
   }
   class LatLngBounds { constructor(southWest: LatLngLiteral, northEast: LatLngLiteral); }
   class Size { constructor(width: number, height: number); }
-  const RenderingType: { VECTOR: string };
+  const RenderingType: { VECTOR: string; RASTER: string };
+  class OverlayView {
+    onAdd(): void;
+    draw(): void;
+    onRemove(): void;
+    setMap(map: Map | null): void;
+    getPanes(): { overlayMouseTarget: HTMLElement } | null;
+    getProjection(): { fromLatLngToDivPixel(position: LatLngLiteral): { x: number; y: number } | null };
+    static preventMapHitsAndGesturesFrom(element: HTMLElement): void;
+  }
   const ColorScheme: { DARK: string; LIGHT: string };
   namespace event {
     function trigger(instance: object, name: string): void;

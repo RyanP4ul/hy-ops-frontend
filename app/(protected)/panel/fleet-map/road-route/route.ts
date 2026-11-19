@@ -4,8 +4,6 @@ import {
   routingWaypointsSchema,
 } from "../lib/road-routing";
 
-// Under /panel so the existing session/role proxy protects it.
-// Only the server chooses the provider; callers cannot supply an upstream URL.
 let demoQueue: Promise<void> = Promise.resolve();
 
 export async function GET(request: Request) {
@@ -35,10 +33,7 @@ export async function GET(request: Request) {
   const provider = process.env.OSRM_ROUTING_URL?.trim();
   if (!provider && process.env.NODE_ENV === "production") {
     return Response.json(
-      {
-        message:
-          "Road routing is not configured. Set OSRM_ROUTING_URL on the server.",
-      },
+      { message: "Road routing is not configured." },
       { status: 503 },
     );
   }
@@ -75,10 +70,7 @@ export async function GET(request: Request) {
     });
   } catch {
     return Response.json(
-      {
-        message:
-          "Unable to find a driving route. Check the stop locations or try again.",
-      },
+      { message: "Unable to calculate driving route." },
       { status: 502 },
     );
   }

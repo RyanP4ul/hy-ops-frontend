@@ -8,11 +8,6 @@ import type {
 import { getWarehouse, isValidCoordinate } from "./geometry";
 import { getNextPendingStop } from "./vehicle";
 
-/**
- * Planned road waypoints for live vehicles (originating from verified GPS) or
- * scheduled-trip previews (originating from GPS if available, otherwise from
- * the vehicle's assigned home warehouse for planned future departures).
- */
 export function liveRoutePoints(
   vehicle: Vehicle,
   warehouses: WarehouseLocation[],
@@ -23,7 +18,10 @@ export function liveRoutePoints(
     const pendingTargets = preview.stops
       .filter((stop) => stop.status === "pending")
       .map((stop) => stop.coordinates);
-    if (!pendingTargets.length || pendingTargets.some((p) => !isValidCoordinate(p))) {
+    if (
+      !pendingTargets.length ||
+      pendingTargets.some((p) => !isValidCoordinate(p))
+    ) {
       return [];
     }
     const origin =
@@ -47,7 +45,10 @@ export function liveRoutePoints(
   const pickup = vehicle.pickups?.find((task) => task.status === "assigned");
   const targets =
     vehicle.status === "returning"
-      ? [warehouses.find((warehouse) => warehouse.id === vehicle.warehouseId)?.coordinates]
+      ? [
+          warehouses.find((warehouse) => warehouse.id === vehicle.warehouseId)
+            ?.coordinates,
+        ]
       : vehicle.status === "delivering"
         ? [pickup ? pickup.coordinates : getNextPendingStop(vehicle)?.coordinates]
         : [];

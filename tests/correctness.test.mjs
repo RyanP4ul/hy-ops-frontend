@@ -79,6 +79,33 @@ test("GPS freshness rejects bad coordinates and future clocks, and simulation st
   expect(resolveVehiclePosition(vehicle, warehouses, { ...fix, recordedAt: new Date(now+60_000).toISOString() }, false, now).signal).toBe("stale");
   expect(resolveVehiclePosition(vehicle, warehouses, { ...fix, coordinates: [NaN, 14] }, false, now).signal).toBe("none");
   expect(resolveVehiclePosition(vehicle, warehouses, fix, true, now).signal).toBe("simulated");
+
+  const { applyLivePositionFix, livePositionFromWsPayload } = await import("../app/(protected)/panel/fleet-map/lib/live.ts");
+  const parsed = livePositionFromWsPayload({
+    vehicle_id: 7,
+    delivery_id: "12",
+    driver_id: 9,
+    latitude: 14.845,
+    longitude: 120.879,
+    accuracy: 12,
+    speed: 10,
+    heading: 90,
+    recorded_at: new Date(now + 5_000).toISOString(),
+  });
+  expect(parsed).toMatchObject({
+    vehicleId: "7",
+    coordinates: [120.879, 14.845],
+    speedKph: 36,
+    heading: 90,
+    accuracyM: 12,
+  });
+  expect(livePositionFromWsPayload({ vehicle_id: null, latitude: 14.8, longitude: 120.8 })).toBeNull();
+  const initial = new Map([["1", fix]]);
+  const merged = applyLivePositionFix(initial, parsed);
+  expect(merged.get("1")).toEqual(fix);
+  expect(merged.get("7")).toEqual(parsed);
+  const older = { ...parsed, coordinates: [120.1, 14.1], recordedAt: new Date(now + 1_000).toISOString() };
+  expect(applyLivePositionFix(merged, older)).toBe(merged);
 });
 
 

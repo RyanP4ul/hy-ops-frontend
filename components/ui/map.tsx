@@ -18,9 +18,10 @@ type MapProps = {
   children?: ReactNode; className?: string; theme?: Theme; center?: Coordinate;
   zoom?: number; bearing?: number; pitch?: number; minZoom?: number; maxZoom?: number;
   interactive?: boolean; viewport?: Partial<MapViewport>;
+  clean?: boolean;
   onViewportChange?: (viewport: MapViewport) => void; loading?: boolean;
 };
-const MapContext = createContext<{ map: MapRef | null; isLoaded: boolean; resolvedTheme: Theme } | null>(null);
+const MapContext = createContext<{ map: MapRef | null; isLoaded: boolean; resolvedTheme: Theme; clean: boolean } | null>(null);
 function useMap() {
   const value = useContext(MapContext);
   if (!value) throw new Error("useMap must be used within a Map component");
@@ -31,7 +32,7 @@ function getViewport(map: MapRef): MapViewport {
   return { center: [center.lng, center.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
 }
 
-const Map = forwardRef<MapRef, MapProps>(function Map({ children, className, theme, viewport, onViewportChange, loading, ...options }, ref) {
+const Map = forwardRef<MapRef, MapProps>(function Map({ children, className, theme, viewport, onViewportChange, loading, clean = false, ...options }, ref) {
   const { resolvedTheme: appTheme } = useTheme();
   const resolvedTheme: Theme = theme ?? (appTheme === "dark" ? "dark" : "light");
   const container = useRef<HTMLDivElement>(null);
@@ -59,9 +60,31 @@ const Map = forwardRef<MapRef, MapProps>(function Map({ children, className, the
         center: toLatLng(props.center ?? [120.9842, 14.5995]), zoom: props.zoom ?? 11,
         heading: props.bearing ?? 0, tilt: props.pitch ?? 0,
         minZoom: props.minZoom, maxZoom: props.maxZoom,
-        mapId: process.env.NEXT_PUBLIC_GOOGLE_MAP_ID || "DEMO_MAP_ID",
-        renderingType: maps.RenderingType.VECTOR,
-        colorScheme: resolvedTheme === "dark" ? maps.ColorScheme.DARK : maps.ColorScheme.LIGHT,
+        // Local JSON styles are ignored when a map ID is supplied.
+        ...(clean ? {
+          renderingType: maps.RenderingType.RASTER,
+          styles: [
+            ...(resolvedTheme === "dark" ? [
+              { elementType: "geometry", stylers: [{ color: "#1d2430" }] },
+              { elementType: "labels.text.stroke", stylers: [{ color: "#1d2430" }] },
+              { elementType: "labels.text.fill", stylers: [{ color: "#9ca8b8" }] },
+              { featureType: "road", elementType: "geometry", stylers: [{ color: "#2d3748" }] },
+              { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#1d2430" }] },
+              { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3b475c" }] },
+              { featureType: "water", elementType: "geometry", stylers: [{ color: "#131c2b" }] },
+            ] : []),
+            { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+            { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+            { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] },
+            { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+            { featureType: "road", elementType: "labels.text", stylers: [{ visibility: "on" }] },
+            { featureType: "administrative", elementType: "labels.text", stylers: [{ visibility: "on" }] },
+          ],
+        } : {
+          mapId: process.env.NEXT_PUBLIC_GOOGLE_MAP_ID || "DEMO_MAP_ID",
+          renderingType: maps.RenderingType.VECTOR,
+          colorScheme: resolvedTheme === "dark" ? maps.ColorScheme.DARK : maps.ColorScheme.LIGHT,
+        }),
         disableDefaultUI: true, clickableIcons: false,
         gestureHandling: props.interactive === false ? "none" : "greedy",
         keyboardShortcuts: props.interactive !== false,
@@ -81,7 +104,7 @@ const Map = forwardRef<MapRef, MapProps>(function Map({ children, className, the
       setMap(null);
       target?.replaceChildren();
     };
-  }, [attempt, resolvedTheme]); // Google colorScheme is fixed at construction.
+  }, [attempt, resolvedTheme, clean]); // Google colorScheme is fixed at construction.
 
   const syncing = useRef(false);
   useEffect(() => {
@@ -94,7 +117,7 @@ const Map = forwardRef<MapRef, MapProps>(function Map({ children, className, the
     syncing.current = false;
   }, [map, viewport]);
 
-  return <MapContext.Provider value={{ map, isLoaded, resolvedTheme }}>
+  return <MapContext.Provider value={{ map, isLoaded, resolvedTheme, clean }}>
     <div className={cn("relative h-full w-full", className)} data-map-provider="google">
       <div ref={container} className="absolute inset-0" aria-label="Google Map" />
       {!error && (!isLoaded || loading) && <div role="status" className="absolute inset-0 z-10 grid place-items-center bg-background/70 text-sm">Loading Google Maps…</div>}
@@ -116,7 +139,22 @@ type MapMarkerProps = {
   onDrag?: (position: { lng: number; lat: number }) => void;
   onDragEnd?: (position: { lng: number; lat: number }) => void;
 };
-type MarkerValue = { marker: google.maps.marker.AdvancedMarkerElement; element: HTMLDivElement };
+type HtmlMarkerOverlayHandle = {
+  update: (next: {
+    position: google.maps.LatLngLiteral;
+    anchor: "center" | "bottom" | "top";
+    offset: [number, number];
+    rotation: number;
+  }) => void;
+  getPosition: () => google.maps.LatLngLiteral;
+  destroy: () => void;
+};
+
+type MarkerValue = {
+  marker: google.maps.marker.AdvancedMarkerElement | null;
+  overlay: HtmlMarkerOverlayHandle | null;
+  element: HTMLDivElement;
+};
 const MarkerContext = createContext<MarkerValue | null>(null);
 function useMarker() {
   const value = useContext(MarkerContext);
@@ -124,7 +162,7 @@ function useMarker() {
   return value;
 }
 function MapMarker(props: MapMarkerProps) {
-  const { map } = useMap();
+  const { map, clean } = useMap();
   const [value, setValue] = useState<MarkerValue | null>(null);
   const latest = useRef(props);
   useEffect(() => { latest.current = props; }, [props]);
@@ -132,28 +170,107 @@ function MapMarker(props: MapMarkerProps) {
     if (!map) return;
     const element = document.createElement("div");
     element.className = "relative";
+    const click = (event: MouseEvent) => { event.stopPropagation(); latest.current.onClick?.(event); };
+    const enter = (event: MouseEvent) => {
+      element.style.zIndex = "10";
+      latest.current.onMouseEnter?.(event);
+    };
+    const leave = (event: MouseEvent) => {
+      element.style.zIndex = "";
+      latest.current.onMouseLeave?.(event);
+    };
+    element.addEventListener("click", click);
+    element.addEventListener("mouseenter", enter);
+    element.addEventListener("mouseleave", leave);
+
+    // Raster styled maps (clean mode) do not use a mapId, so AdvancedMarkerElement
+    // cannot attach to them. Use OverlayView so custom React markers render identically.
+    if (clean) {
+      let currentPos: google.maps.LatLngLiteral = { lng: latest.current.longitude, lat: latest.current.latitude };
+      let currentAnchor: "center" | "bottom" | "top" = latest.current.anchor ?? "center";
+      let currentOffset: [number, number] = latest.current.offset ?? [0, 0];
+      let currentRotation = latest.current.rotation ?? 0;
+
+      class HtmlMarkerOverlay extends google.maps.OverlayView {
+        onAdd() {
+          element.style.position = "absolute";
+          element.style.left = "0px";
+          element.style.top = "0px";
+          const prevent =
+            google.maps.OverlayView.preventMapHitsFrom ??
+            google.maps.OverlayView.preventMapHitsAndGesturesFrom;
+          prevent?.(element);
+          this.getPanes()?.overlayMouseTarget.appendChild(element);
+        }
+        draw() {
+          const projection = this.getProjection();
+          if (!projection) return;
+          const latLng =
+            typeof google.maps.LatLng === "function"
+              ? new google.maps.LatLng(currentPos)
+              : (currentPos as unknown as google.maps.LatLng);
+          const pt = projection.fromLatLngToDivPixel(latLng);
+          if (!pt) return;
+          const yAnchor = currentAnchor === "bottom" ? "-100%" : currentAnchor === "top" ? "0%" : "-50%";
+          element.style.transform = `translate3d(${pt.x + currentOffset[0]}px, ${pt.y + currentOffset[1]}px, 0) translate(-50%, ${yAnchor}) rotate(${currentRotation}deg)`;
+        }
+        onRemove() {
+          element.remove();
+        }
+      }
+
+      const view = new HtmlMarkerOverlay();
+      view.setMap(map.native);
+      const overlay: HtmlMarkerOverlayHandle = {
+        update: (next) => {
+          currentPos = next.position;
+          currentAnchor = next.anchor;
+          currentOffset = next.offset;
+          currentRotation = next.rotation;
+          view.draw();
+        },
+        getPosition: () => currentPos,
+        destroy: () => {
+          view.setMap(null);
+        },
+      };
+      setValue({ marker: null, overlay, element });
+      return () => {
+        element.removeEventListener("click", click);
+        element.removeEventListener("mouseenter", enter);
+        element.removeEventListener("mouseleave", leave);
+        overlay.destroy();
+      };
+    }
+
     const marker = new google.maps.marker.AdvancedMarkerElement({
       map: map.native, position: { lng: latest.current.longitude, lat: latest.current.latitude },
       gmpDraggable: latest.current.draggable ?? false, anchorLeft: "-50%", anchorTop: "-50%",
     });
     marker.append(element);
-    const click = (event: MouseEvent) => { event.stopPropagation(); latest.current.onClick?.(event); };
-    const enter = (event: MouseEvent) => latest.current.onMouseEnter?.(event);
-    const leave = (event: MouseEvent) => latest.current.onMouseLeave?.(event);
-    element.addEventListener("click", click); element.addEventListener("mouseenter", enter); element.addEventListener("mouseleave", leave);
     const dragEvents = (["dragstart", "drag", "dragend"] as const).map(name => marker.addListener(name, (event: google.maps.MapMouseEvent) => {
       const position = event.latLng?.toJSON();
       if (position) latest.current[name === "dragstart" ? "onDragStart" : name === "drag" ? "onDrag" : "onDragEnd"]?.(position);
     }));
-    setValue({ marker, element });
+    setValue({ marker, overlay: null, element });
     return () => {
       dragEvents.forEach(handle => handle.remove());
       element.removeEventListener("click", click); element.removeEventListener("mouseenter", enter); element.removeEventListener("mouseleave", leave);
       marker.map = null; marker.remove();
     };
-  }, [map]);
+  }, [map, clean]);
   useEffect(() => {
     if (!value) return;
+    if (value.overlay) {
+      value.overlay.update({
+        position: { lng: props.longitude, lat: props.latitude },
+        anchor: props.anchor ?? "center",
+        offset: props.offset ?? [0, 0],
+        rotation: props.rotation ?? 0,
+      });
+      return;
+    }
+    if (!value.marker) return;
     value.marker.position = { lng: props.longitude, lat: props.latitude };
     value.marker.gmpDraggable = props.draggable ?? false;
     value.marker.anchorTop = props.anchor === "bottom" ? "-100%" : props.anchor === "top" ? "0%" : "-50%";
@@ -169,15 +286,22 @@ function MarkerContent({ children, className }: MarkerContentProps) {
 type MarkerPopupProps = { children: ReactNode; className?: string; closeButton?: boolean; maxWidth?: string; offset?: number };
 function MarkerPopup({ children, className, maxWidth, offset = 16 }: MarkerPopupProps) {
   const { map } = useMap();
-  const { marker, element } = useMarker();
+  const { marker, overlay, element } = useMarker();
   const content = useMemo(() => document.createElement("div"), []);
   useEffect(() => {
     if (!map) return;
     const popup = new google.maps.InfoWindow({ content, maxWidth: maxWidth ? parseInt(maxWidth) : 360, pixelOffset: new google.maps.Size(0, -offset) });
-    const open = () => popup.open({ map: map.native, anchor: marker, shouldFocus: false });
+    const open = () => {
+      if (marker) {
+        popup.open({ map: map.native, anchor: marker, shouldFocus: false });
+      } else if (overlay) {
+        popup.setPosition(overlay.getPosition());
+        popup.open({ map: map.native, shouldFocus: false });
+      }
+    };
     element.addEventListener("click", open);
     return () => { element.removeEventListener("click", open); popup.close(); };
-  }, [map, marker, element, content, maxWidth, offset]);
+  }, [map, marker, overlay, element, content, maxWidth, offset]);
   return createPortal(<div className={cn("bg-popover text-popover-foreground p-2 text-sm", className)}>{children}</div>, content);
 }
 type MarkerTooltipProps = { children: ReactNode; className?: string; offset?: number; maxWidth?: string };

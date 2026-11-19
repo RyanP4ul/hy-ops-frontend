@@ -39,7 +39,6 @@ export type RoadLeg = {
 };
 export type RoadRoute = RoadLeg & { legs: RoadLeg[] };
 
-/** Ordered waypoints, including the current GPS origin, identify the road route. */
 export function roadRouteKey(points: Coordinates[]): string {
   return points.map((point) => point.join(",")).join(";");
 }
@@ -50,7 +49,7 @@ export function parseRoadRoute(
 ): RoadRoute {
   const route = osrmSchema.parse(data).routes[0];
   if (route.legs.length !== waypointCount - 1) {
-    throw new Error("The routing service returned an incomplete route.");
+    throw new Error("Incomplete road route.");
   }
 
   return {

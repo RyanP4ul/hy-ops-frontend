@@ -10,10 +10,6 @@ type Options = {
   autoDispatch: boolean;
 };
 
-/**
- * TESTING TOOL. Animates vehicles along their routes once per second, purely in the
- * browser. Never calls the API or persists changes.
- */
 export function useFleetSimulation({
   setVehicles,
   enabled,

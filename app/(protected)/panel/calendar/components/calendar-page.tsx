@@ -1,13 +1,8 @@
 "use client";
-import { DeliveryCalendarDetails } from "@/components/delivery-calendar-details";
-import { calendarEventKey } from "@/lib/delivery-calendar";
-import { layoutOverlappingEvents } from "@/lib/calendar-layout";
 
 import * as React from "react";
 import {
   addDays,
-  addMonths,
-  addWeeks,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -19,91 +14,57 @@ import {
   startOfWeek,
 } from "date-fns";
 import {
+  AlertTriangle,
   CalendarDays,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
-  Filter,
-  Plus,
+  Package,
+  RotateCcw,
+  Truck,
+  User,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { manilaCalendarNow, formatTimeRange } from "@/utils/date-util";
+import { DeliveryCalendarDetails } from "@/components/delivery-calendar-details";
 import { useModal } from "@/components/providers/modal-provider";
-import { DialogMode } from "@/types/dialog";
-import { useCalendar } from "../provider";
+import { Button } from "@/components/ui/button";
+import { layoutOverlappingEvents } from "@/lib/calendar-layout";
+import {
+  DAILY_STOP_CAPACITY,
+  calendarEventKey,
+  getCalendarEventVisualEndTime,
+  getDeliveryEffectiveStatus,
+  getDeliveryStopStats,
+} from "@/lib/delivery-calendar";
 import type { CalendarEventResponse } from "@/schema/calendar";
+import { DialogMode } from "@/types/dialog";
+import { formatTimeRange } from "@/utils/date-util";
+import { useCalendar } from "../provider";
+import Control from "./control";
+import { DeliveryAgendaView } from "./delivery-agenda-view";
+import { DeliverySummaryStrip } from "./delivery-summary-strip";
+import Filters from "./filters";
+import {
+  DELIVERY_STATUS_STYLES,
+  MANUAL_CATEGORY_STYLES,
+} from "./styles";
+import type { DeliveryEffectiveStatus } from "@/lib/delivery-calendar";
+
+const LEGEND_STATUSES: DeliveryEffectiveStatus[] = [
+  "scheduled",
+  "overdue",
+  "in_transit",
+  "returning",
+  "completed",
+  "cancelled",
+];
 
 const START_HOUR = 0;
 const END_HOUR = 24;
-const HOUR_HEIGHT = 64;
+const HOUR_HEIGHT = 68;
+const DELIVERY_CARD_MIN_HEIGHT = 56;
 const HOURS = Array.from(
   { length: END_HOUR - START_HOUR },
   (_, index) => START_HOUR + index,
 );
-
-type CalendarCategory =
-  | "ORDER_FULFILLMENT"
-  | "STAFF_SCHEDULE"
-  | "DELIVERY"
-  | "INVENTORY_WAREHOUSE"
-  | "VEHICLE_MAINTENANCE"
-  | "MEETING_APPOINTMENT"
-  | "OTHER";
-
-const CATEGORIES: CalendarCategory[] = [
-  "ORDER_FULFILLMENT", "STAFF_SCHEDULE",
-  "DELIVERY",
-  "INVENTORY_WAREHOUSE",
-  "VEHICLE_MAINTENANCE",
-  "MEETING_APPOINTMENT",
-  "OTHER",
-];
-
-const CATEGORY_STYLES: Record<
-  CalendarCategory,
-  { card: string; accent: string; dot: string; month: string }
-> = {
-  ORDER_FULFILLMENT: { card: "bg-orange-200 text-orange-950", accent: "border-orange-500", dot: "bg-orange-500", month: "bg-orange-500/10" },
-  STAFF_SCHEDULE: { card: "bg-teal-200 text-teal-950", accent: "border-teal-500", dot: "bg-teal-500", month: "bg-teal-500/10" },
-  DELIVERY: {
-    card: "bg-amber-200 text-amber-950 hover:bg-amber-300",
-    accent: "border-amber-500",
-    dot: "bg-amber-500",
-    month: "bg-amber-500/10 text-amber-900",
-  },
-  INVENTORY_WAREHOUSE: {
-    card: "bg-lime-200 text-lime-950 hover:bg-lime-300",
-    accent: "border-lime-500",
-    dot: "bg-lime-500",
-    month: "bg-lime-500/10 text-lime-900",
-  },
-  VEHICLE_MAINTENANCE: {
-    card: "bg-violet-200 text-violet-950 hover:bg-violet-300",
-    accent: "border-violet-500",
-    dot: "bg-violet-500",
-    month: "bg-violet-500/10 text-violet-900",
-  },
-  MEETING_APPOINTMENT: {
-    card: "bg-sky-200 text-sky-950 hover:bg-sky-300",
-    accent: "border-sky-500",
-    dot: "bg-sky-500",
-    month: "bg-sky-500/10 text-sky-900",
-  },
-  OTHER: {
-    card: "bg-slate-200 text-slate-950 hover:bg-slate-300",
-    accent: "border-slate-500",
-    dot: "bg-slate-500",
-    month: "bg-slate-500/10 text-slate-900",
-  },
-};
 
 function atTime(day: Date, hour: number, minute = 0) {
   const date = new Date(day);
@@ -111,31 +72,27 @@ function atTime(day: Date, hour: number, minute = 0) {
   return date;
 }
 
-export default function Page() {
+export default function CalendarPage() {
   const {
     eventQuery,
     deliveryQuery,
     filteredEvents,
+    dailyDeliveryStats,
     view,
     setView,
     selectedDate,
     setSelectedDate,
     calendarDays,
-    selectedCategories,
-    setSelectedCategories,
+    now,
+    nowMs,
     setSelected,
   } = useCalendar();
   const { openModal } = useModal();
 
-  const [selectedDeliveryId, setSelectedDeliveryId] = React.useState<number | null>(null);
-  const [datePickerOpen, setDatePickerOpen] = React.useState(false);
-  const [now, setNow] = React.useState(() => manilaCalendarNow());
-
-  // Keep the current-time marker fresh without forcing frequent rerenders.
-  React.useEffect(() => {
-    const intervalId = window.setInterval(() => setNow(manilaCalendarNow()), 60_000);
-    return () => window.clearInterval(intervalId);
-  }, []);
+  const [selectedDeliveryId, setSelectedDeliveryId] = React.useState<
+    number | null
+  >(null);
+  const timeGridScrollRef = React.useRef<HTMLDivElement>(null);
 
   const monthDays = React.useMemo(() => {
     const monthStart = startOfMonth(selectedDate);
@@ -147,69 +104,46 @@ export default function Page() {
     });
   }, [selectedDate]);
 
-  const visibleEventCount = React.useMemo(() => {
-    const events = filteredEvents ?? [];
-    let rangeStart: Date;
-    let rangeEndExclusive: Date;
+  const earliestVisibleHour = React.useMemo(() => {
+    const firstDay = calendarDays[0];
+    const lastDay = calendarDays[calendarDays.length - 1];
+    if (!firstDay || !lastDay) return 6;
 
-    if (view === "Day") {
-      rangeStart = startOfDay(selectedDate);
-      rangeEndExclusive = startOfDay(addDays(selectedDate, 1));
-    } else if (view === "Week") {
-      const firstDay =
-        calendarDays[0] ?? startOfWeek(selectedDate, { weekStartsOn: 1 });
-      const lastDay =
-        calendarDays[calendarDays.length - 1] ??
-        endOfWeek(selectedDate, { weekStartsOn: 1 });
-      rangeStart = startOfDay(firstDay);
-      rangeEndExclusive = startOfDay(addDays(lastDay, 1));
-    } else {
-      rangeStart = startOfMonth(selectedDate);
-      rangeEndExclusive = startOfMonth(addMonths(selectedDate, 1));
+    const rangeStart = startOfDay(firstDay);
+    const rangeEnd = startOfDay(addDays(lastDay, 1));
+    let targetHour = 6;
+
+    for (const event of filteredEvents) {
+      if (event.end_time > rangeStart && event.start_time < rangeEnd) {
+        const hour = event.start_time.getHours();
+        if (hour < targetHour) targetHour = hour;
+      }
     }
+    return targetHour;
+  }, [calendarDays, filteredEvents]);
 
-    // Count an event once if any part of it falls inside the current view.
-    return events.filter(
-      (event) =>
-        event.end_time > rangeStart && event.start_time < rangeEndExclusive,
-    ).length;
-  }, [calendarDays, filteredEvents, selectedDate, view]);
+  // Auto-scroll Week/Day time grid to working hours (6:00 AM) or the earliest visible run.
+  React.useEffect(() => {
+    if (view !== "Week" && view !== "Day") return;
+    const container = timeGridScrollRef.current;
+    if (!container) return;
 
-  const heading = React.useMemo(() => {
-    if (view === "Day") return format(selectedDate, "EEE, MMM d, yyyy");
-    if (view === "Week") {
-      const firstDay =
-        calendarDays[0] ?? startOfWeek(selectedDate, { weekStartsOn: 1 });
-      const lastDay =
-        calendarDays[calendarDays.length - 1] ??
-        endOfWeek(selectedDate, { weekStartsOn: 1 });
-      return `${format(firstDay, "MMM d")} – ${format(lastDay, "MMM d, yyyy")}`;
-    }
-    return format(selectedDate, "MMMM, yyyy");
-  }, [calendarDays, selectedDate, view]);
-
-  function navigateDate(direction: -1 | 1) {
-    setSelectedDate((current) => {
-      if (view === "Day") return addDays(current, direction);
-      if (view === "Week") return addWeeks(current, direction);
-      return addMonths(current, direction);
-    });
-  }
-
-  function toggleCategory(category: CalendarCategory) {
-    setSelectedCategories((current) => {
-      const next = current.includes(category)
-        ? current.filter((item) => item !== category)
-        : [...current, category];
-
-      // Selecting every category is equivalent to clearing the filter.
-      return next.length === CATEGORIES.length ? [] : next;
-    });
-  }
+    const scrollTop = Math.max(0, (earliestVisibleHour - 0.5) * HOUR_HEIGHT);
+    container.scrollTo({ top: scrollTop, behavior: "auto" });
+  }, [view, earliestVisibleHour]);
 
   function showDay(day: Date) {
     setSelectedDate(day);
     setView("Day");
+  }
+
+  function openManualEventEditor(event: CalendarEventResponse) {
+    setSelected({ id: Number(event.id), version: event.version });
+    openModal(DialogMode.EDIT, {
+      title: "Edit Event",
+      description: "Edit the details of your event",
+      action: "Save",
+    });
   }
 
   function renderEventCard(
@@ -217,37 +151,122 @@ export default function Page() {
     compact = false,
     dense = false,
   ) {
+    if (event.delivery) {
+      const delivery = event.delivery;
+      const effectiveStatus = getDeliveryEffectiveStatus(delivery, nowMs);
+      const style = DELIVERY_STATUS_STYLES[effectiveStatus];
+      const stats = getDeliveryStopStats(delivery);
+      const eventTime = `Departure ${format(event.start_time, "h:mm a")}`;
+
+      return (
+        <button
+          key={calendarEventKey(event)}
+          type="button"
+          title={`${event.title} · ${delivery.driver} · ${delivery.warehouse} · ${eventTime}`}
+          aria-label={`View ${event.title}, ${eventTime}`}
+          onClick={() => setSelectedDeliveryId(delivery.id)}
+          className={`h-full w-full overflow-clip rounded-md border border-l-[3px] text-left shadow-xs transition hover:shadow-md focus-visible:z-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring ${style.card} ${style.accent} ${
+            delivery.status === "cancelled" ? "border-dashed opacity-75" : ""
+          } ${compact ? "px-2 py-1.5 text-xs" : dense ? "px-2 py-1 text-[11px]" : "p-2 text-xs"}`}
+        >
+          <div className="flex items-center gap-1">
+            {effectiveStatus === "overdue" ? (
+              <AlertTriangle
+                className="size-3 shrink-0 text-rose-700 dark:text-rose-300"
+                aria-hidden="true"
+              />
+            ) : (
+              <Truck className="size-3 shrink-0 opacity-80" aria-hidden="true" />
+            )}
+            <span className="block truncate font-semibold leading-4">
+              {event.title}
+            </span>
+          </div>
+
+          <div className="mt-0.5 flex items-center justify-between gap-1 text-[11px] opacity-90">
+            <span className="inline-flex min-w-0 items-center gap-1 truncate">
+              <Clock3 className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{eventTime}</span>
+            </span>
+            {effectiveStatus === "overdue" && (
+              <span className="shrink-0 rounded bg-rose-600 px-1 py-0.25 text-[10px] font-semibold text-white">
+                Overdue
+              </span>
+            )}
+          </div>
+
+          {!compact && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] opacity-85">
+              <span className="inline-flex min-w-0 items-center gap-1 truncate">
+                <User className="size-3 shrink-0" aria-hidden="true" />
+                <span className="truncate">{delivery.driver}</span>
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-1">
+                <Package className="size-3 shrink-0" aria-hidden="true" />
+                {stats.total > 0
+                  ? `${stats.delivered}/${stats.total}`
+                  : "0 stops"}
+              </span>
+              {stats.pickups > 0 && (
+                <span className="inline-flex shrink-0 items-center gap-0.5 font-medium">
+                  <RotateCcw className="size-2.5 shrink-0" aria-hidden="true" />
+                  +{stats.pickups}
+                </span>
+              )}
+            </div>
+          )}
+
+          {compact && (
+            <div className="mt-0.5 flex items-center justify-between gap-1 text-[10px] opacity-80">
+              <span className="truncate">{delivery.driver}</span>
+              <span className="shrink-0 tabular-nums">
+                {stats.total > 0
+                  ? `${stats.delivered}/${stats.total} stops`
+                  : stats.pickups > 0
+                    ? `${stats.pickups} pickup${stats.pickups === 1 ? "" : "s"}`
+                    : "0 stops"}
+              </span>
+            </div>
+          )}
+        </button>
+      );
+    }
+
+    // Manual calendar note / operational event (visually subdued vs live deliveries)
     const style =
-      CATEGORY_STYLES[event.category as CalendarCategory] ??
-      CATEGORY_STYLES.OTHER;
-    const eventTime = event.delivery ? `Departure ${format(event.start_time, "h:mm a")}` : formatTimeRange(event.start_time, event.end_time);
+      MANUAL_CATEGORY_STYLES[event.category as CalendarCategory] ??
+      MANUAL_CATEGORY_STYLES.OTHER;
+    const eventTime = formatTimeRange(event.start_time, event.end_time);
 
     return (
       <button
         key={calendarEventKey(event)}
         type="button"
         title={`${event.title} · ${eventTime}`}
-        aria-label={`${event.delivery ? "View" : "Edit"} ${event.title}, ${eventTime}`}
-        onClick={() => {
-          if (event.delivery) { setSelectedDeliveryId(event.delivery.id); return; }
-          setSelected({ id: Number(event.id), version: event.version });
-          openModal(DialogMode.EDIT, {
-            title: "Edit Event",
-            description: "Edit the details of your event",
-            action: "Save",
-          });
-        }}
-        className={`h-full w-full overflow-hidden rounded-md border border-l-[3px] text-left shadow-sm transition hover:shadow-md focus-visible:z-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${style.card} ${style.accent} ${event.delivery?.status === "cancelled" ? "border-dashed opacity-75" : ""} ${compact ? "px-2 py-1 text-xs" : dense ? "px-1.5 py-0.5 text-[11px]" : "p-2"}`}
+        aria-label={`Edit ${event.title}, ${eventTime}`}
+        onClick={() => openManualEventEditor(event)}
+        className={`h-full w-full overflow-clip rounded-md border border-dashed border-l-[3px] text-left transition hover:shadow-sm focus-visible:z-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring ${style.card} ${style.accent} ${
+          compact
+            ? "px-2 py-1 text-xs"
+            : dense
+              ? "px-1.5 py-0.5 text-[11px]"
+              : "p-2 text-xs"
+        }`}
       >
-        <span
-          className={`block truncate font-semibold ${dense ? "leading-4" : "leading-5"}`}
-        >
-          {event.title}
-        </span>
-        {compact && event.delivery && <span className="block truncate text-[11px]">{eventTime}</span>}
+        <div className="flex items-center gap-1">
+          <CalendarDays
+            className="size-3 shrink-0 opacity-65"
+            aria-hidden="true"
+          />
+          <span
+            className={`block truncate font-medium ${dense ? "leading-4" : "leading-5"}`}
+          >
+            {event.title}
+          </span>
+        </div>
         {!compact && !dense && (
-          <span className="mt-1 flex items-center gap-1 text-xs opacity-80">
-            <Clock3 className="size-3 shrink-0" />
+          <span className="mt-1 flex items-center gap-1 text-[11px] opacity-75">
+            <Clock3 className="size-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{eventTime}</span>
           </span>
         )}
@@ -255,425 +274,416 @@ export default function Page() {
     );
   }
 
+  const isInitialLoading = deliveryQuery.isPending && eventQuery.isPending;
+
   return (
-    <div className="w-full min-w-0 space-y-6 text-foreground">
-      <DeliveryCalendarDetails delivery={deliveryQuery.data?.find(delivery => delivery.id === selectedDeliveryId)} onClose={() => setSelectedDeliveryId(null)} />
-      {deliveryQuery.isPending && <p role="status" className="text-sm text-muted-foreground">Loading deliveries...</p>}
-      {deliveryQuery.isError && <div role="alert" className="flex items-center gap-3 text-sm"><span>Unable to load deliveries.</span><Button variant="outline" size="sm" onClick={() => void deliveryQuery.refetch()}>Retry deliveries</Button></div>}
-      <p className="text-sm text-muted-foreground">All dates and times are in Asia/Manila (UTC+8).</p>
-      {eventQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">
-        <span>{eventQuery.data ? "Unable to refresh. Showing the last loaded events." : "Unable to load calendar events."}</span>
-        <Button variant="outline" size="sm" disabled={eventQuery.isFetching} onClick={() => void eventQuery.refetch()}>Retry</Button>
-      </div>}
-      {/* Calendar controls */}
-      <div className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex items-center gap-1 pt-0.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="size-8 rounded-full"
-              aria-label="Previous date range"
-              onClick={() => navigateDate(-1)}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="size-8 rounded-full"
-              aria-label="Next date range"
-              onClick={() => navigateDate(1)}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="ml-1 h-8 rounded-full px-3"
-              onClick={() => setSelectedDate(manilaCalendarNow())}
-            >
-              Today
-            </Button>
-          </div>
+    <div className="w-full min-w-0 space-y-5 text-foreground">
+      <DeliveryCalendarDetails
+        delivery={deliveryQuery.data?.find(
+          (delivery) => delivery.id === selectedDeliveryId,
+        )}
+        onClose={() => setSelectedDeliveryId(null)}
+      />
 
-          <div className="min-w-0">
-            <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-              <PopoverTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="-ml-2 h-auto max-w-full justify-start gap-1.5 px-2 py-1 text-left hover:bg-muted/60"
-                    aria-label="Choose calendar date"
-                  >
-                    <span className="truncate text-lg font-semibold tracking-tight sm:text-2xl">
-                      {heading}
-                    </span>
-                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-                  </Button>
-                }
-              />
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  month={selectedDate}
-                  weekStartsOn={1}
-                  onMonthChange={setSelectedDate}
-                  onSelect={(date) => {
-                    if (!date) return;
-                    setSelectedDate(date);
-                    setDatePickerOpen(false);
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-sky-700 dark:text-sky-300">
-              <CalendarDays className="size-4" />
-              {visibleEventCount} {visibleEventCount === 1 ? "event" : "events"}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-full bg-muted p-1">
-            {(["Day", "Week", "Month"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setView(mode)}
-                aria-pressed={view === mode}
-                className={`min-w-20 rounded-full px-4 py-2 text-sm transition ${
-                  view === mode
-                    ? "bg-background font-semibold text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
+      {deliveryQuery.isError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm"
+        >
+          <span>Unable to load deliveries.</span>
           <Button
-            type="button"
-            className="rounded-full"
-            onClick={() =>
-              openModal(DialogMode.INSERT, {
-                title: "New Event",
-                description: "Create a new event in your calendar",
-                action: "Create",
-              })
-            }
-          >
-            <Plus className="mr-2 size-4" />
-            New Event
-          </Button>
-        </div>
-      </div>
-
-      {/* Category filters */}
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Filter className="size-4 text-muted-foreground" />
-          <span>Filter by category</span>
-          <span className="text-xs font-normal text-muted-foreground">
-            {selectedCategories.length === 0
-              ? "Showing all"
-              : `${selectedCategories.length} selected`}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
+            variant="outline"
             size="sm"
-            variant={selectedCategories.length === 0 ? "default" : "outline"}
-            className="rounded-full"
-            aria-pressed={selectedCategories.length === 0}
-            onClick={() => setSelectedCategories([])}
+            disabled={deliveryQuery.isFetching}
+            onClick={() => void deliveryQuery.refetch()}
           >
-            All categories
+            Retry deliveries
           </Button>
-          {CATEGORIES.map((category) => {
-            const isSelected = selectedCategories.includes(category);
-            return (
-              <Button
-                key={category}
-                type="button"
-                size="sm"
-                variant={isSelected ? "default" : "outline"}
-                className="rounded-full"
-                aria-pressed={isSelected}
-                onClick={() => toggleCategory(category)}
-              >
-                <span
-                  className={`mr-2 size-2 rounded-full ${CATEGORY_STYLES[category].dot}`}
-                />
-                {category.replaceAll("_", " ")}
-              </Button>
-            );
-          })}
         </div>
-      </div>
+      )}
 
-      <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-        {eventQuery.isPending ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            Loading calendar events…
+      {eventQuery.isError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm"
+        >
+          <span>
+            {eventQuery.data
+              ? "Unable to refresh. Showing the last loaded events."
+              : "Unable to load calendar events."}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={eventQuery.isFetching}
+            onClick={() => void eventQuery.refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
+      <Control />
+
+      <DeliverySummaryStrip />
+
+      <Filters />
+
+      <div className="overflow-clip rounded-xl border bg-background shadow-sm">
+        {isInitialLoading ? (
+          <div className="flex flex-col items-center gap-2 p-10 text-center text-sm text-muted-foreground">
+            <progress
+              aria-label="Loading delivery calendar"
+              className="h-1.5 w-40 overflow-clip rounded-full"
+            />
+            <span>Loading delivery schedule…</span>
           </div>
-        ) : (
-          <>
-            {view === "Month" ? (
-              <div className="overflow-x-auto">
-                <div className="min-w-[840px]">
-                  <div className="grid grid-cols-7 border-b bg-muted/20">
-                    {[
-                      "Monday",
-                      "Tuesday",
-                      "Wednesday",
-                      "Thursday",
-                      "Friday",
-                      "Saturday",
-                      "Sunday",
-                    ].map((day) => (
-                      <div
-                        key={day}
-                        className="border-r px-3 py-3 text-center text-xs font-medium text-muted-foreground last:border-r-0"
-                      >
-                        {day}
-                      </div>
-                    ))}
+        ) : view === "Agenda" ? (
+          <DeliveryAgendaView
+            onSelectDelivery={setSelectedDeliveryId}
+            onEditEvent={openManualEventEditor}
+            onOpenDay={showDay}
+          />
+        ) : view === "Month" ? (
+          <div className="overflow-x-auto">
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-7 border-b bg-muted/20">
+                {[
+                  "Monday",
+                  "Tuesday",
+                  "Wednesday",
+                  "Thursday",
+                  "Friday",
+                  "Saturday",
+                  "Sunday",
+                ].map((day) => (
+                  <div
+                    key={day}
+                    className="border-r px-3 py-3 text-center text-xs font-medium text-muted-foreground last:border-r-0"
+                  >
+                    {day}
                   </div>
-                  <div className="grid grid-cols-7">
-                    {monthDays.map((day) => {
-                      const dayStart = startOfDay(day);
-                      const dayEnd = startOfDay(addDays(day, 1));
-                      const dayEvents = (filteredEvents ?? [])
-                        .filter(
-                          (event) =>
-                            event.end_time > dayStart &&
-                            event.start_time < dayEnd,
-                        )
-                        .sort(
-                          (a, b) =>
-                            a.start_time.getTime() - b.start_time.getTime(),
-                        );
+                ))}
+              </div>
+              <div className="grid grid-cols-7">
+                {monthDays.map((day) => {
+                  const dayStart = startOfDay(day);
+                  const dayEnd = startOfDay(addDays(day, 1));
+                  const dateKey = format(day, "yyyy-MM-dd");
+                  const load = dailyDeliveryStats.get(dateKey);
+                  const isSunday = day.getDay() === 0;
+                  const dayEvents = filteredEvents
+                    .filter(
+                      (event) =>
+                        event.end_time > dayStart && event.start_time < dayEnd,
+                    )
+                    .sort(
+                      (a, b) =>
+                        Number(Boolean(b.delivery)) -
+                          Number(Boolean(a.delivery)) ||
+                        a.start_time.getTime() - b.start_time.getTime(),
+                    );
 
-                      return (
-                        <div
-                          key={format(day, "yyyy-MM-dd")}
-                          className={`min-h-32 border-b border-r p-2 last:border-r-0 ${
-                            !isSameMonth(day, selectedDate)
-                              ? "bg-muted/20 text-muted-foreground"
+                  return (
+                    <div
+                      key={dateKey}
+                      className={`min-h-36 border-b border-r p-2 last:border-r-0 ${
+                        !isSameMonth(day, selectedDate)
+                          ? "bg-muted/20 text-muted-foreground"
+                          : isSunday
+                            ? "bg-muted/10"
+                            : ""
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-1">
+                        <div className="min-w-0">
+                          {load ? (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
+                                load.overdue > 0
+                                  ? "bg-rose-500/15 text-rose-800 dark:text-rose-200"
+                                  : load.stops >= DAILY_STOP_CAPACITY
+                                    ? "bg-amber-500/15 text-amber-900 dark:text-amber-200"
+                                    : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {load.runs}r · {load.stops}/{DAILY_STOP_CAPACITY}
+                            </span>
+                          ) : isSunday ? (
+                            <span className="text-[10px] text-muted-foreground/70">
+                              Closed
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => showDay(day)}
+                          aria-label={`Show events for ${format(day, "MMMM d, yyyy")}`}
+                          className={`flex size-7 shrink-0 items-center justify-center rounded-full text-sm transition hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring ${
+                            isSameDay(day, now)
+                              ? "bg-slate-900 font-semibold text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900"
                               : ""
                           }`}
                         >
-                          <div className="mb-2 flex justify-end">
-                            <button
-                              type="button"
-                              onClick={() => showDay(day)}
-                              aria-label={`Show events for ${format(day, "MMMM d, yyyy")}`}
-                              className={`flex size-7 items-center justify-center rounded-full text-sm transition hover:bg-muted ${
-                                isSameDay(day, now)
-                                  ? "bg-slate-900 font-semibold text-white hover:bg-slate-700"
-                                  : ""
-                              }`}
-                            >
-                              {format(day, "d")}
-                            </button>
-                          </div>
-                          <div className="space-y-1">
-                            {dayEvents
-                              .slice(0, 3)
-                              .map((event) => renderEventCard(event, true))}
-                            {dayEvents.length > 3 && (
-                              <button
-                                type="button"
-                                onClick={() => showDay(day)}
-                                className="w-full rounded px-1 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                                aria-label={`View ${dayEvents.length - 3} more events on ${format(day, "MMMM d")}`}
-                              >
-                                +{dayEvents.length - 3} more
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <div
-                  className="min-w-[620px]"
-                  style={{
-                    minWidth:
-                      view === "Week"
-                        ? `${84 + calendarDays.length * 190}px`
-                        : "620px",
-                  }}
-                >
-                  {/* Day labels */}
-                  <div
-                    className="grid border-b bg-muted/20"
-                    style={{
-                      gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(${view === "Week" ? "190px" : "0"}, 1fr))`,
-                    }}
-                  >
-                    <div className="flex items-center justify-center border-r px-2 py-4 text-xs font-medium text-muted-foreground">
-                      PHT (UTC+8)
+                          {format(day, "d")}
+                        </button>
+                      </div>
+
+                      <div className="space-y-1">
+                        {dayEvents
+                          .slice(0, 3)
+                          .map((event) => renderEventCard(event, true))}
+                        {dayEvents.length > 3 && (
+                          <button
+                            type="button"
+                            onClick={() => showDay(day)}
+                            className="w-full rounded px-1.5 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label={`View ${dayEvents.length - 3} more events on ${format(day, "MMMM d")}`}
+                          >
+                            +{dayEvents.length - 3} more
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {calendarDays.map((day) => (
-                      <button
-                        key={format(day, "yyyy-MM-dd")}
-                        type="button"
-                        onClick={() => showDay(day)}
-                        className="border-r px-2 py-3 text-center last:border-r-0 hover:bg-muted/40"
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            ref={timeGridScrollRef}
+            className="max-h-[72dvh] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+          >
+            <div
+              className="min-w-[620px]"
+              style={{
+                minWidth:
+                  view === "Week"
+                    ? `${84 + calendarDays.length * 196}px`
+                    : "620px",
+              }}
+            >
+              {/* Sticky Day headers with daily delivery load pills */}
+              <div
+                className="sticky top-0 z-30 grid border-b bg-background/95 backdrop-blur-xs"
+                style={{
+                  gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(${view === "Week" ? "196px" : "0"}, 1fr))`,
+                }}
+              >
+                <div className="flex items-center justify-center border-r px-2 py-3 text-xs font-medium text-muted-foreground">
+                  PHT (UTC+8)
+                </div>
+                {calendarDays.map((day) => {
+                  const dateKey = format(day, "yyyy-MM-dd");
+                  const load = dailyDeliveryStats.get(dateKey);
+                  const isSunday = day.getDay() === 0;
+
+                  return (
+                    <button
+                      key={dateKey}
+                      type="button"
+                      onClick={() => showDay(day)}
+                      className="flex flex-col items-center gap-1 border-r px-2 py-2.5 text-center transition last:border-r-0 hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                    >
+                      <span
+                        className={`flex size-8 items-center justify-center rounded-full text-base font-semibold leading-6 ${
+                          isSameDay(day, now)
+                            ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                            : ""
+                        }`}
                       >
+                        {format(day, "d")}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(day, "EEEE")}
+                      </span>
+                      {load ? (
                         <span
-                          className={`mx-auto flex size-8 items-center justify-center rounded-full text-lg font-semibold leading-6 ${
-                            isSameDay(day, now) ? "bg-slate-900 text-white" : ""
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums ${
+                            load.overdue > 0
+                              ? "bg-rose-500/15 text-rose-800 dark:text-rose-200"
+                              : load.stops >= DAILY_STOP_CAPACITY
+                                ? "bg-amber-500/15 text-amber-900 dark:text-amber-200"
+                                : "bg-sky-500/10 text-sky-800 dark:text-sky-200"
                           }`}
                         >
-                          {format(day, "d")}
+                          {load.runs} {load.runs === 1 ? "run" : "runs"} ·{" "}
+                          {load.stops}/{DAILY_STOP_CAPACITY} stops
                         </span>
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {format(day, "EEEE")}
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/70">
+                          {isSunday ? "Sunday (closed)" : "No runs"}
                         </span>
-                      </button>
-                    ))}
-                  </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
-                  {/* Time slots and side-by-side event cards */}
-                  <div
-                    className="grid"
-                    style={{
-                      gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(${view === "Week" ? "190px" : "0"}, 1fr))`,
-                    }}
-                  >
+              {/* Time slots and side-by-side cards */}
+              <div
+                className="grid"
+                style={{
+                  gridTemplateColumns: `84px repeat(${calendarDays.length}, minmax(${view === "Week" ? "196px" : "0"}, 1fr))`,
+                }}
+              >
+                <div
+                  className="relative border-r bg-muted/10"
+                  style={{ height: HOURS.length * HOUR_HEIGHT }}
+                >
+                  {HOURS.map((hour, index) => (
                     <div
-                      className="relative border-r"
+                      key={hour}
+                      className="absolute right-0 z-10 -translate-y-1/2 px-3 text-xs font-medium text-muted-foreground"
+                      style={{ top: index * HOUR_HEIGHT + HOUR_HEIGHT / 2 }}
+                    >
+                      {format(atTime(selectedDate, hour), "hh a")}
+                    </div>
+                  ))}
+                </div>
+
+                {calendarDays.map((day) => {
+                  const dayStart = atTime(day, START_HOUR);
+                  const dayEnd = atTime(day, END_HOUR);
+                  const dayEvents = filteredEvents
+                    .filter(
+                      (event) =>
+                        event.end_time > dayStart && event.start_time < dayEnd,
+                    )
+                    .sort(
+                      (a, b) =>
+                        a.start_time.getTime() - b.start_time.getTime(),
+                    );
+                  const positionedEvents = layoutOverlappingEvents(
+                    dayEvents,
+                    (event) => getCalendarEventVisualEndTime(event, 55),
+                  );
+                  const isCurrentDay = isSameDay(day, now);
+                  const isNowInGrid = now >= dayStart && now < dayEnd;
+                  const currentTimeTop =
+                    ((now.getTime() - dayStart.getTime()) / 3_600_000) *
+                    HOUR_HEIGHT;
+
+                  return (
+                    <div
+                      key={format(day, "yyyy-MM-dd")}
+                      className="relative border-r last:border-r-0"
                       style={{ height: HOURS.length * HOUR_HEIGHT }}
                     >
                       {HOURS.map((hour, index) => (
                         <div
                           key={hour}
-                          className="absolute right-0 z-10 -translate-y-1/2 bg-background px-3 text-xs font-medium text-muted-foreground"
-                          style={{ top: index * HOUR_HEIGHT + HOUR_HEIGHT / 2 }}
-                        >
-                          {format(atTime(selectedDate, hour), "hh a")}
-                        </div>
+                          className={`pointer-events-none absolute left-0 right-0 border-t border-border/75 ${
+                            hour < 6 || hour >= 20 ? "bg-muted/15" : ""
+                          }`}
+                          style={{
+                            top: index * HOUR_HEIGHT,
+                            height: HOUR_HEIGHT,
+                          }}
+                        />
                       ))}
-                    </div>
 
-                    {calendarDays.map((day) => {
-                      const dayStart = atTime(day, START_HOUR);
-                      const dayEnd = atTime(day, END_HOUR);
-                      const dayEvents = (filteredEvents ?? [])
-                        .filter(
-                          (event) =>
-                            event.end_time > dayStart &&
-                            event.start_time < dayEnd,
-                        )
-                        .sort(
-                          (a, b) =>
-                            a.start_time.getTime() - b.start_time.getTime(),
-                        );
-                      const positionedEvents =
-                        layoutOverlappingEvents(dayEvents);
-                      const isCurrentDay = isSameDay(day, now);
-                      const isNowInGrid = now >= dayStart && now < dayEnd;
-                      const currentTimeTop =
-                        ((now.getTime() - dayStart.getTime()) / 3_600_000) *
-                        HOUR_HEIGHT;
-
-                      return (
+                      {isCurrentDay && isNowInGrid && (
                         <div
-                          key={format(day, "yyyy-MM-dd")}
-                          className="relative border-r last:border-r-0"
-                          style={{ height: HOURS.length * HOUR_HEIGHT }}
+                          role="img"
+                          aria-label="Current time"
+                          className="pointer-events-none absolute left-0 right-0 z-20 border-t-2 border-rose-500"
+                          style={{ top: currentTimeTop }}
                         >
-                          {HOURS.map((hour, index) => (
-                            <div
-                              key={hour}
-                              className="pointer-events-none absolute left-0 right-0 border-t border-border/80"
-                              style={{ top: index * HOUR_HEIGHT }}
-                            />
-                          ))}
-                          <div
-                            className="pointer-events-none absolute left-0 right-0 border-t border-border/80"
-                            style={{ top: HOURS.length * HOUR_HEIGHT }}
-                          />
-
-                          {isCurrentDay && isNowInGrid && (
-                            <div
-                              role="img"
-                              aria-label="Current time"
-                              className="pointer-events-none absolute left-0 right-0 z-20 border-t-2 border-rose-500"
-                              style={{ top: currentTimeTop }}
-                            >
-                              <span className="absolute -left-1.5 -top-[5px] size-2.5 rounded-full bg-rose-500" />
-                            </div>
-                          )}
-
-                          {positionedEvents.map(
-                            ({ event, column, columnCount, columnSpan }) => {
-                              // Clip multi-day events to the visible hours of this day.
-                              const visibleStart = new Date(
-                                Math.max(
-                                  event.start_time.getTime(),
-                                  dayStart.getTime(),
-                                ),
-                              );
-                              const visibleEnd = new Date(
-                                Math.min(
-                                  event.end_time.getTime(),
-                                  dayEnd.getTime(),
-                                ),
-                              );
-                              const startMinutes =
-                                (visibleStart.getTime() - dayStart.getTime()) /
-                                60_000;
-                              const durationMinutes =
-                                (visibleEnd.getTime() -
-                                  visibleStart.getTime()) /
-                                60_000;
-                              const top = (startMinutes / 60) * HOUR_HEIGHT + 3;
-                              const height = Math.max(
-                                (durationMinutes / 60) * HOUR_HEIGHT - 6,
-                                28,
-                              );
-                              const left = (column / columnCount) * 100;
-                              const width = (columnSpan / columnCount) * 100;
-
-                              return (
-                                <div
-                                  key={calendarEventKey(event)}
-                                  className="absolute z-10"
-                                  style={{
-                                    top,
-                                    height,
-                                    left: `calc(${left}% + 3px)`,
-                                    width: `calc(${width}% - 6px)`,
-                                  }}
-                                >
-                                  {renderEventCard(event, false, height < 56)}
-                                </div>
-                              );
-                            },
-                          )}
+                          <span className="absolute -left-1.5 -top-[5px] size-2.5 rounded-full bg-rose-500" />
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                      )}
+
+                      {positionedEvents.map(
+                        ({ event, column, columnCount, columnSpan }) => {
+                          const visibleStart = new Date(
+                            Math.max(
+                              event.start_time.getTime(),
+                              dayStart.getTime(),
+                            ),
+                          );
+                          const visibleEnd = new Date(
+                            Math.min(
+                              event.end_time.getTime(),
+                              dayEnd.getTime(),
+                            ),
+                          );
+                          const startMinutes =
+                            (visibleStart.getTime() - dayStart.getTime()) /
+                            60_000;
+                          const durationMinutes =
+                            (visibleEnd.getTime() - visibleStart.getTime()) /
+                            60_000;
+                          const gridHeight = HOURS.length * HOUR_HEIGHT;
+                          const minHeight = event.delivery
+                            ? DELIVERY_CARD_MIN_HEIGHT
+                            : 28;
+                          const rawHeight = Math.max(
+                            (durationMinutes / 60) * HOUR_HEIGHT - 6,
+                            minHeight,
+                          );
+                          const rawTop = (startMinutes / 60) * HOUR_HEIGHT + 3;
+                          const top = Math.min(
+                            rawTop,
+                            Math.max(0, gridHeight - minHeight - 3),
+                          );
+                          const height = Math.min(
+                            rawHeight,
+                            Math.max(minHeight, gridHeight - top - 3),
+                          );
+                          const left = (column / columnCount) * 100;
+                          const width = (columnSpan / columnCount) * 100;
+
+                          return (
+                            <div
+                              key={calendarEventKey(event)}
+                              className="absolute z-10"
+                              style={{
+                                top,
+                                height,
+                                left: `calc(${left}% + 3px)`,
+                                width: `calc(${width}% - 6px)`,
+                              }}
+                            >
+                              {renderEventCard(
+                                event,
+                                false,
+                                !event.delivery && height < 56,
+                              )}
+                            </div>
+                          );
+                        },
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
-          </>
+            </div>
+          </div>
         )}
+
+        {/* Quiet color legend so every status is immediately understandable */}
+        <footer className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground/80">Legend:</span>
+          {LEGEND_STATUSES.map((status) => (
+            <span key={status} className="inline-flex items-center gap-1.5">
+              <span
+                className={`size-2 rounded-full ${DELIVERY_STATUS_STYLES[status].dot}`}
+                aria-hidden="true"
+              />
+              {DELIVERY_STATUS_STYLES[status].label}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-2.5 w-3.5 rounded-xs border border-dashed border-muted-foreground/60 bg-background"
+              aria-hidden="true"
+            />
+            Manual note
+          </span>
+        </footer>
       </div>
     </div>
   );

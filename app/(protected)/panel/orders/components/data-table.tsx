@@ -1,8 +1,6 @@
 "use client";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { formatCurrency } from "@/utils/date-util";
 
+import { formatCurrency } from "@/utils/date-util";
 import { QueryFeedback } from "@/components/query-feedback";
 import {
   ManagementListHeader,
@@ -10,31 +8,41 @@ import {
   ManagementSearch,
   ManagementTableView,
 } from "@/components/management-list";
-
+import {
+  formatOrderLabel,
+  getOrderStatusBadgeClass,
+} from "@/components/order-details";
 import { useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { DialogMode } from "@/types/dialog";
 import {
   getCoreRowModel,
+  getExpandedRowModel,
   useReactTable,
   type ColumnDef,
+  type ExpandedState,
+  type Row,
+  type Updater,
 } from "@tanstack/react-table";
 import {
   ArrowDownUp,
+  CalendarCheck,
   Check,
+  CheckCheck,
+  ChevronRight,
   CircleX,
   Edit,
   Eye,
+  Layers,
   NotepadText,
   Plus,
   Store,
-  Truck,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
-import { OrderRow } from "@/schema/order";
+import { formatOrderGroupCode, type OrderTableRow } from "@/schema/order";
 import { useOrders } from "../provider";
-import { WalkInSaleDialog } from "./walk-in/walk-in-sale-dialog";
 import {
   Select,
   SelectContent,
@@ -48,6 +56,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+const STATUS_DISPLAY_ORDER = [
+  "PENDING",
+  "PROCESSING",
+  "SCHEDULING",
+  "SCHEDULED",
+  "IN_TRANSIT",
+  "COMPLETED",
+  "CANCELLED",
+] as const;
+
 export default function DataTable() {
   const {
     ordersQuery,
@@ -56,102 +74,297 @@ export default function DataTable() {
     search,
     setSearch,
     setSelected,
+    setSelectedGroup,
     sortBy,
     setSortBy,
     deliveryType,
     setDeliveryType,
     startOrder,
-    walkInOpen,
     setWalkInOpen,
+    viewOrder,
   } = useOrders();
   const { openModal } = useModal();
-  const { viewOrder } = useOrders();
 
   const [searchInput, setSearchInput] = useState(search);
+  const [manualExpanded, setManualExpanded] = useState<Record<string, boolean>>({});
+  const [searchCollapsed, setSearchCollapsed] = useState<Record<string, boolean>>({});
+
+  const rows = useMemo(() => ordersQuery.data?.rows ?? [], [ordersQuery.data?.rows]);
+  const groupRowIds = useMemo(
+    () =>
+      rows
+        .filter((row) => row.entry_type === "GROUP" && row.order_group_id)
+        .map((row) => `group:${row.order_group_id}`),
+    [rows],
+  );
+  const hasSearch = Boolean(search.trim());
+
+  const expandedState = useMemo<ExpandedState>(() => {
+    if (!hasSearch) return manualExpanded;
+    const next: Record<string, boolean> = {};
+    for (const id of groupRowIds) {
+      if (!searchCollapsed[id]) {
+        next[id] = true;
+      }
+    }
+    return next;
+  }, [hasSearch, manualExpanded, groupRowIds, searchCollapsed]);
+
+  const handleExpandedChange = useCallback(
+    (updater: Updater<ExpandedState>) => {
+      const resolved =
+        typeof updater === "function" ? updater(expandedState) : updater;
+      if (resolved === true) {
+        const allOpen = Object.fromEntries(groupRowIds.map((id) => [id, true]));
+        if (hasSearch) {
+          setSearchCollapsed({});
+        } else {
+          setManualExpanded(allOpen);
+        }
+        return;
+      }
+      if (hasSearch) {
+        const nextCollapsed: Record<string, boolean> = {};
+        for (const id of groupRowIds) {
+          if (!resolved[id]) nextCollapsed[id] = true;
+        }
+        setSearchCollapsed(nextCollapsed);
+      } else {
+        setManualExpanded(resolved);
+      }
+    },
+    [expandedState, groupRowIds, hasSearch],
+  );
+
+  const allGroupsExpanded =
+    groupRowIds.length > 0 &&
+    groupRowIds.every(
+      (id) =>
+        expandedState === true || Boolean((expandedState as Record<string, boolean>)[id]),
+    );
 
   const debouncedSearch = useMemo(
     () =>
       debounce((value: string) => {
+        setSearchCollapsed({});
         setPage((current) => ({ ...current, pageIndex: 0 }));
         setSearch(value);
       }, 350),
     [setSearch, setPage],
   );
 
-  const sortableHeader = (id: string, label: string) => (
-    <button
-      type="button"
-      className="flex items-center gap-2 cursor-pointer text-left"
-      onClick={() => {
-        setPage((current) => ({ ...current, pageIndex: 0 }));
-        setSortBy((current) => {
-          if (current.id === id) {
+  const sortableHeader = useCallback(
+    (id: string, label: string) => (
+      <button
+        type="button"
+        className="flex min-h-6 items-center gap-2 cursor-pointer text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => {
+          setPage((current) => ({ ...current, pageIndex: 0 }));
+          setSortBy((current) => {
+            if (current.id === id) {
+              return {
+                id,
+                type: current.type === "asc" ? "desc" : "asc",
+              };
+            }
+
             return {
               id,
-              type: current.type === "asc" ? "desc" : "asc",
+              type: "asc",
             };
-          }
-
-          return {
-            id,
-            type: "asc",
-          };
-        });
-      }}
-    >
-      {label}
-      <ArrowDownUp className="size-3 text-muted-foreground" />
-    </button>
+          });
+        }}
+      >
+        {label}
+        <ArrowDownUp className="size-3 text-muted-foreground" aria-hidden="true" />
+      </button>
+    ),
+    [setPage, setSortBy],
   );
 
-  const columns = useMemo<ColumnDef<OrderRow & { version: number }>[]>(
+  const getHeaderAriaSort = useCallback(
+    (columnId: string): "ascending" | "descending" | undefined => {
+      if (sortBy.id !== columnId) return undefined;
+      return sortBy.type === "asc" ? "ascending" : "descending";
+    },
+    [sortBy.id, sortBy.type],
+  );
+
+  const columns = useMemo<ColumnDef<OrderTableRow>[]>(
     () => [
       {
         accessorKey: "product_number",
         header: () => sortableHeader("product_number", "Order Number"),
-        cell: ({ row }) => (
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="font-medium">{row.original.product_number}</p>
-              {(row.original.sales_channel === "WALK_IN" ||
-                row.original.delivery_type === "WALK_IN") && (
-                <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
-                  Walk-in sale
-                </span>
-              )}
+        cell: ({ row }) => {
+          const item = row.original;
+          const isGroup = row.depth === 0 && item.entry_type === "GROUP";
+          const isChild = row.depth > 0;
+
+          if (isGroup) {
+            const fullCode = item.order_group_number || item.product_number || "Order Group";
+            const shortCode = formatOrderGroupCode(fullCode);
+            const isExpanded = row.getIsExpanded();
+            const activeCount = item.active_member_count ?? item.order_group_size ?? 0;
+            const readyCount = item.ready_for_scheduling_count ?? 0;
+            const showReadiness =
+              activeCount > 0 &&
+              ((item.pending_action_count ?? 0) > 0 ||
+                (item.processing_action_count ?? 0) > 0 ||
+                readyCount > 0);
+
+            return (
+              <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  onClick={row.getToggleExpandedHandler()}
+                  aria-expanded={isExpanded}
+                  aria-label={`Orders in group ${fullCode}`}
+                  className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <ChevronRight
+                    className={`size-4 transition-transform duration-150 motion-reduce:transition-none ${
+                      isExpanded ? "rotate-90" : ""
+                    }`}
+                    aria-hidden="true"
+                  />
+                </button>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Layers
+                      className="size-3.5 shrink-0 text-primary"
+                      aria-hidden="true"
+                    />
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <span className="font-mono text-sm font-semibold text-foreground">
+                            {shortCode}
+                          </span>
+                        }
+                      />
+                      <TooltipContent>
+                        <p className="font-mono text-xs">{fullCode}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Badge variant="secondary" className="text-[11px] font-medium">
+                      {item.order_group_size ?? item.members?.length ?? 0} orders
+                    </Badge>
+                  </div>
+                  {showReadiness && (
+                    <p className="text-xs text-muted-foreground">
+                      {readyCount === activeCount
+                        ? `All ${activeCount} ready for scheduling`
+                        : `${readyCount} of ${activeCount} ready for scheduling`}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          if (isChild) {
+            return (
+              <div className="ml-3 border-l-2 border-primary/35 pl-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-foreground">
+                    {item.product_number}
+                  </p>
+                  {item.order_group_position != null && (
+                    <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+                      #{item.order_group_position} of {item.order_group_size}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="font-medium">{item.product_number}</p>
+                {(item.sales_channel === "WALK_IN" ||
+                  item.delivery_type === "WALK_IN") && (
+                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    Walk-in sale
+                  </span>
+                )}
+              </div>
             </div>
-            {row.original.order_group_number && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {row.original.order_group_number} /{" "}
-                {row.original.order_group_position} of{" "}
-                {row.original.order_group_size}
-              </p>
-            )}
-          </div>
-        ),
+          );
+        },
       },
       {
         accessorKey: "warehouse_name",
         header: () => sortableHeader("warehouse_name", "Warehouse"),
+        cell: ({ row }) => {
+          const item = row.original;
+          if (
+            row.depth === 0 &&
+            item.entry_type === "GROUP" &&
+            item.warehouse_names &&
+            item.warehouse_names.length > 1
+          ) {
+            return (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="text-sm font-medium text-muted-foreground underline decoration-dotted underline-offset-4">
+                      {item.warehouse_name}
+                    </span>
+                  }
+                />
+                <TooltipContent>
+                  <p>{item.warehouse_names.join(", ")}</p>
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
+          return <span>{item.warehouse_name || "—"}</span>;
+        },
       },
       {
         accessorKey: "shipping_address",
         header: "Shipping destination",
-        cell: ({ row }) => (
-          <p className="min-w-48 max-w-72 whitespace-normal text-sm">
-            {row.original.shipping_address || "Address unavailable"}
-          </p>
-        ),
+        cell: ({ row }) => {
+          const item = row.original;
+          if (
+            row.depth === 0 &&
+            item.entry_type === "GROUP" &&
+            item.destinations &&
+            item.destinations.length > 1
+          ) {
+            return (
+              <div className="min-w-48 max-w-72 space-y-0.5">
+                <p className="text-sm font-medium">
+                  {item.destinations.length} destinations
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {item.destinations[0]} +{item.destinations.length - 1} more
+                </p>
+              </div>
+            );
+          }
+          return (
+            <p className="min-w-48 max-w-72 whitespace-normal text-sm">
+              {item.shipping_address || "Address unavailable"}
+            </p>
+          );
+        },
       },
       {
         accessorKey: "customer_name",
         header: () => sortableHeader("customer_name", "Customer"),
         cell: ({ row }) => (
           <div className="min-w-36 space-y-1">
-            <p className="font-medium">{row.original.customer_name}</p>
-            <p className="text-xs text-muted-foreground">
-              {row.original.customer_company}
+            <p className={row.depth > 0 ? "text-sm text-muted-foreground" : "font-medium"}>
+              {row.original.customer_name}
             </p>
+            {row.original.customer_company && (
+              <p className="text-xs text-muted-foreground">
+                {row.original.customer_company}
+              </p>
+            )}
           </div>
         ),
       },
@@ -160,318 +373,401 @@ export default function DataTable() {
         header: () => sortableHeader("item_count", "Items"),
         cell: ({ row }) => (
           <div>
-            <p>{row.original.item_count} products</p>
-            <p className="text-xs text-muted-foreground">
-              {row.original.total_quantity} units
+            <p className="tabular-nums">
+              {row.original.item_count}{" "}
+              {row.original.item_count === 1 ? "product" : "products"}
+            </p>
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {row.original.total_quantity}{" "}
+              {row.original.total_quantity === 1 ? "unit" : "units"}
             </p>
           </div>
         ),
       },
-      // {
-      //   accessorKey: "delivery_type",
-      //   header: () => sortableHeader("delivery_type", "Delivery"),
-      //   cell: ({ row }) => {
-      //     const labels: Record<string, string> = {
-      //       LALAMOVE: "Lalamove",
-      //       PICKUP: "Customer pickup",
-      //       INTERNAL: "Company delivery",
-      //     };
-      //     return (
-      //       <Badge variant="secondary">
-      //         {labels[row.original.delivery_type] ?? row.original.delivery_type}
-      //       </Badge>
-      //     );
-      //   },
-      // },
       {
         accessorKey: "status",
         header: () => "Order Status",
         cell: ({ row }) => {
-          const statusLabels: Record<string, string> = {
-            PENDING: "Pending",
-            PROCESSING: "Processing",
-            SCHEDULING: "Scheduling",
-            SCHEDULED: "Scheduled",
-            IN_TRANSIT: "In Transit",
-            COMPLETED: "Completed",
-            CANCELLED: "Cancelled",
-          };
+          const item = row.original;
+          const isGroup = row.depth === 0 && item.entry_type === "GROUP";
 
-          const statusColors: Record<string, string> = {
-            PENDING:
-              "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-            PROCESSING:
-              "border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-            IN_TRANSIT:
-              "border border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
-            COMPLETED:
-              "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
-            CANCELLED:
-              "border border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
-          };
+          if (isGroup && item.status === "MIXED" && item.status_counts) {
+            const entries = STATUS_DISPLAY_ORDER.filter(
+              (statusKey) => (item.status_counts?.[statusKey] ?? 0) > 0,
+            );
+            return (
+              <div className="flex max-w-52 flex-wrap gap-1">
+                {entries.map((statusKey) => (
+                  <span
+                    key={statusKey}
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${getOrderStatusBadgeClass(statusKey)}`}
+                  >
+                    {item.status_counts![statusKey]} {formatOrderLabel(statusKey)}
+                  </span>
+                ))}
+              </div>
+            );
+          }
 
-          const status = row.original.status;
-          const label = statusLabels[status] ?? status;
-          const colorClass =
-            statusColors[status] ??
-            "border border-border bg-muted text-muted-foreground";
+          const status = item.status;
+          const label = formatOrderLabel(status);
+          const colorClass = getOrderStatusBadgeClass(status);
+          const groupCount = item.order_group_size ?? item.members?.length ?? 0;
 
           return (
-            <span
-              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}`}
-            >
-              {label}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${colorClass}`}
+              >
+                {label}
+              </span>
+              {isGroup && groupCount > 1 && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {item.active_member_count === groupCount || status === "CANCELLED"
+                    ? `All ${groupCount}`
+                    : `${item.active_member_count}/${groupCount}`}
+                </span>
+              )}
+            </div>
           );
         },
       },
       {
         accessorKey: "total",
         header: () => sortableHeader("total", "Total"),
-        cell: ({ row }) => (
-          <span className="whitespace-nowrap text-right font-medium">
-            {row.original.total === null
-              ? "Unverified"
-              : formatCurrency(row.original.total)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const isGroup = row.depth === 0 && row.original.entry_type === "GROUP";
+          return (
+            <span
+              className={`whitespace-nowrap text-right tabular-nums ${
+                isGroup ? "font-semibold" : "font-medium"
+              }`}
+            >
+              {row.original.total === null
+                ? "Unverified"
+                : formatCurrency(row.original.total)}
+            </span>
+          );
+        },
       },
       {
         id: "actions",
         header: "Actions",
-        cell: ({ row }) => (
-          <div className="flex gap-2">
-            {row.original.delivery_type !== "WALK_IN" &&
-              (["SCHEDULING", "SCHEDULED", "IN_TRANSIT", "COMPLETED"].includes(
-                row.original.status,
-              ) ||
-                row.original.delivery_type === "LALAMOVE") && (
-                <Link
-                  className="self-center whitespace-nowrap text-xs underline"
-                  href={`/panel/lalamove?orderId=${row.original.id}`}
-                >
-                  {row.original.delivery_type === "LALAMOVE"
-                    ? "Lalamove delivery"
-                    : "Delivery method"}
-                </Link>
-              )}
-            {/* View Order */}
-            <Tooltip>
-              <TooltipTrigger
-                render={
+        cell: ({ row }) => {
+          const item = row.original;
+          const isGroup = row.depth === 0 && item.entry_type === "GROUP";
+
+          if (isGroup) {
+            const pendingCount = item.pending_action_count ?? 0;
+            const processingCount = item.processing_action_count ?? 0;
+            const groupLabel = item.order_group_number || "order group";
+            const isExpanded = row.getIsExpanded();
+
+            return (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {pendingCount > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={ordersQuery.isFetching}
+                          aria-label={`Process ${pendingCount} pending ${pendingCount === 1 ? "order" : "orders"} in group ${groupLabel}`}
+                          className="h-8 gap-1.5 text-blue-700 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                          onClick={() => {
+                            setSelectedGroup(item);
+                            openModal(DialogMode.CUSTOM, {
+                              title: "Process Order Group",
+                              description: `Start processing ${pendingCount} pending ${pendingCount === 1 ? "order" : "orders"} in ${groupLabel}.`,
+                              action: `Process ${pendingCount} ${pendingCount === 1 ? "Order" : "Orders"}`,
+                            });
+                          }}
+                        >
+                          <CheckCheck className="size-3.5" aria-hidden="true" />
+                          <span>Process ({pendingCount})</span>
+                        </Button>
+                      }
+                    />
+                    <TooltipContent>
+                      <p>Process all {pendingCount} pending orders in this group</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {processingCount > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={ordersQuery.isFetching}
+                          aria-label={`Mark ${processingCount} processing ${processingCount === 1 ? "order" : "orders"} ready for scheduling in group ${groupLabel}`}
+                          className="h-8 gap-1.5 text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300"
+                          onClick={() => {
+                            setSelectedGroup(item);
+                            openModal(DialogMode.CUSTOM, {
+                              title: "Ready Group for Scheduling",
+                              description: `Mark ${processingCount} processing ${processingCount === 1 ? "order" : "orders"} in ${groupLabel} ready for scheduling.`,
+                              action: `Mark ${processingCount} Ready`,
+                            });
+                          }}
+                        >
+                          <CalendarCheck className="size-3.5" aria-hidden="true" />
+                          <span>Ready ({processingCount})</span>
+                        </Button>
+                      }
+                    />
+                    <TooltipContent>
+                      <p>Mark all {processingCount} processing orders ready for scheduling</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {pendingCount === 0 && processingCount === 0 && (
                   <Button
+                    type="button"
                     variant="ghost"
-                    size="icon-sm"
-                    aria-label="View order"
-                    onClick={() => {
-                      setSelected({
-                        id: row.original.id,
-                        version: row.original.version,
-                      });
-
-                      viewOrder(row.original.id);
-
-                      openModal(DialogMode.VIEW, {
-                        title: `Order #${row.original.id}`,
-                        description: "View order details and items.",
-                        action: "Close",
-                      });
-                    }}
+                    size="sm"
+                    className="h-8 text-xs text-muted-foreground"
+                    aria-expanded={isExpanded}
+                    onClick={row.getToggleExpandedHandler()}
                   >
-                    <Eye className="size-4" />
+                    {isExpanded ? "Hide orders" : "Show orders"}
                   </Button>
-                }
-              />
-              <TooltipContent>
-                <p>View Order</p>
-              </TooltipContent>
-            </Tooltip>
+                )}
+              </div>
+            );
+          }
 
-            {/* Edit Order: PENDING or PROCESSING */}
-            {(row.original.status === "PENDING" ||
-              row.original.status === "PROCESSING") && (
+          return (
+            <div className="flex gap-2">
+              {/* View Order */}
               <Tooltip>
                 <TooltipTrigger
                   render={
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label="Edit order"
-                      disabled={ordersQuery.isFetching}
+                      aria-label="View order"
                       onClick={() => {
                         setSelected({
-                          id: row.original.id,
-                          version: row.original.version,
+                          id: item.id,
+                          version: item.version,
                         });
 
-                        openModal(DialogMode.EDIT, {
-                          title: "Edit Order",
-                          description: "Update this order.",
-                          action: "Save changes",
+                        viewOrder(item.id);
+
+                        openModal(DialogMode.VIEW, {
+                          title: item.product_number || `Order #${item.id}`,
+                          description: "Order progress, customer details, and items.",
+                          action: "Close",
                         });
                       }}
                     >
-                      <Edit className="size-4" />
+                      <Eye className="size-4" aria-hidden="true" />
                     </Button>
                   }
                 />
                 <TooltipContent>
-                  <p>Edit Order</p>
+                  <p>View Order</p>
                 </TooltipContent>
               </Tooltip>
-            )}
 
-            {/* Process Order: PENDING */}
-            {row.original.status === "PENDING" && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Process order"
-                      disabled={ordersQuery.isFetching}
-                      className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                      onClick={() => {
-                        setSelected(row.original);
+              {/* Edit Order: PENDING or PROCESSING */}
+              {(item.status === "PENDING" || item.status === "PROCESSING") && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Edit order"
+                        disabled={ordersQuery.isFetching}
+                        onClick={() => {
+                          setSelected({
+                            id: item.id,
+                            version: item.version,
+                          });
 
-                        openModal(DialogMode.CUSTOM, {
-                          title: "Process Order",
-                          description: `Are you sure you want to start processing order #${row.original.id}?`,
-                          action: "Process Order",
-                        });
-                      }}
-                    >
-                      <Check className="size-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>
-                  <p>Process Order</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
+                          openModal(DialogMode.EDIT, {
+                            title: "Edit Order",
+                            description: "Update this order.",
+                            action: "Save changes",
+                          });
+                        }}
+                      >
+                        <Edit className="size-4" aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    <p>Edit Order</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
-            {/* Ready for Delivery: PROCESSING */}
-            {row.original.status === "PROCESSING" && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Mark ready for delivery"
-                      disabled={ordersQuery.isFetching}
-                      className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
-                      onClick={() => {
-                        setSelected(row.original);
+              {/* Process Order: PENDING */}
+              {item.status === "PENDING" && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Process order"
+                        disabled={ordersQuery.isFetching}
+                        className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        onClick={() => {
+                          setSelected(item);
 
-                        openModal(DialogMode.CUSTOM, {
-                          title: "Ready for Delivery",
-                          description: `Mark order #${row.original.id} ready for scheduling? A delivery run is assigned from Delivery Schedules.`,
-                          action: "Mark ready for delivery",
-                        });
-                      }}
-                    >
-                      <Truck className="size-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>
-                  <p>Mark ready for delivery</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
+                          openModal(DialogMode.CUSTOM, {
+                            title: "Process Order",
+                            description: `Review items and start processing ${item.product_number || `order #${item.id}`}.`,
+                            action: "Process Order",
+                          });
+                        }}
+                      >
+                        <Check className="size-4" aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    <p>Process Order</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
-            {(row.original.status === "SCHEDULING" ||
-              row.original.status === "SCHEDULED" ||
-              row.original.status === "IN_TRANSIT" ||
-              row.original.status === "COMPLETED") && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Invoice"
-                      onClick={() => {
-                        setSelected({
-                          id: row.original.id,
-                          version: row.original.version,
-                        });
-                        openModal(DialogMode.CUSTOM, {
-                          title: `Invoice`,
-                          description: `Invoice for order #${row.original.id}.`,
-                          action: "Generate PDF",
-                        });
-                      }}
-                    >
-                      <NotepadText className="size-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>
-                  <p>Invoice</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
+              {/* Ready for Scheduling: PROCESSING */}
+              {item.status === "PROCESSING" && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Ready for scheduling"
+                        disabled={ordersQuery.isFetching}
+                        className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                        onClick={() => {
+                          setSelected(item);
 
-            {/* Unassigned walk-in deliveries can also be cancelled before dispatch. */}
-            {(row.original.status === "PENDING" ||
-              row.original.status === "PROCESSING" ||
-              (row.original.status === "SCHEDULING" &&
-                row.original.sales_channel === "WALK_IN" &&
-                row.original.delivery_type === "INTERNAL")) && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Cancel order"
-                      disabled={ordersQuery.isFetching}
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => {
-                        setSelected(row.original);
+                          openModal(DialogMode.CUSTOM, {
+                            title: "Ready for Scheduling",
+                            description: `Verify prepared items and move ${item.product_number || `order #${item.id}`} to delivery scheduling.`,
+                            action: "Ready for scheduling",
+                          });
+                        }}
+                      >
+                        <CalendarCheck className="size-4" aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    <p>Ready for scheduling</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
-                        openModal(DialogMode.CANCEL, {
-                          title: "Cancel Order",
-                          description: `Cancel order #${row.original.id}? Reserved stock will be released. Any recorded payment must be refunded separately.`,
-                          action: "Cancel Order",
-                        });
-                      }}
-                    >
-                      <CircleX className="size-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>
-                  <p>Cancel Order</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        ),
+              {(item.status === "SCHEDULING" ||
+                item.status === "SCHEDULED" ||
+                item.status === "IN_TRANSIT" ||
+                item.status === "COMPLETED") && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Invoice"
+                        onClick={() => {
+                          setSelected({
+                            id: item.id,
+                            version: item.version,
+                          });
+                          openModal(DialogMode.CUSTOM, {
+                            title: `Invoice`,
+                            description: `Invoice for order #${item.id}.`,
+                            action: "Generate PDF",
+                          });
+                        }}
+                      >
+                        <NotepadText className="size-4" aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    <p>Invoice</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
+              {/* Unassigned walk-in deliveries can also be cancelled before dispatch. */}
+              {(item.status === "PENDING" ||
+                item.status === "PROCESSING" ||
+                (item.status === "SCHEDULING" &&
+                  item.sales_channel === "WALK_IN" &&
+                  item.delivery_type === "INTERNAL")) && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Cancel order"
+                        disabled={ordersQuery.isFetching}
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => {
+                          setSelected(item);
+
+                          openModal(DialogMode.CANCEL, {
+                            title: "Cancel Order",
+                            description: `Cancel order #${item.id}? Reserved stock will be released. Any recorded payment must be refunded separately.`,
+                            action: "Cancel Order",
+                          });
+                        }}
+                      >
+                        <CircleX className="size-4" aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    <p>Cancel Order</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          );
+        },
       },
     ],
     [
       openModal,
       setSelected,
+      setSelectedGroup,
       viewOrder,
-      sortBy,
-      setSortBy,
-      setPage,
+      sortableHeader,
       ordersQuery.isFetching,
     ],
   );
 
   const table = useReactTable({
-    data: ordersQuery.data?.rows ?? [],
+    data: rows,
     columns,
     pageCount: Math.ceil((ordersQuery.data?.total ?? 0) / page.pageSize),
-    state: { pagination: page },
+    state: { pagination: page, expanded: expandedState },
     onPaginationChange: setPage,
+    onExpandedChange: handleExpandedChange,
+    getRowId: (row) =>
+      row.entry_type === "GROUP" && row.order_group_id
+        ? `group:${row.order_group_id}`
+        : `order:${row.id}`,
+    getSubRows: (row) => (row.entry_type === "GROUP" ? row.members : undefined),
     getCoreRowModel: getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
     manualPagination: true,
   });
 
@@ -479,6 +775,7 @@ export default function DataTable() {
 
   function clearSearch() {
     debouncedSearch.cancel();
+    setSearchCollapsed({});
     setSearchInput("");
     setSearch("");
     setPage((current) => ({ ...current, pageIndex: 0 }));
@@ -489,6 +786,16 @@ export default function DataTable() {
     setDeliveryType("ALL");
     setSortBy({ id: "id", type: "desc" });
   }
+
+  const getRowClassName = useCallback((row: Row<OrderTableRow>) => {
+    if (row.depth > 0) {
+      return "bg-muted/20 hover:bg-muted/35";
+    }
+    if (row.original.entry_type === "GROUP" && row.getIsExpanded()) {
+      return "bg-muted/10";
+    }
+    return undefined;
+  }, []);
 
   const deliveryOptions = [
     { value: "ALL", label: "All delivery methods" },
@@ -593,6 +900,35 @@ export default function DataTable() {
                 : "Newest first"
               : "Sort by date"}
           </Button>
+          {groupRowIds.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 bg-background"
+              onClick={() => {
+                if (allGroupsExpanded) {
+                  if (hasSearch) {
+                    setSearchCollapsed(
+                      Object.fromEntries(groupRowIds.map((id) => [id, true])),
+                    );
+                  } else {
+                    setManualExpanded({});
+                  }
+                } else {
+                  if (hasSearch) {
+                    setSearchCollapsed({});
+                  } else {
+                    setManualExpanded(
+                      Object.fromEntries(groupRowIds.map((id) => [id, true])),
+                    );
+                  }
+                }
+              }}
+            >
+              <Layers className="size-4" aria-hidden="true" />
+              {allGroupsExpanded ? "Collapse groups" : "Expand groups"}
+            </Button>
+          )}
           {(filtered ||
             searchInput ||
             sortBy.id !== "id" ||
@@ -603,8 +939,9 @@ export default function DataTable() {
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Totals use saved checkout prices. Missing historical prices are marked
-          Unverified. Cancelled orders retain their recorded value.
+          Grouped orders collapse under one summary row; expand a group to
+          inspect or act on individual orders. Totals use saved checkout prices,
+          and missing historical prices are marked Unverified.
         </p>
       </div>
       <QueryFeedback query={ordersQuery} label="orders" />
@@ -615,6 +952,8 @@ export default function DataTable() {
         error={ordersQuery.isError}
         filtered={filtered}
         label="orders"
+        getRowClassName={getRowClassName}
+        getHeaderAriaSort={getHeaderAriaSort}
       />
       <ManagementListFooter
         table={table}

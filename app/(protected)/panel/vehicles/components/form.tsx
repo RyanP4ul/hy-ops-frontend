@@ -5,13 +5,6 @@ import { useEffect, useRef } from "react";
 import { QueryFeedback } from "@/components/query-feedback";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useModal } from "@/components/providers/modal-provider";
 import { DialogMode } from "@/types/dialog";
 import { request, requestWithErrorHandling } from "@/components/http";
@@ -52,28 +45,25 @@ export default function Form() {
     if (state.mode === DialogMode.EDIT && (vehicleDetailQuery.isFetching || !vehicleDetailQuery.data)) return;
     initialized.current = key;
     if (state.mode === DialogMode.EDIT && vehicleDetailQuery.data) {
-      form.reset(vehicleDetailQuery.data);
-      warehouseCB.setInputValue(vehicleDetailQuery.data.warehouse_name);
+      const { warehouse_id, plate_number, warehouse_name } = vehicleDetailQuery.data;
+      form.reset({ warehouse_id, plate_number });
+      warehouseCB.setInputValue(warehouse_name);
     } else if (state.mode === DialogMode.INSERT) {
-      form.reset({
-        plate_number: "",
-        status: "available",
-        type: "truck",
-
-      });
+      form.reset({ warehouse_id: -1, plate_number: "" });
       warehouseCB.setInputValue("");
     }
   }, [form, state.isOpen, state.mode, selected.id, selected.version, vehicleDetailQuery.isFetching, vehicleDetailQuery.data, warehouseCB]);
 
   async function onSubmit(data: VehicleForm) {
+    const editing = state.mode === DialogMode.EDIT;
+    const vehicle = vehicleDetailQuery.data;
+    if (editing && !vehicle) return;
     const response = await request(
-      state.mode === DialogMode.EDIT ? "PUT" : "POST",
-      state.mode === DialogMode.EDIT
-        ? `/api/vehicles/${selected.id}`
-        : "/api/vehicles",
-      state.mode === DialogMode.EDIT
-        ? { ...data, version: selected.version }
-        : { warehouse_id: data.warehouse_id, plate_number: data.plate_number, type: data.type },
+      editing ? "PUT" : "POST",
+      editing ? `/api/vehicles/${selected.id}` : "/api/vehicles",
+      editing && vehicle
+        ? { ...data, type: vehicle.type, status: vehicle.status, version: selected.version }
+        : { ...data, type: "truck" },
     );
     await requestWithErrorHandling(response, form, () => {
       vehicleQuery.refetch();
@@ -89,7 +79,9 @@ export default function Form() {
       className="grid gap-4 md:grid-cols-2"
     >
       {state.mode === DialogMode.EDIT && <div className="md:col-span-2"><QueryFeedback query={vehicleDetailQuery} label="vehicle details" /></div>}
-      <p className="text-sm text-muted-foreground md:col-span-2">New vehicles start Available. Dispatch manages on-delivery status. Vehicles with delivery history are retained. Reassign scheduled trips before changing the vehicle status or warehouse.</p>
+      <p className="text-sm text-muted-foreground md:col-span-2">
+        {state.mode === DialogMode.INSERT ? "New vehicles are added as trucks and start Available." : "Use the maintenance action in the fleet directory to change availability."}
+      </p>
       <Controller
         name="warehouse_id"
         control={form.control}
@@ -201,50 +193,6 @@ export default function Form() {
           </Field>
         )}
       />
-      <Controller
-        name="type"
-        control={form.control}
-        render={({ field, fieldState }) => (
-          <Field data-invalid={fieldState.invalid}>
-            <FieldLabel htmlFor="vehicle-type">Type</FieldLabel>
-            <Select value={field.value} onValueChange={field.onChange}>
-              <SelectTrigger id="vehicle-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="truck">Truck</SelectItem>
-                <SelectItem value="van">Van</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-          </Field>
-        )}
-      />
-      {state.mode === DialogMode.EDIT && (
-      <Controller
-        name="status"
-        control={form.control}
-        render={({ field, fieldState }) => (
-          <Field data-invalid={fieldState.invalid}>
-            <FieldLabel htmlFor="vehicle-status">Status</FieldLabel>
-            <Select value={field.value} onValueChange={field.onChange}>
-              <SelectTrigger id="vehicle-status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="available">Available</SelectItem>
-                <SelectItem value="unavailable">Unavailable</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
-                {field.value === "on_delivery" && <SelectItem value="on_delivery" disabled>On delivery (managed by dispatch)</SelectItem>}
-              </SelectContent>
-            </Select>
-            {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-          </Field>
-        )}
-      />
-      )}
-
     </form>
   );
 }

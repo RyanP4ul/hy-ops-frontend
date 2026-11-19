@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, UseQueryResult } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useRef, useState } from "react";
 import {
   WarehouseForm,
@@ -10,9 +10,7 @@ import {
 import { request } from "@/components/http";
 import { useForm, UseFormReturn } from "react-hook-form";
 import { useModal } from "@/components/providers/modal-provider";
-import { toast } from "sonner";
 import { useSetting } from "@/components/providers/setting-provider";
-import { GeocodeResult } from "@/types/geocode";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DialogMode } from "@/types/dialog";
 import { MapRef } from "@/components/ui/map";
@@ -36,10 +34,6 @@ type WarehouseContext = {
   setSearch: React.Dispatch<React.SetStateAction<string>>;
   sortBy: { id: string; type: string };
   setSortBy: React.Dispatch<React.SetStateAction<{ id: string; type: string }>>;
-
-  searchAddress: string;
-  setSearchAddress: React.Dispatch<React.SetStateAction<string>>;
-  geocodeQuery: UseQueryResult<GeocodeResult[] | null, unknown>;
 
   mapRef: React.RefObject<MapRef | null>;
   latitude: number;
@@ -70,12 +64,11 @@ export function WarehousesProvider({
   });
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
-  const { state, dispatch } = useModal();
+  const { state } = useModal();
   const [sortBy, setSortBy] = useState<{
     id: string;
     type: string;
   }>({ id: "id", type: "desc" });
-  const [searchAddress, setSearchAddress] = useState("");
   const mapRef = useRef<MapRef>(null);
   const [latitude, setLatitude] = useState<number>(14.8230797);
   const [longitude, setLongitude] = useState<number>(120.9011564);
@@ -132,21 +125,6 @@ export function WarehousesProvider({
     enabled: state.isOpen && state.mode === DialogMode.EDIT && selected.id > 0,
   });
 
-  const geocodeQuery = useQuery({
-    queryKey: ["geocode", searchAddress],
-    queryFn: async ({ signal }) => {
-      const response = await fetch(`/api/geocode/search?q=${encodeURIComponent(searchAddress)}`, { signal, credentials: "include" });
-
-      if (!response.ok) throw new Error("Address search unavailable. Enter the address manually.");
-
-      const result = (await response.json()) as GeocodeResult[];
-
-      return result;
-    },
-    enabled: searchAddress.trim().length >= 3,
-    retry: false,
-  });
-
   return (
     <WarehousesContext.Provider
       value={{
@@ -161,9 +139,6 @@ export function WarehousesProvider({
         setSearch,
         sortBy,
         setSortBy,
-        searchAddress,
-        setSearchAddress,
-        geocodeQuery,
         mapRef,
         latitude,
         setLatitude,

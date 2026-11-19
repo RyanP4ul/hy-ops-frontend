@@ -1,13 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  ExternalLink,
-  ImageIcon,
-  Loader2,
-  ShieldCheck,
-} from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { request } from "@/components/http";
@@ -37,8 +31,7 @@ function ProofImage({
 }) {
   const [attempt, setAttempt] = useState(0);
   const [image, setImage] = useState<{ url?: string; error?: string }>({});
-  const label =
-    proof.kind === "signature" ? "Recipient signature" : "Delivery photo";
+  const label = proof.kind === "signature" ? "Signature" : "Photo";
 
   useEffect(() => {
     let active = true;
@@ -50,13 +43,13 @@ function ProofImage({
           "GET",
           `/api/deliveries/stops/${encodeURIComponent(stopId)}/proofs/${proof.id}`,
         );
-        if (!response.ok) throw new Error("Unable to load this proof image.");
+        if (!response.ok) throw new Error("Unable to load image.");
         const blob = await response.blob();
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
         setImage({ url: objectUrl });
       } catch {
-        if (active) setImage({ error: "Unable to load this proof image." });
+        if (active) setImage({ error: "Unable to load image." });
       }
     }
     void load();
@@ -67,61 +60,62 @@ function ProofImage({
   }, [stopId, proof.id, attempt]);
 
   return (
-    <figure className="space-y-2.5 rounded-lg border p-3">
-      <figcaption className="space-y-0.5">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground">
-          Uploaded{" "}
+    <figure className="space-y-2 rounded-lg border p-3">
+      <figcaption className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="font-medium text-foreground">{label}</span>
+        <span className="tabular-nums text-muted-foreground">
           {new Date(proof.createdAt).toLocaleString("en-PH", {
             timeZone: "Asia/Manila",
             dateStyle: "medium",
             timeStyle: "short",
-          })}{" "}
-          (Manila)
-        </p>
+          })}
+        </span>
       </figcaption>
       {image.error ? (
         <div
           role="alert"
-          className="flex flex-wrap items-center gap-2 text-sm text-destructive"
+          className="flex items-center justify-between gap-2 py-4 text-xs text-destructive"
         >
           <span>{image.error}</span>
           <Button
             type="button"
             variant="outline"
             size="sm"
+            className="h-7 text-xs"
             onClick={() => setAttempt((v) => v + 1)}
           >
             Retry
           </Button>
         </div>
       ) : image.url ? (
-        <>
-          {/* Authenticated proof bytes use a temporary local object URL. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={image.url}
-            alt={`${label} for order ${orderNumber}`}
-            className="max-h-80 w-full rounded-md bg-white object-contain"
-            onError={() =>
-              setImage({ error: "Unable to display this proof image." })
-            }
-          />
+        <div className="space-y-2">
+          <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md bg-muted/30">
+            {/* Authenticated proof bytes use a temporary local object URL. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={image.url}
+              alt={`${label} for order ${orderNumber}`}
+              className="h-full w-full object-contain"
+              onError={() => setImage({ error: "Unable to display image." })}
+            />
+          </div>
           <a
             href={image.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-medium text-primary underline underline-offset-4"
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
           >
-            Open full-size{" "}
-            {proof.kind === "signature" ? "signature" : "photo"}
+            Open full size
             <ExternalLink className="size-3" aria-hidden="true" />
           </a>
-        </>
+        </div>
       ) : (
-        <p role="status" className="py-6 text-center text-xs text-muted-foreground">
-          Loading image…
-        </p>
+        <div
+          role="status"
+          className="grid aspect-[4/3] w-full place-items-center rounded-md bg-muted/30 text-xs text-muted-foreground"
+        >
+          Loading…
+        </div>
       )}
     </figure>
   );
@@ -148,32 +142,26 @@ export function StopProofDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Proof of delivery — {orderNumber}</DialogTitle>
+          <DialogTitle>Proof · {orderNumber}</DialogTitle>
           <DialogDescription>
-            Photos and recipient signature uploaded by the driver for this
-            delivery stop.
+            Uploaded delivery photo and signature.
           </DialogDescription>
         </DialogHeader>
         <QueryFeedback query={proofs} label="proof of delivery" />
         {proofs.isPending && !proofs.isError ? (
-          <p role="status" className="py-6 text-center text-sm text-muted-foreground">
-            Loading proof of delivery…
+          <p
+            role="status"
+            className="py-8 text-center text-xs text-muted-foreground"
+          >
+            Loading…
           </p>
         ) : null}
         {proofs.isSuccess && proofs.data.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-8 text-center">
-            <ImageIcon
-              className="size-6 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <p className="text-sm font-medium">No proof of delivery uploaded</p>
-            <p className="max-w-xs text-xs text-muted-foreground">
-              The driver has not uploaded a photo or recipient signature for
-              this stop yet.
-            </p>
-          </div>
+          <p className="rounded-lg border border-dashed py-8 text-center text-xs text-muted-foreground">
+            No proof uploaded for this stop.
+          </p>
         ) : null}
         {open && !proofs.isError && proofs.data && proofs.data.length > 0 ? (
           <div className="space-y-3">
@@ -191,6 +179,7 @@ export function StopProofDialog({
           <Button
             type="button"
             variant="outline"
+            size="sm"
             disabled={proofs.isFetching}
             onClick={() => void proofs.refetch()}
           >
@@ -199,6 +188,7 @@ export function StopProofDialog({
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={() => onOpenChange(false)}
           >
             Close
@@ -237,9 +227,7 @@ export function StopOrderDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Order {orderNumber}</DialogTitle>
-          <DialogDescription>
-            Authorized order summary, saved destination, and itemized contents.
-          </DialogDescription>
+          <DialogDescription>Order summary and items.</DialogDescription>
         </DialogHeader>
         <QueryFeedback query={order} label="order details" />
         {!order.isError || order.data ? (
@@ -251,14 +239,16 @@ export function StopOrderDialog({
         <DialogFooter className="flex-wrap gap-2">
           <Button
             variant="outline"
+            size="sm"
             nativeButton={false}
             render={<Link href="/panel/orders" />}
           >
-            Open Orders module
+            Open Orders
           </Button>
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={() => onOpenChange(false)}
           >
             Close
@@ -299,8 +289,7 @@ export function ConfirmStopDeliveryDialog({
   const hasProof = (proofs.data?.length ?? 0) > 0;
   const requiresReason = proofs.isFetched && !hasProof;
   const reasonValid = !requiresReason || reason.trim().length >= 5;
-  const canSubmit =
-    !busy && !proofs.isPending && confirmed && reasonValid;
+  const canSubmit = !busy && !proofs.isPending && confirmed && reasonValid;
 
   return (
     <Dialog
@@ -317,88 +306,57 @@ export function ConfirmStopDeliveryDialog({
     >
       <DialogContent showCloseButton={!busy} className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Review & confirm stop delivery</DialogTitle>
+          <DialogTitle>Confirm stop #{sequence}</DialogTitle>
           <DialogDescription>
-            Marking a stop delivered updates order{" "}
+            Marks order{" "}
             <span className="font-medium text-foreground">{stop.order.id}</span>{" "}
-            to Completed and cannot be undone from the map.
+            completed. This cannot be undone here.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 text-xs">
-          <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
-            <p className="font-semibold text-foreground">
-              Stop #{sequence} · {stop.name}
-            </p>
+          <div className="space-y-0.5 rounded-lg border bg-muted/25 p-3">
+            <p className="font-semibold text-foreground">{stop.name}</p>
             <p className="text-muted-foreground">{stop.address}</p>
-            <p className="pt-1 text-foreground">
-              Affected order: <strong>{stop.order.id}</strong> (
-              {stop.order.customer.name})
+            <p className="pt-1 text-muted-foreground">
+              {stop.order.id} · {stop.order.customer.name}
             </p>
           </div>
 
           {proofs.isPending ? (
-            <div className="flex items-center gap-2 rounded-lg border p-3 text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              Checking uploaded proof of delivery…
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              Checking proof…
             </div>
           ) : proofs.isError ? (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <div>
-                <p className="font-medium">Unable to verify Proof of Delivery</p>
-                <p className="mt-0.5">
-                  Proceed only if delivery has been verified directly with the
-                  driver.
-                </p>
-              </div>
-            </div>
+            <p className="rounded-md border border-amber-300 bg-amber-50/80 px-3 py-2 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+              Could not verify proof. Proceed only if confirmed with driver.
+            </p>
           ) : hasProof ? (
-            <div className="flex items-start gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <div>
-                <p className="font-medium">
-                  Proof of Delivery on file ({proofs.data?.length} file
-                  {proofs.data?.length === 1 ? "" : "s"})
-                </p>
-                <p className="mt-0.5">
-                  Driver uploaded proof for this stop.
-                </p>
-              </div>
-            </div>
+            <p className="rounded-md border border-emerald-300 bg-emerald-50/80 px-3 py-2 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+              Proof on file ({proofs.data?.length}).
+            </p>
           ) : (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <div>
-                <p className="font-medium">
-                  Manual override — No Proof of Delivery on file
-                </p>
-                <p className="mt-0.5">
-                  Drivers normally confirm stops with photo/signature in the
-                  mobile app. Enter an operational verification note below to
-                  override.
-                </p>
-              </div>
-            </div>
+            <p className="rounded-md border border-amber-300 bg-amber-50/80 px-3 py-2 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+              No proof uploaded. Add a short override note below.
+            </p>
           )}
 
           {requiresReason ? (
-            <label className="grid gap-1.5">
-              <span className="font-medium text-foreground">
-                Dispatcher override reason (required)
-              </span>
+            <label className="grid gap-1">
+              <span className="font-medium text-foreground">Override note</span>
               <textarea
                 rows={2}
                 disabled={busy}
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder="e.g., Driver confirmed handoff via phone; mobile upload offline"
+                placeholder="Driver confirmed by phone"
                 className="w-full rounded-md border bg-background px-2.5 py-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </label>
           ) : null}
 
-          <label className="flex items-start gap-2.5 leading-relaxed">
+          <label className="flex items-start gap-2 leading-relaxed">
             <input
               type="checkbox"
               className="mt-0.5"
@@ -407,13 +365,15 @@ export function ConfirmStopDeliveryDialog({
               onChange={(event) => setConfirmed(event.target.checked)}
             />
             <span>
-              I confirm stop <strong>#{sequence}</strong> (order{" "}
-              <strong>{stop.order.id}</strong>) was physically delivered.
+              I confirm order <strong>{stop.order.id}</strong> was delivered.
             </span>
           </label>
 
           {error ? (
-            <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 font-medium text-destructive">
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 font-medium text-destructive"
+            >
               {error}
             </p>
           ) : null}
@@ -423,6 +383,7 @@ export function ConfirmStopDeliveryDialog({
           <Button
             type="button"
             variant="outline"
+            size="sm"
             disabled={busy}
             onClick={() => onOpenChange(false)}
           >
@@ -430,10 +391,11 @@ export function ConfirmStopDeliveryDialog({
           </Button>
           <Button
             type="button"
+            size="sm"
             disabled={!canSubmit}
             onClick={() => void onConfirm()}
           >
-            {busy ? "Confirming…" : "Confirm delivery"}
+            {busy ? "Confirming…" : "Confirm"}
           </Button>
         </DialogFooter>
       </DialogContent>

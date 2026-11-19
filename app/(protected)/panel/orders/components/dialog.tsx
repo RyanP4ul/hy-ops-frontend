@@ -1,6 +1,10 @@
 "use client";
 
-import { ViewOrderDetails, ViewOrderItem } from "@/components/order-details";
+import {
+  formatOrderLabel,
+  getOrderPaymentSummary,
+  getOrderStatusBadgeClass,
+} from "@/components/order-details";
 import { Button } from "@/components/ui/button";
 import {
   DialogClose,
@@ -18,28 +22,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useOrders } from "../provider";
 import {
   Loader2,
-  ShoppingBag,
   Plus,
   ArrowLeft,
   ArrowRight,
 } from "lucide-react";
 import { request, requestWithErrorHandling } from "@/components/http";
 import Form from "./form";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { useEffect, useRef, useState } from "react";
-import { OrderDetail, OrderForm, OrderItemDetail } from "@/schema/order";
+import { useEffect, useState } from "react";
+import {
+  OrderDetail,
+  OrderForm,
+  OrderItemDetail,
+  OrderTableRow,
+  formatOrderGroupCode,
+} from "@/schema/order";
 import { formatCurrency } from "@/utils/date-util";
 import Invoice from "./invoice";
 import OrderItemDialog from "./item-dialog";
 import { QueryFeedback } from "@/components/query-feedback";
 import { CreateOrderWorkspace, OrderSubmissionStatus } from "./create-order-workspace";
+import { EditOrderForm, type EditOrderPayload } from "./edit-order-form";
 import { orderBatchFormSchema, draftForPaymentMode } from "@/schema/order-batch";
 
 export default function OrderDialog() {
@@ -47,7 +54,6 @@ export default function OrderDialog() {
   const [actionPending, setActionPending] = useState(false);
   const [nextPending, setNextPending] = useState(false);
   const [invoiceActionContainer, setInvoiceActionContainer] = useState<HTMLSpanElement | null>(null);
-  const initializedEdit = useRef<object | null>(null);
   const {
     form,
     step,
@@ -55,8 +61,8 @@ export default function OrderDialog() {
     setPage,
     ordersQuery,
     orderDetailQuery,
-    orderViewQuery,
     selected,
+    selectedGroup,
     draftOrders,
     activeDraftIndex,
     orderCount,
@@ -66,31 +72,16 @@ export default function OrderDialog() {
 
   useEffect(() => {
     if (!state.isOpen) {
-      initializedEdit.current = null;
       form.clearErrors();
-      return;
     }
-    if (
-      state.mode === DialogMode.EDIT &&
-      !orderDetailQuery.isFetching &&
-      orderDetailQuery.data?.id === selected.id &&
-      initializedEdit.current !== state
-    ) {
-      form.resetField("notes", {
-        defaultValue: orderDetailQuery.data.notes ?? "",
-      });
-      initializedEdit.current = state;
-    }
-  }, [
-    state,
-    selected.id,
-    orderDetailQuery.data,
-    orderDetailQuery.isFetching,
-    form,
-  ]);
+  }, [state.isOpen, form]);
 
   const steps = [{ title: "Customer & address" }, { title: "Order items" }, { title: "Payment" }, { title: "Review & create" }];
   const creating = state.mode === DialogMode.INSERT;
+  const editing = state.mode === DialogMode.EDIT;
+  const workspaceLayout = creating || editing;
+  const matchedOrderDetail =
+    orderDetailQuery.data?.id === selected.id ? orderDetailQuery.data : null;
 
   const fieldsByStep: (keyof (OrderForm & { items: OrderItemDetail[] }))[][] = [
     [
@@ -120,6 +111,9 @@ export default function OrderDialog() {
         () => {
           setPage((current) => ({ ...current, pageIndex: 0 }));
           void ordersQuery.refetch();
+          if (selected.id > 0) {
+            void orderDetailQuery.refetch();
+          }
           dispatch({ type: "CLOSE" });
         },
       );
@@ -135,6 +129,18 @@ export default function OrderDialog() {
     performAction(
       `/api/orders/delivery/${selected.id}?version=${selected.version}`,
     );
+  const onProcessOrderGroup = () => {
+    if (!selectedGroup?.order_group_id) return;
+    void performAction(`/api/orders/groups/${selectedGroup.order_group_id}/process`);
+  };
+  const onDeliveryOrderGroup = () => {
+    if (!selectedGroup?.order_group_id) return;
+    void performAction(`/api/orders/groups/${selectedGroup.order_group_id}/delivery`);
+  };
+  const isGroupAction =
+    state.mode === DialogMode.CUSTOM &&
+    (state.title === "Process Order Group" ||
+      state.title === "Ready Group for Scheduling");
 
   async function handleNext() {
     if (nextPending) return;
@@ -221,11 +227,11 @@ export default function OrderDialog() {
     switch (state.mode) {
       case DialogMode.DELETE:
         return "sm:max-w-md";
-      case DialogMode.VIEW:
-        return "sm:max-w-3xl";
       case DialogMode.CANCEL:
+        return "sm:max-w-lg";
       case DialogMode.CUSTOM:
-        return state.title === "Invoice" ? "sm:max-w-3xl" : "sm:max-w-xl";
+        if (state.title === "Invoice") return "sm:max-w-3xl";
+        return "sm:max-w-2xl";
       default:
         return "sm:max-w-5xl";
     }
@@ -233,53 +239,85 @@ export default function OrderDialog() {
 
   return (
     <>
-      <DialogContent className={creating ? "grid max-h-none max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl p-0 transition-none sm:max-w-none" : getModalSize()}
-        style={creating ? { width: "min(1180px, calc(100vw - 2rem))", maxWidth: "calc(100vw - 2rem)", height: "min(900px, calc(100dvh - 2rem))", maxHeight: "calc(100dvh - 2rem)" } : undefined}>
-        <DialogHeader className={creating ? "flex-row items-center gap-3 border-b px-4 py-5 pr-12 sm:px-7 sm:pr-12" : undefined}>
-          {creating && <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background"><ShoppingBag className="size-5" aria-hidden="true" /></div>}
+      <DialogContent
+        className={
+          workspaceLayout
+            ? "grid max-h-none max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden overscroll-contain rounded-2xl p-0 transition-none sm:max-w-none"
+            : getModalSize()
+        }
+        style={
+          creating
+            ? {
+                width: "min(1140px, calc(100vw - 2rem))",
+                maxWidth: "calc(100vw - 2rem)",
+                height: "min(860px, calc(100dvh - 2rem))",
+                maxHeight: "calc(100dvh - 2rem)",
+              }
+            : editing
+              ? {
+                  width: "min(960px, calc(100vw - 2rem))",
+                  maxWidth: "calc(100vw - 2rem)",
+                  maxHeight: "calc(100dvh - 2rem)",
+                }
+              : undefined
+        }
+      >
+        <DialogHeader
+          className={
+            workspaceLayout
+              ? "flex-row items-center justify-between gap-3 border-b px-5 py-4 pr-12 sm:px-6 sm:pr-12"
+              : undefined
+          }
+        >
           <div className="min-w-0 flex-1">
-            <DialogTitle className={creating ? "text-xl font-semibold tracking-tight" : undefined}>{state.title}</DialogTitle>
-            <DialogDescription className={creating ? "mt-1.5 text-xs sm:text-sm" : undefined}>{creating ? "Prepare one order or several destinations for the same customer." : state.description}</DialogDescription>
+            <DialogTitle
+              className={
+                workspaceLayout
+                  ? "text-lg font-semibold tracking-tight"
+                  : undefined
+              }
+            >
+              {editing && matchedOrderDetail
+                ? `Edit ${matchedOrderDetail.order_number}`
+                : state.title}
+            </DialogTitle>
+            <DialogDescription className={creating ? "sr-only" : undefined}>
+              {creating
+                ? "Create one or more orders for a customer."
+                : editing
+                  ? "Update items, delivery method, shipping destination, or order notes before scheduling."
+                  : state.description}
+            </DialogDescription>
           </div>
-          {creating && <span className="hidden shrink-0 rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium sm:inline-flex">{orderCount} {orderCount === 1 ? "order" : "orders"}</span>}
         </DialogHeader>
 
-        {!creating && form.formState.errors.root && <p role="alert" className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
-        {state.mode === DialogMode.VIEW && (
-          <QueryFeedback query={orderViewQuery} label="order details" />
+        {!workspaceLayout && form.formState.errors.root && (
+          <p role="alert" className="text-sm text-destructive">
+            {form.formState.errors.root.message}
+          </p>
         )}
         {state.mode !== DialogMode.INSERT &&
+          state.mode !== DialogMode.EDIT &&
           state.mode !== DialogMode.VIEW &&
-          state.title !== "Invoice" && (
+          state.title !== "Invoice" &&
+          !isGroupAction && (
             <QueryFeedback query={orderDetailQuery} label="order details" />
           )}
         {state.mode === DialogMode.EDIT && state.isOpen ? (
-          <form
-            id="form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void performAction(
-                `/api/orders/${selected.id}`,
-                {
-                  notes: form.getValues("notes") ?? "",
-                  version: selected.version,
-                },
-                "PUT",
-              );
+          <EditOrderForm
+            key={selected.id}
+            order={matchedOrderDetail}
+            isLoading={orderDetailQuery.isPending}
+            isFetching={orderDetailQuery.isFetching}
+            isError={orderDetailQuery.isError}
+            version={selected.version}
+            submitting={actionPending}
+            serverError={form.formState.errors.root?.message}
+            onClearServerError={() => form.clearErrors("root")}
+            onSubmit={async (payload: EditOrderPayload) => {
+              await performAction(`/api/orders/${selected.id}`, payload, "PUT");
             }}
-          >
-            <Label htmlFor="order-notes">Order notes</Label>
-            <p className="mb-2 text-xs text-muted-foreground">
-              Prices, items and shipping snapshots are preserved. Cancel and
-              create a new order to change these details.
-            </p>
-            <Textarea
-              id="order-notes"
-              disabled={orderDetailQuery.isFetching || !orderDetailQuery.data}
-              maxLength={2000}
-              {...form.register("notes")}
-            />
-          </form>
+          />
         ) : !state.isOpen ? (
           <Loader2
             className="mx-auto size-6 animate-spin"
@@ -289,11 +327,6 @@ export default function OrderDialog() {
           <CreateOrderWorkspace disabled={nextPending || form.formState.isSubmitting} error={form.formState.errors.root?.message}>
             <Form key={`${activeDraftIndex}:${orderCount}`} />
           </CreateOrderWorkspace>
-        ) : state.mode === DialogMode.VIEW && state.isOpen ? (
-          <ViewOrderDetails
-            order={orderViewQuery.data || null}
-            isLoading={orderViewQuery.isLoading}
-          />
         ) : state.mode === DialogMode.CUSTOM &&
           state.title === "Process Order" &&
           state.isOpen ? (
@@ -314,7 +347,7 @@ export default function OrderDialog() {
             </form>
           </>
         ) : state.mode === DialogMode.CUSTOM &&
-          state.title === "Ready for Delivery" &&
+          state.title === "Ready for Scheduling" &&
           state.isOpen ? (
           <form
             id="form"
@@ -327,6 +360,36 @@ export default function OrderDialog() {
             <OrderActionDetails
               order={orderDetailQuery.data || null}
               isLoading={orderDetailQuery.isLoading}
+              action="delivery"
+            />
+          </form>
+        ) : state.mode === DialogMode.CUSTOM &&
+          state.title === "Process Order Group" &&
+          state.isOpen ? (
+          <form
+            id="form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onProcessOrderGroup();
+            }}
+          >
+            <OrderGroupActionDetails
+              group={selectedGroup}
+              action="process"
+            />
+          </form>
+        ) : state.mode === DialogMode.CUSTOM &&
+          state.title === "Ready Group for Scheduling" &&
+          state.isOpen ? (
+          <form
+            id="form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onDeliveryOrderGroup();
+            }}
+          >
+            <OrderGroupActionDetails
+              group={selectedGroup}
               action="delivery"
             />
           </form>
@@ -357,39 +420,43 @@ export default function OrderDialog() {
           )
         )}
 
-        <DialogFooter className={creating ? "mx-0 mb-0 flex-row flex-wrap items-center gap-2 rounded-none border-t bg-background px-4 py-4 sm:px-7" : ""}>
+        <DialogFooter
+          className={
+            workspaceLayout
+              ? "mx-0 mb-0 flex-row flex-wrap items-center justify-end gap-2 rounded-none border-t bg-background px-5 py-3.5 sm:px-6"
+              : ""
+          }
+        >
           {state.mode === DialogMode.INSERT ? (
             <>
               <OrderSubmissionStatus />
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-10 flex-1 sm:flex-none"
+                className="min-h-9 flex-1 sm:flex-none"
                 onClick={() => setStep((current) => Math.max(current - 1, 0))}
                 disabled={
                   step === 0 || nextPending || form.formState.isSubmitting
                 }
               >
-                <ArrowLeft className="mr-2 size-4" />
+                <ArrowLeft className="size-4" aria-hidden="true" />
                 Back
               </Button>
 
               {step < steps.length - 1 && (
                 <Button
                   type="button"
-                  className="h-auto min-h-10 min-w-0 flex-1 whitespace-normal py-2 text-left sm:flex-none"
+                  className="min-h-9 flex-1 sm:flex-none"
                   onClick={handleNext}
-                  disabled={
-                    nextPending
-                  }
+                  disabled={nextPending}
                 >
-                  {nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}
-                  <ArrowRight className="ml-2 size-4" />
+                  {nextPending ? "Checking..." : `Next: ${steps[step + 1].title}`}
+                  <ArrowRight className="size-4" aria-hidden="true" />
                 </Button>
               )}
 
               {step === steps.length - 1 && (
-                <Button type="button" variant="outline" className="h-auto min-h-10 flex-1 whitespace-normal py-2 sm:flex-none" disabled={form.formState.isSubmitting || nextPending || orderCount >= 25} onClick={() => {
+                <Button type="button" variant="outline" className="min-h-9 flex-1 sm:flex-none" disabled={form.formState.isSubmitting || nextPending || orderCount >= 25} onClick={() => {
                   const result = orderBatchFormSchema.safeParse({ customer_id: form.getValues("customer_id"), orders: [draftForPaymentMode(form.getValues(), paymentMode)] });
                   if (!result.success) {
                     form.setError("root", { message: result.error.issues[0]?.message ?? "Complete this order before adding another." });
@@ -401,7 +468,7 @@ export default function OrderDialog() {
               {step === steps.length - 1 && (
                 <Button
                   variant={"default"}
-                  className="h-auto min-h-10 flex-1 whitespace-normal py-2 sm:flex-none"
+                  className="min-h-9 flex-1 sm:flex-none"
                   disabled={
                     !state.isOpen ||
                     form.formState.isSubmitting ||
@@ -411,9 +478,9 @@ export default function OrderDialog() {
                   form="form"
                 >
                   {form.formState.isSubmitting && (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   )}
-                  {form.formState.isSubmitting ? (orderCount > 1 ? `Creating ${orderCount} orders...` : "Creating order...") : (orderCount > 1 ? `Create all ${orderCount} orders` : "Create order")}
+                  {form.formState.isSubmitting ? (orderCount > 1 ? `Creating ${orderCount} orders...` : "Creating order...") : (orderCount > 1 ? `Create ${orderCount} orders` : "Create order")}
                 </Button>
               )}
             </>
@@ -449,15 +516,19 @@ export default function OrderDialog() {
                   !state.isOpen ||
                   form.formState.isSubmitting ||
                   actionPending ||
-                  orderDetailQuery.isFetching ||
-                  orderDetailQuery.isError ||
-                  !orderDetailQuery.data
+                  (isGroupAction
+                    ? !selectedGroup?.order_group_id
+                    : editing
+                      ? !matchedOrderDetail || orderDetailQuery.isError
+                      : orderDetailQuery.isFetching ||
+                        orderDetailQuery.isError ||
+                        !orderDetailQuery.data)
                 }
                 type="submit"
                 form="form"
               >
-                {form.formState.isSubmitting && (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
+                {(form.formState.isSubmitting || actionPending) && (
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
                 )}
                 {state.action}
               </Button>
@@ -481,8 +552,11 @@ function OrderActionDetails({
 }) {
   if (isLoading) {
     return (
-      <div className="flex justify-center py-8">
-        <Loader2 className="size-6 animate-spin" aria-label="Loading order" />
+      <div className="flex justify-center py-10">
+        <Loader2
+          className="size-6 animate-spin text-muted-foreground"
+          aria-label="Loading order"
+        />
       </div>
     );
   }
@@ -495,78 +569,311 @@ function OrderActionDetails({
     );
   }
 
-  const total = order.items.some((item) => item.price === null)
-    ? null
-    : order.items.reduce(
-        (sum, item) => sum + (item.price ?? 0) * item.quantity,
-        0,
-      );
-  const formatValue = (value?: string) =>
-    value
-      ? value
-          .toLowerCase()
-          .split("_")
-          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-          .join(" ")
-      : "Not specified";
+  const { total, paymentStatus } = getOrderPaymentSummary(order);
+  const totalUnits = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const isProcess = action === "process";
+  const fromStatus = isProcess ? "PENDING" : "PROCESSING";
+  const toStatus = isProcess ? "PROCESSING" : "SCHEDULING";
 
   return (
-    <div className="max-h-[65vh] space-y-5 overflow-y-auto">
-      <section className="space-y-3">
-        <h4 className="text-sm font-medium">Order Information</h4>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ViewOrderItem label="Order Number" value={order.order_number} />
-          <ViewOrderItem label="Customer" value={order.customer_name} />
-          <ViewOrderItem
-            label="Delivery Type"
-            value={
-              order.delivery_type
-                ? formatValue(order.delivery_type)
-                : "Assigned when scheduling"
-            }
-          />
-          <ViewOrderItem
-            label="Payment Arrangement"
-            value={formatValue(order.payment_arrangement)}
-          />
-          <ViewOrderItem
-            label="Payment Method"
-            value={formatValue(order.payment_method)}
-          />
-          {order.payment_type && <ViewOrderItem label="Payment Type" value={order.payment_type} />}
-          <ViewOrderItem
-            label="Order Total"
-            value={total === null ? "Unverified" : formatCurrency(total)}
-          />
+    <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+      {/* Status Transition Banner */}
+      <div
+        className={`rounded-lg border p-3.5 ${
+          isProcess
+            ? "border-blue-200/80 bg-blue-50/50 dark:border-blue-900/70 dark:bg-blue-950/25"
+            : "border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-900/70 dark:bg-emerald-950/25"
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+          <span
+            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 ${getOrderStatusBadgeClass(fromStatus)}`}
+          >
+            {formatOrderLabel(fromStatus)}
+          </span>
+          <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          <span
+            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 ${getOrderStatusBadgeClass(toStatus)}`}
+          >
+            {formatOrderLabel(toStatus)}
+          </span>
         </div>
-      </section>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {isProcess
+            ? "Confirm stock availability to begin preparing these items for fulfillment."
+            : "Confirm all items are checked and packed. This will issue the invoice and make the order available in Delivery Schedules."}
+        </p>
+      </div>
 
-      <Separator />
+      {/* Compact Order Summary */}
+      <dl className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3.5 sm:grid-cols-4">
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Order No.</dt>
+          <dd className="mt-0.5 truncate text-sm font-semibold">
+            {order.order_number}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Customer</dt>
+          <dd className="mt-0.5 truncate text-sm font-medium">
+            {order.customer_name}
+          </dd>
+          {order.customer_company && (
+            <dd className="truncate text-xs text-muted-foreground">
+              {order.customer_company}
+            </dd>
+          )}
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Warehouse</dt>
+          <dd className="mt-0.5 truncate text-sm font-medium">
+            {order.warehouse_name || "—"}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Order Total</dt>
+          <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+            {total === null ? "Unverified" : formatCurrency(total)}
+          </dd>
+          <dd className="text-[11px] text-muted-foreground">
+            {formatOrderLabel(paymentStatus)} ·{" "}
+            {formatOrderLabel(order.payment_arrangement)}
+          </dd>
+        </div>
+      </dl>
 
-      <section className="space-y-3">
-        <h4 className="text-sm font-medium">Items to Prepare</h4>
+      {/* Items Checklist Table */}
+      <section className="space-y-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {isProcess ? "Items to Prepare" : "Prepared Items"}
+          </h3>
+          <span className="text-xs text-muted-foreground">
+            {order.items.length} {order.items.length === 1 ? "item" : "items"} ·{" "}
+            {totalUnits} {totalUnits === 1 ? "unit" : "units"}
+          </span>
+        </div>
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
-                <TableHead>Item</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead className="text-right">Total</TableHead>
+                <TableHead scope="col">Item</TableHead>
+                <TableHead scope="col">SKU</TableHead>
+                <TableHead scope="col" className="text-right">
+                  Qty
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Amount
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {order.items.map((item) => (
-                <TableRow key={item.inventory_id}>
-                  <TableCell className="font-medium">
-                    {item.product_variant_name}
+              {order.items.map((item) => {
+                const showProduct =
+                  item.product_name &&
+                  item.product_name !== item.product_variant_name;
+                return (
+                  <TableRow key={item.inventory_id}>
+                    <TableCell className="whitespace-normal">
+                      {showProduct && (
+                        <div className="text-xs text-muted-foreground">
+                          {item.product_name}
+                        </div>
+                      )}
+                      <div className="font-medium">
+                        {item.product_variant_name}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {item.product_variant_sku}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {item.quantity}
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">
+                      {item.price === null
+                        ? "Unverified"
+                        : formatCurrency(item.price * item.quantity)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
+
+      {/* Shipping Destination & Special Notes */}
+      {(order.shipping_address || order.notes?.trim()) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {order.shipping_address && (
+            <section
+              className={`space-y-1 rounded-lg border p-3.5 ${
+                !order.notes?.trim() ? "sm:col-span-2" : ""
+              }`}
+            >
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Shipping Destination
+              </h3>
+              {(order.shipping_recipient || order.shipping_phone) && (
+                <p className="text-sm font-medium">
+                  {[order.shipping_recipient, order.shipping_phone]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {order.shipping_address}
+              </p>
+            </section>
+          )}
+          {order.notes?.trim() && (
+            <section
+              className={`space-y-1 rounded-lg border border-amber-200/80 bg-amber-50/40 p-3.5 dark:border-amber-900/60 dark:bg-amber-950/20 ${
+                !order.shipping_address ? "sm:col-span-2" : ""
+              }`}
+            >
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                Order Notes
+              </h3>
+              <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                {order.notes}
+              </p>
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderGroupActionDetails({
+  group,
+  action,
+}: {
+  group: OrderTableRow | null;
+  action: "process" | "delivery";
+}) {
+  if (!group || !group.members?.length) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Unable to load this order group. Close the dialog and try again.
+      </p>
+    );
+  }
+
+  const isProcess = action === "process";
+  const fromStatus = isProcess ? "PENDING" : "PROCESSING";
+  const toStatus = isProcess ? "PROCESSING" : "SCHEDULING";
+  const eligible = group.members.filter(
+    (member) =>
+      member.status === fromStatus && member.delivery_type !== "WALK_IN",
+  );
+  const skippedCount = group.members.length - eligible.length;
+
+  return (
+    <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+      <div
+        className={`rounded-lg border p-3.5 ${
+          isProcess
+            ? "border-blue-200/80 bg-blue-50/50 dark:border-blue-900/70 dark:bg-blue-950/25"
+            : "border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-900/70 dark:bg-emerald-950/25"
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+          <span
+            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 ${getOrderStatusBadgeClass(fromStatus)}`}
+          >
+            {formatOrderLabel(fromStatus)}
+          </span>
+          <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          <span
+            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 ${getOrderStatusBadgeClass(toStatus)}`}
+          >
+            {formatOrderLabel(toStatus)}
+          </span>
+          <span className="text-muted-foreground">
+            · {eligible.length} {eligible.length === 1 ? "order" : "orders"}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {isProcess
+            ? "Start processing all pending orders in this group at once."
+            : "Confirm all processing orders in this group are packed. This issues their invoices and moves them to Delivery Schedules."}
+          {skippedCount > 0
+            ? ` ${skippedCount} other ${skippedCount === 1 ? "order" : "orders"} in this group will remain unchanged.`
+            : ""}
+        </p>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3.5 sm:grid-cols-3">
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Order Group</dt>
+          <dd
+            className="mt-0.5 truncate font-mono text-sm font-semibold"
+            title={group.order_group_number ?? undefined}
+          >
+            {formatOrderGroupCode(group.order_group_number) || "Group"}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Customer</dt>
+          <dd className="mt-0.5 truncate text-sm font-medium">
+            {group.customer_name}
+          </dd>
+          {group.customer_company && (
+            <dd className="truncate text-xs text-muted-foreground">
+              {group.customer_company}
+            </dd>
+          )}
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Updating</dt>
+          <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+            {eligible.length} of {group.members.length} orders
+          </dd>
+        </div>
+      </dl>
+
+      <section className="space-y-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Orders Included
+        </h3>
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead scope="col">Order</TableHead>
+                <TableHead scope="col">Destination</TableHead>
+                <TableHead scope="col" className="text-right">
+                  Items
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Total
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {eligible.map((member) => (
+                <TableRow key={member.id}>
+                  <TableCell className="whitespace-nowrap">
+                    <div className="font-medium">{member.product_number}</div>
+                    {member.order_group_position != null && (
+                      <div className="text-xs text-muted-foreground">
+                        #{member.order_group_position} of {group.members!.length}
+                      </div>
+                    )}
                   </TableCell>
-                  <TableCell>{item.product_variant_sku}</TableCell>
-                  <TableCell className="text-right">{item.quantity}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    {item.price === null
+                  <TableCell className="max-w-[220px] whitespace-normal text-xs text-muted-foreground">
+                    {member.shipping_address || "Address unavailable"}
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap text-xs tabular-nums">
+                    {member.item_count} ({member.total_quantity}u)
+                  </TableCell>
+                  <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
+                    {member.total === null
                       ? "Unverified"
-                      : formatCurrency(item.price * item.quantity)}
+                      : formatCurrency(member.total)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -574,46 +881,6 @@ function OrderActionDetails({
           </Table>
         </div>
       </section>
-
-      {(order.shipping_address || order.notes) && (
-        <>
-          <Separator />
-          <section className="space-y-3">
-            <h4 className="text-sm font-medium">Additional Details</h4>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {order.shipping_address && (
-                <>
-                  <ViewOrderItem
-                    label="Shipping Recipient"
-                    value={order.shipping_recipient}
-                  />
-                  <ViewOrderItem
-                    label="Shipping Phone"
-                    value={order.shipping_phone}
-                  />
-                  <div className="sm:col-span-2">
-                    <ViewOrderItem
-                      label="Shipping Address"
-                      value={order.shipping_address}
-                    />
-                  </div>
-                </>
-              )}
-              {order.notes && (
-                <div className="sm:col-span-2">
-                  <ViewOrderItem label="Notes" value={order.notes} />
-                </div>
-              )}
-            </div>
-          </section>
-        </>
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        {action === "process"
-          ? "Review the order details before starting processing. Confirm that all items and information are available."
-          : "Confirm that all items have been checked and prepared before marking this order ready for delivery."}
-      </p>
     </div>
   );
 }

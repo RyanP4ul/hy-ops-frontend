@@ -11,6 +11,7 @@ type NotificationContextType = {
   markAllAsRead: () => Promise<void>;
   markAsRead: (id: number) => Promise<void>;
   markingAllRead: boolean;
+  markingId: number | null;
 };
 
 export const NotificationContext = createContext<NotificationContextType | null>(null);
@@ -52,5 +53,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   async function markAsRead(id: number) { await markRead.mutateAsync(id).catch(() => {}); }
   async function markAllAsRead() { await markRead.mutateAsync(null).catch(() => {}); }
 
-  return <NotificationContext.Provider value={{ notification_query, markAllAsRead, markAsRead, markingAllRead: markRead.isPending && markRead.variables === null }}>{children}</NotificationContext.Provider>;
+  return <NotificationContext.Provider value={{
+    notification_query,
+    markAllAsRead,
+    markAsRead,
+    markingAllRead: markRead.isPending && markRead.variables === null,
+    markingId: markRead.isPending && typeof markRead.variables === "number" ? markRead.variables : null,
+  }}>{children}</NotificationContext.Provider>;
 }

@@ -50,7 +50,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               render={<a href="#" />}
             >
               <Image
-                src="/logo.png"
+                src="/hy-ops-logo.png"
                 alt="HyOps Logo"
                 width={32}
                 height={32}

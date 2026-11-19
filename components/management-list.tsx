@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { flexRender, type Table } from "@tanstack/react-table";
+import { Fragment, type ReactNode } from "react";
+import { flexRender, type Row, type Table } from "@tanstack/react-table";
 import { ArrowLeft, ArrowRight, Loader2, RefreshCw, Search, SearchX, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,25 +88,54 @@ export function ManagementTableState({ loading, error, filtered, label }: {
   );
 }
 
-export function ManagementTableView<TData>({ table, loading, isFetching, error, filtered, label }: {
+export function ManagementTableView<TData>({
+  table,
+  loading,
+  isFetching,
+  error,
+  filtered,
+  label,
+  getRowClassName,
+  getHeaderAriaSort,
+  renderRowDetails,
+}: {
   table: Table<TData>;
   loading: boolean;
   isFetching: boolean;
   error: boolean;
   filtered: boolean;
   label: string;
+  getRowClassName?: (row: Row<TData>) => string | undefined;
+  getHeaderAriaSort?: (columnId: string) => "ascending" | "descending" | undefined;
+  renderRowDetails?: (row: Row<TData>) => ReactNode;
 }) {
   return (
-    <div aria-busy={isFetching}>
+    <div
+      aria-busy={isFetching}
+      role="region"
+      aria-label={`${label} table`}
+      tabIndex={0}
+      className="overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
       <TableRoot>
         <TableHeader className="bg-muted/30">
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>
-              {group.headers.map((header) => (
-                <TableHead key={header.id} className="px-5">
-                  {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                </TableHead>
-              ))}
+              {group.headers.map((header) => {
+                const ariaSort = header.isPlaceholder
+                  ? undefined
+                  : getHeaderAriaSort?.(header.column.id);
+                return (
+                  <TableHead
+                    key={header.id}
+                    scope="col"
+                    aria-sort={ariaSort}
+                    className="px-5"
+                  >
+                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                  </TableHead>
+                );
+              })}
             </TableRow>
           ))}
         </TableHeader>
@@ -114,13 +143,23 @@ export function ManagementTableView<TData>({ table, loading, isFetching, error, 
           {loading ? (
             <TableRow><TableCell colSpan={table.getVisibleLeafColumns().length}><ManagementTableState loading label={label} /></TableCell></TableRow>
           ) : table.getRowModel().rows.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="px-5 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                ))}
-              </TableRow>
-            ))
+            table.getRowModel().rows.map((row) => {
+              const details = renderRowDetails?.(row);
+              return (
+                <Fragment key={row.id}>
+                  <TableRow className={getRowClassName?.(row)}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-5 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                    ))}
+                  </TableRow>
+                  {details && (
+                    <TableRow className="bg-muted/20 hover:bg-muted/20">
+                      <TableCell colSpan={row.getVisibleCells().length} className="whitespace-normal px-5 py-4">{details}</TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })
           ) : (
             <TableRow><TableCell colSpan={table.getVisibleLeafColumns().length}><ManagementTableState error={error} filtered={filtered} label={label} /></TableCell></TableRow>
           )}
@@ -138,7 +177,7 @@ export function ManagementListFooter<TData>({ table, total, isFetching, label, p
   pageFiltered?: boolean;
 }) {
   const { pageIndex, pageSize } = table.getState().pagination;
-  const count = table.getRowModel().rows.length;
+  const count = table.getCoreRowModel().rows.length;
   const start = count ? pageIndex * pageSize + 1 : 0;
   const end = count ? pageIndex * pageSize + count : 0;
   return (

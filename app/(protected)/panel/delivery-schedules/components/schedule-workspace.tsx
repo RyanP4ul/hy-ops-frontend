@@ -20,7 +20,10 @@ export function ScheduleWorkspace({ children, disabled, title, description }: {
   const orders = ids.length ? orderDetailQuery.data ?? [] : [];
   const editor = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const expense = Number(values.delivery_allowance ?? 0) + Number(values.fuel ?? 0) + Number(values.toll ?? 0);
+  const safeNum = (value: unknown) =>
+    Number.isFinite(Number(value)) ? Number(value) : 0;
+  const expense =
+    safeNum(values.delivery_allowance) + safeNum(values.fuel) + safeNum(values.toll);
   useEffect(() => {
     editor.current?.scrollTo({ top: 0 });
     heading.current?.focus({ preventScroll: true });
@@ -63,7 +66,7 @@ export function ScheduleWorkspace({ children, disabled, title, description }: {
           <span className="flex size-5 items-center justify-center rounded-full border text-[10px]">{index < step ? <Check className="size-3" /> : index + 1}</span>{label}
         </Button>)}
       </nav>
-      <div className="mb-6"><p className="mb-1 text-xs font-medium text-muted-foreground">STEP {step + 1} OF 6</p><h2 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none">{title}</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p></div>
+      <div className={description ? "mb-6" : "mb-4"}><p className="mb-1 text-xs font-medium text-muted-foreground">STEP {step + 1} OF 6</p><h2 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none">{title}</h2>{description && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>}</div>
       <div className="min-w-0 space-y-5">{children}</div>
     </main>
   </div>;

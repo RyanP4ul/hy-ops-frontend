@@ -43,6 +43,40 @@ export function formatElapsedTime(
   );
 }
 
+export function formatCompactElapsedTime(
+  timestamp: number | null | undefined,
+  now = Date.now(),
+): string {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+    return "";
+  }
+
+  const timestampMs = timestamp * 1000;
+  if (!Number.isFinite(timestampMs) || !Number.isFinite(new Date(timestampMs).getTime())) {
+    return "";
+  }
+
+  const deltaSeconds = (timestampMs - now) / 1000;
+  const elapsedSeconds = Math.abs(deltaSeconds);
+  if (elapsedSeconds < 60) {
+    return "now";
+  }
+
+  const [secondsPerUnit, suffix] =
+    elapsedSeconds < 60 * 60
+      ? [60, "m"]
+      : elapsedSeconds < 24 * 60 * 60
+        ? [60 * 60, "h"]
+        : elapsedSeconds < 30 * 24 * 60 * 60
+          ? [24 * 60 * 60, "d"]
+          : elapsedSeconds < 365 * 24 * 60 * 60
+            ? [30 * 24 * 60 * 60, "mo"]
+            : [365 * 24 * 60 * 60, "y"];
+
+  const value = Math.max(1, Math.round(elapsedSeconds / secondsPerUnit));
+  return deltaSeconds > 0 ? `in ${value}${suffix}` : `${value}${suffix}`;
+}
+
 export function formatTime(time: string): string {
   const [hours, minutes] = time.split(":");
 

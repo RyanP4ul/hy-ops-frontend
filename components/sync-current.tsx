@@ -26,6 +26,7 @@ export default function SyncCurrentPage() {
     }
 
     setCurrentPage(pageName);
+    document.title = `${pageName} | HYOps`;
   }, [pathname, setCurrentPage]);
 
   return null;

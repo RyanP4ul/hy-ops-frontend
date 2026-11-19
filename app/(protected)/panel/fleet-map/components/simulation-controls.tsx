@@ -1,4 +1,4 @@
-import { FlaskConical, Pause, Play, SlidersHorizontal } from "lucide-react";
+import { FlaskConical, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -17,10 +17,6 @@ type SimulationControlsProps = {
   onAutoDispatchChange: (autoDispatch: boolean) => void;
 };
 
-/**
- * Development / testing simulation sandbox. Kept discreet in a secondary popover
- * so everyday dispatch operations remain uncluttered.
- */
 export function SimulationControls({
   enabled,
   onEnabledChange,
@@ -35,80 +31,61 @@ export function SimulationControls({
         render={
           <Button
             type="button"
-            size="sm"
+            size="icon"
             variant={enabled ? "outline" : "ghost"}
             className={cn(
-              "h-8 gap-1.5 px-2 text-xs",
+              "size-7",
               enabled &&
-                "border-violet-500/60 bg-violet-500/10 text-violet-800 dark:text-violet-200",
+                "border-violet-400/70 bg-violet-500/10 text-violet-700 dark:text-violet-300",
             )}
-            aria-label="Development testing tools"
-            title="Development testing tools"
+            aria-label="Simulation mode"
+            title="Simulation mode"
           >
-            {enabled ? (
-              <FlaskConical className="size-3.5" aria-hidden="true" />
-            ) : (
-              <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-            )}
-            <span className="hidden xl:inline">
-              {enabled ? "Simulating" : "Dev tools"}
-            </span>
+            <FlaskConical className="size-3.5" aria-hidden="true" />
           </Button>
         }
       />
 
-      <PopoverContent align="end" className="w-80 space-y-4">
-        <div>
-          <p className="text-sm font-semibold">Sandbox simulation</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Testing only. Replaces real GPS fixes with simulated client-side
-            movement. Changes are never saved to the server.
+      <PopoverContent align="end" className="w-64 space-y-3 p-3 text-xs">
+        <div className="space-y-0.5">
+          <p className="font-semibold text-foreground">Simulation</p>
+          <p className="text-[11px] text-muted-foreground">
+            Local test movement only. Nothing is saved.
           </p>
         </div>
 
-        <div className="flex items-center justify-between gap-3">
-          <label htmlFor="sim-1-enabled" className="text-sm font-medium">
-            Simulate vehicle movement
-          </label>
-          <Switch
-            id="sim-1-enabled"
-            checked={enabled}
-            onCheckedChange={onEnabledChange}
-          />
-        </div>
+        <label className="flex cursor-pointer items-center justify-between gap-2">
+          <span>Enable simulation</span>
+          <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+        </label>
 
         {enabled ? (
-          <div className="space-y-3 rounded-lg border bg-muted/40 p-3">
+          <div className="space-y-2.5 border-t pt-2.5">
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="w-full gap-1.5"
+              className="h-7 w-full gap-1.5 text-xs"
               onClick={() => onRunningChange(!running)}
             >
               {running ? (
                 <>
-                  <Pause className="size-4" aria-hidden="true" /> Pause
-                  simulation
+                  <Pause className="size-3" aria-hidden="true" /> Pause
                 </>
               ) : (
                 <>
-                  <Play className="size-4" aria-hidden="true" /> Resume
-                  simulation
+                  <Play className="size-3" aria-hidden="true" /> Resume
                 </>
               )}
             </Button>
 
-            <div className="flex items-center justify-between gap-3">
-              <label htmlFor="sim-1-auto" className="text-xs">
-                Auto-start next scheduled trip
-              </label>
+            <label className="flex cursor-pointer items-center justify-between gap-2">
+              <span className="text-muted-foreground">Auto-dispatch next</span>
               <Switch
-                id="sim-1-auto"
                 checked={autoDispatch}
                 onCheckedChange={onAutoDispatchChange}
               />
-            </div>
+            </label>
           </div>
         ) : null}
       </PopoverContent>

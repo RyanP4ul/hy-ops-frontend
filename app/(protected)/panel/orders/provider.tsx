@@ -8,7 +8,7 @@ import {
   OrderDetail,
   OrderForm,
   OrderItemDetail,
-  OrderRow,
+  OrderTableRow,
   orderSchema,
 } from "@/schema/order";
 import {
@@ -93,10 +93,12 @@ type OrdersContext = {
   setStep: React.Dispatch<React.SetStateAction<number>>;
   ordersQuery: ReturnType<
     typeof useQuery<{
-      rows: (OrderRow & { version: number })[];
+      rows: OrderTableRow[];
       total: number;
     }>
   >;
+  selectedGroup: OrderTableRow | null;
+  setSelectedGroup: React.Dispatch<React.SetStateAction<OrderTableRow | null>>;
   orderDetailQuery: ReturnType<typeof useQuery<OrderDetail | null>>;
   inventoryQuery: ReturnType<
     typeof useQuery<{
@@ -185,6 +187,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     id: -1,
     version: 0,
   });
+  const [selectedGroup, setSelectedGroup] = useState<OrderTableRow | null>(null);
   const [viewOrderId, setViewOrderId] = useState<number>(-1);
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
@@ -261,6 +264,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       const params = new URLSearchParams({
         page: String(page.pageIndex),
         limit: String(page.pageSize),
+        grouped: "true",
       });
 
       if (search.trim()) params.set("search", search);
@@ -274,7 +278,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) throw new Error("Failed to fetch orders");
 
       return {
-        rows: (await response.json()) as (OrderRow & { version: number })[],
+        rows: (await response.json()) as OrderTableRow[],
         total: Number(response.headers.get("X-Total-Count") ?? 0),
       };
     },
@@ -625,6 +629,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         productVariantsQuery,
         selected,
         setSelected,
+        selectedGroup,
+        setSelectedGroup,
         viewOrder,
         viewOrderId,
         page,

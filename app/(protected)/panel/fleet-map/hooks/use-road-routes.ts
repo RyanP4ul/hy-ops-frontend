@@ -82,14 +82,14 @@ export function useRoadRoutes(
   const keys = [...requests.keys()];
   const queries = useQueries({
     queries: keys.map((key) => ({
-      queryKey: ["fleet-1-road-route", key],
+      queryKey: ["fleet-3-road-route", key],
       queryFn: async ({
         signal,
       }: {
         signal: AbortSignal;
       }): Promise<RoadRoute> => {
         const response = await fetch(
-          `/panel/fleet-map/road-route?${new URLSearchParams({ waypoints: key })}`,
+          `/panel/fleet-map-3/road-route?${new URLSearchParams({ waypoints: key })}`,
           { signal },
         );
         if (

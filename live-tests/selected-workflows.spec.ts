@@ -79,25 +79,34 @@ test("Users saves edits and role profiles, changes password and deactivates with
   } finally { await other.dispose(); }
 });
 
-test("Vehicles creates, edits and archives an unused vehicle through rendered controls", async ({ page }) => {
+test("Vehicles defaults to Truck, manages maintenance, edits and archives through rendered controls", async ({ page }) => {
   await navigate(page, "/panel/vehicles");
-  await page.getByRole("button", { name: "Add Vehicle", exact: true }).click();
+  await page.getByRole("button", { name: "Add vehicle", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Type", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("Plate number", { exact: true }).fill(" selected-001 ");
   await choose(page, dialog.getByLabel("Warehouse", { exact: false }), "(1) Live warehouse");
   await dialog.getByRole("button", { name: "Add Vehicle", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await page.getByPlaceholder("Search vehicles...").fill("SELECTED-001");
+  await page.getByPlaceholder(/Search vehicles/).fill("SELECTED-001");
   const row = rowFor(page, "SELECTED-001");
   await expect(row).toBeVisible();
+  await expect(row).toContainText("truck");
+  await expect(row).toContainText("available");
+  await row.getByRole("button", { name: "Set maintenance", exact: true }).click();
+  await expect(row.getByRole("cell", { name: "maintenance", exact: true })).toBeVisible();
   await row.getByRole("button", { name: "Edit vehicle", exact: true }).click();
   await expect(dialog.getByLabel("Plate number")).toHaveValue("SELECTED-001");
-  await choose(page, dialog.getByLabel("Status", { exact: true }), "Maintenance");
-  await choose(page, dialog.getByLabel("Type", { exact: true }), "Van");
+  await expect(dialog.getByLabel("Status", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Type", { exact: true })).toHaveCount(0);
+  await dialog.getByLabel("Plate number").fill("SELECTED-001-EDITED");
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(row).toContainText("maintenance");
-  await expect(row).toContainText("van");
+  await expect(row).toContainText("SELECTED-001-EDITED");
+  await expect(row.getByRole("cell", { name: "maintenance", exact: true })).toBeVisible();
+  await expect(row).toContainText("truck");
+  await row.getByRole("button", { name: "End maintenance", exact: true }).click();
+  await expect(row.getByRole("cell", { name: "available", exact: true })).toBeVisible();
   await row.getByRole("button", { name: "Archive", exact: true }).click();
   await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0);
@@ -109,7 +118,7 @@ test("Scheduled assignments protect driver and vehicle edits and preserve delive
   const vehicle = await json(page.request, "POST", "/vehicles", { warehouse_id: 1, plate_number: "ASSIGNED-001", type: "truck", status: "available" });
   const trip = await createTrip(page, driver.id, vehicle.id);
   await navigate(page, "/panel/users");
-  await page.getByPlaceholder("Search users...").fill("Selected Driver");
+  await page.getByPlaceholder(/Search users/).fill("Selected Driver");
   await rowFor(page, "Selected Driver").getByRole("button", { name: "Edit user Selected Driver", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Warehouse", { exact: false })).toHaveValue("Live warehouse");
@@ -119,13 +128,10 @@ test("Scheduled assignments protect driver and vehicle edits and preserve delive
   expect((await json(page.request, "GET", `/users/${driver.id}`)).profile.status).toBe("available");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await navigate(page, "/panel/vehicles");
-  await page.getByPlaceholder("Search vehicles...").fill("ASSIGNED-001");
+  await page.getByPlaceholder(/Search vehicles/).fill("ASSIGNED-001");
   const row = rowFor(page, "ASSIGNED-001");
-  await row.getByRole("button", { name: "Edit vehicle", exact: true }).click();
-  await choose(page, dialog.getByLabel("Status", { exact: true }), "Maintenance");
-  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText(/assign|trip|deliver/i);
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await row.getByRole("button", { name: "Set maintenance", exact: true }).click();
+  await expect(page.getByText(/Reassign or complete the vehicle's scheduled\/active deliveries/)).toBeVisible();
   await row.getByRole("button", { name: "Archive", exact: true }).click();
   await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText(/history|deliver/i);

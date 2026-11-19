@@ -1,31 +1,28 @@
 import {
-  AlertCircle,
   Check,
   Crosshair,
-  Eye,
-  EyeOff,
-  Info,
   Layers,
-  LocateFixed,
   Maximize2,
-  Navigation,
-  Route as RouteIcon,
-  Search,
+  PackageMinus,
+  TriangleAlert,
   Truck,
   Warehouse,
-  WifiOff,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Map,
   MapControls,
   MapMarker,
   MapRoute,
-  MarkerContent,
-  MarkerTooltip,
   useMap,
   type MapRef,
 } from "@/components/ui/map";
@@ -36,10 +33,13 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { CO_LOCATION_RADIUS_M, DEFAULT_MAP_CENTER } from "../constants";
-import { formatAgo, formatDistance, formatDuration, pluralize } from "../lib/format";
+import {
+  formatDistance,
+  formatDuration,
+  pluralize,
+} from "../lib/format";
 import {
   clusterCoLocatedVehicles,
-  getWarehouse,
   type CoLocatedVehicleGroup,
 } from "../lib/geometry";
 import type { RoadRoute } from "../lib/road-routing";
@@ -50,7 +50,6 @@ import {
 } from "../lib/vehicle";
 import type {
   DeliveryStop,
-  FleetView,
   FollowMode,
   MapLayers,
   ResolvedPosition,
@@ -58,14 +57,49 @@ import type {
   Trip,
   Vehicle,
   WarehouseLocation,
+  WorkspaceMode,
 } from "../types";
+import { FleetMarker, MarkerGlyph, type MarkerTone } from "./fleet-marker";
 import type { ReturnPickup } from "./return-pickups";
-import { SignalBadge } from "./signal-badge";
-import { StatusBadge } from "./status-badge";
+import { GpsLabel, StatusLabel } from "./status-pill";
 
 const PENDING_COLOR = "#94a3b8";
 const PREVIEW_COLOR = "#4f46e5";
 const SELECTED_ROUTE_COLOR = "#1d4ed8";
+
+const STOP_LABELS = {
+  next: "Next stop",
+  pending: "Pending",
+  delivered: "Delivered",
+  failed: "Failed",
+} as const;
+
+const MARKER_KEY = [
+  { tone: "vehicle", label: "Vehicle", glyph: <Truck />, heading: 45 },
+  {
+    tone: "cluster",
+    label: "Vehicle group",
+    glyph: (
+      <>
+        <Truck />
+        <span className="fm-cluster-count">3</span>
+      </>
+    ),
+  },
+  { tone: "warehouse", label: "Warehouse", glyph: <Warehouse /> },
+  { tone: "return", label: "Return pickup", glyph: <PackageMinus /> },
+  { tone: "next", label: STOP_LABELS.next, glyph: "1" },
+  { tone: "pending", label: STOP_LABELS.pending, glyph: "2" },
+  { tone: "delivered", label: STOP_LABELS.delivered, glyph: <Check /> },
+  { tone: "failed", label: STOP_LABELS.failed, glyph: <X /> },
+  { tone: "preview", label: "Trip preview", glyph: "1" },
+  { tone: "gps", label: "GPS issue", glyph: <TriangleAlert /> },
+] satisfies {
+  tone: MarkerTone;
+  label: string;
+  glyph?: ReactNode;
+  heading?: number;
+}[];
 
 function ResizeMap({ triggerKey }: { triggerKey: string }) {
   const { map } = useMap();
@@ -119,8 +153,9 @@ function FollowInteractionGuard({
 type FleetMapCanvasProps = {
   returnPickups?: ReturnPickup[];
   mapRef: RefObject<MapRef | null>;
-  view: FleetView;
+  mode: WorkspaceMode;
   fullscreen: boolean;
+  railOpen: boolean;
   vehicles: Vehicle[];
   warehouses: WarehouseLocation[];
   positions: Map<string, ResolvedPosition>;
@@ -138,8 +173,6 @@ type FleetMapCanvasProps = {
   onResumeFollow: () => void;
   onStopFollow: () => void;
   onFitFleet: () => void;
-  onFitRoute: () => void;
-  onRecenterSelected: () => void;
   onSelectVehicle: (vehicle: Vehicle) => void;
   onSelectStop: (vehicle: Vehicle, stop: DeliveryStop) => void;
   onFocusWarehouse: (warehouse: WarehouseLocation) => void;
@@ -148,8 +181,9 @@ type FleetMapCanvasProps = {
 export function FleetMapCanvas({
   returnPickups = [],
   mapRef,
-  view,
+  mode,
   fullscreen,
+  railOpen,
   vehicles,
   warehouses,
   positions,
@@ -167,32 +201,29 @@ export function FleetMapCanvas({
   onResumeFollow,
   onStopFollow,
   onFitFleet,
-  onFitRoute,
-  onRecenterSelected,
   onSelectVehicle,
   onSelectStop,
   onFocusWarehouse,
 }: FleetMapCanvasProps) {
-  const [legendOpen, setLegendOpen] = useState(false);
   const [activeClusterKey, setActiveClusterKey] = useState<string | null>(null);
-  const [quickQuery, setQuickQuery] = useState("");
-  const [quickOpen, setQuickOpen] = useState(false);
 
   const selectedVehicle = vehicles.find((v) => v.id === selectedId) ?? null;
   const selectedRoadRoute = selectedVehicle
     ? roadRoutes.get(selectedVehicle.id)
     : undefined;
 
-  const resizeTrigger = `${view}-${fullscreen}-${selectedId ?? "none"}`;
+  const resizeTrigger = `${mode}-${fullscreen}-${railOpen}-${selectedId ?? "none"}`;
 
-  // Planned road route segments (never straight-line fallbacks).
   const segments = useMemo(() => {
     if (!layers.routes) return [];
 
     return vehicles.flatMap((vehicle) => {
       const selected = vehicle.id === selectedId;
       if (vehicle.stops.length === 0 && !vehicle.pickups?.length) return [];
-      if (!selected && (!layers.allActiveRoutes || vehicle.status === "available")) {
+      if (
+        !selected &&
+        (!layers.allActiveRoutes || vehicle.status === "available")
+      ) {
         return [];
       }
 
@@ -264,25 +295,8 @@ export function FleetMapCanvas({
   );
 
   const activeCluster: CoLocatedVehicleGroup | null = activeClusterKey
-    ? vehicleClusters.find((c) => c.key === activeClusterKey) ?? null
+    ? (vehicleClusters.find((c) => c.key === activeClusterKey) ?? null)
     : null;
-
-  const quickMatches = useMemo(() => {
-    const q = quickQuery.trim().toLowerCase();
-    const list = q
-      ? vehicles.filter(
-          (v) =>
-            v.plate.toLowerCase().includes(q) ||
-            v.driver.toLowerCase().includes(q) ||
-            getWarehouse(v, warehouses).name.toLowerCase().includes(q),
-        )
-      : vehicles;
-    return list.slice(0, 8);
-  }, [quickQuery, vehicles, warehouses]);
-
-  const rightOffsetClass = selectedVehicle
-    ? "@3xl:right-[372px] @5xl:right-2.5"
-    : "";
 
   return (
     <div className="relative h-full w-full">
@@ -290,6 +304,7 @@ export function FleetMapCanvas({
         ref={mapRef}
         center={DEFAULT_MAP_CENTER}
         zoom={11}
+        clean
         className="h-full w-full"
       >
         <MapControls position="bottom-right" showZoom showCompass />
@@ -299,7 +314,7 @@ export function FleetMapCanvas({
           onPauseFollow={onPauseFollow}
         />
 
-        {/* Planned Road Routes (OSRM) */}
+        {/* Road Routes */}
         {segments.map((segment) => (
           <MapRoute
             key={segment.key}
@@ -312,7 +327,7 @@ export function FleetMapCanvas({
           />
         ))}
 
-        {/* Previewed Scheduled Trip Road Route */}
+        {/* Previewed Scheduled Trip Route */}
         {layers.routes && previewRoute?.coordinates ? (
           <MapRoute
             key="preview-route"
@@ -333,28 +348,19 @@ export function FleetMapCanvas({
                   key={`return-${task.id}`}
                   longitude={task.coordinates![0]}
                   latitude={task.coordinates![1]}
+                  anchor="bottom"
                 >
-                  <MarkerContent>
-                    <div
-                      className="flex size-8 items-center justify-center rounded-full border-2 border-white bg-rose-700 text-xs font-bold text-white shadow-md"
-                      aria-label={`Return pickup ${task.orderNumber}`}
-                    >
-                      R
-                    </div>
-                  </MarkerContent>
-                  <MarkerTooltip>
-                    <div>
-                      <p className="font-semibold">
-                        Return pickup · {task.orderNumber}
-                      </p>
-                      <p className="text-xs">{task.customer}</p>
-                      <p className="text-xs opacity-80">
-                        {task.status === "requested"
-                          ? "Awaiting retrieval assignment"
-                          : "Pickup assigned"}
-                      </p>
-                    </div>
-                  </MarkerTooltip>
+                  <FleetMarker
+                    name={`Return pickup ${task.orderNumber}`}
+                    title={`Return pickup · ${task.orderNumber}`}
+                    details={task.customer}
+                    pinned
+                    priority="location"
+                  >
+                    <MarkerGlyph tone="return">
+                      <PackageMinus />
+                    </MarkerGlyph>
+                  </FleetMarker>
                 </MapMarker>
               ))
           : null}
@@ -371,39 +377,26 @@ export function FleetMapCanvas({
                   key={warehouse.id}
                   longitude={warehouse.coordinates[0]}
                   latitude={warehouse.coordinates[1]}
+                  anchor="bottom"
                   onClick={() => {
                     setActiveClusterKey(null);
                     onFocusWarehouse(warehouse);
                   }}
                 >
-                  <MarkerContent>
-                    <div className="relative">
-                      <div
-                        className={cn(
-                          "flex size-9 items-center justify-center rounded-lg border-2 border-white bg-slate-900 text-white shadow-md transition-transform",
-                          focused && "scale-110 ring-2 ring-primary ring-offset-2",
-                        )}
-                        role="img"
-                        aria-label={`Warehouse ${warehouse.name}`}
-                      >
-                        <Warehouse className="size-4" aria-hidden="true" />
-                      </div>
-                      {based.length > 0 ? (
-                        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                          {based.length}
-                        </span>
-                      ) : null}
-                    </div>
-                  </MarkerContent>
-                  <MarkerTooltip>
-                    <div>
-                      <p className="font-semibold">{warehouse.name}</p>
-                      <p className="text-xs">{warehouse.address}</p>
-                      <p className="text-xs">
-                        {pluralize(based.length, "vehicle")} based here
-                      </p>
-                    </div>
-                  </MarkerTooltip>
+                  <FleetMarker
+                    name={`Warehouse ${warehouse.name}, ${pluralize(based.length, "vehicle")}`}
+                    title={warehouse.name}
+                    details={pluralize(based.length, "vehicle")}
+                    badge={based.length}
+                    interactive
+                    pinned
+                    selected={focused}
+                    priority="location"
+                  >
+                    <MarkerGlyph tone="warehouse">
+                      <Warehouse />
+                    </MarkerGlyph>
+                  </FleetMarker>
                 </MapMarker>
               );
             })
@@ -421,80 +414,46 @@ export function FleetMapCanvas({
                 const actualStatus =
                   enrichment?.actualStatus ??
                   (stop.status === "completed" ? "delivered" : "pending");
-                const isDelivered = actualStatus === "delivered";
-                const isFailed = actualStatus === "failed";
-                const isNext =
-                  !isDelivered && !isFailed && stop.id === next?.id;
+                const tone =
+                  actualStatus === "pending" && selected && stop.id === next?.id
+                    ? "next"
+                    : actualStatus;
+                const status = STOP_LABELS[tone];
 
                 return (
                   <MapMarker
                     key={`${vehicle.id}-${stop.id}`}
                     longitude={stop.coordinates[0]}
                     latitude={stop.coordinates[1]}
+                    anchor={selected ? "bottom" : "center"}
                     onClick={(event) => {
                       event.stopPropagation();
                       setActiveClusterKey(null);
                       onSelectStop(vehicle, stop);
                     }}
                   >
-                    <MarkerContent>
-                      {selected ? (
-                        <div
-                          className={cn(
-                            "flex size-7 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold shadow-md transition-transform hover:scale-110",
-                            isDelivered && "bg-emerald-600 text-white",
-                            isFailed && "bg-destructive text-white",
-                            isNext &&
-                              "scale-110 bg-primary text-primary-foreground ring-2 ring-primary/40",
-                            !isDelivered &&
-                              !isFailed &&
-                              !isNext &&
-                              "bg-amber-400 text-slate-950",
-                          )}
-                          aria-label={`Stop ${index + 1}: ${stop.name}`}
-                        >
-                          {isDelivered ? (
-                            <Check className="size-3.5" aria-hidden="true" />
-                          ) : isFailed ? (
-                            <AlertCircle
-                              className="size-3.5"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            index + 1
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          className="size-3 rounded-full border-2 border-white shadow"
-                          style={{
-                            backgroundColor: isDelivered
-                              ? vehicle.color
-                              : isFailed
-                                ? "#dc2626"
-                                : PENDING_COLOR,
-                          }}
-                          aria-label={`Stop ${index + 1} for ${vehicle.plate}`}
-                        />
-                      )}
-                    </MarkerContent>
-                    <MarkerTooltip>
-                      <div>
-                        <p className="font-semibold">
-                          #{index + 1} · {stop.name}
-                        </p>
-                        <p className="text-xs">
-                          {vehicle.plate} · {stop.order.id} ·{" "}
-                          {isDelivered
-                            ? "Delivered"
-                            : isFailed
-                              ? "Failed"
-                              : isNext
-                                ? "Next stop"
-                                : "Pending"}
-                        </p>
-                      </div>
-                    </MarkerTooltip>
+                    <FleetMarker
+                      name={`Stop ${index + 1}: ${stop.name}, ${status}, ${vehicle.plate}`}
+                      title={`#${index + 1} · ${stop.name}`}
+                      details={`${status} · ${vehicle.plate} · ${stop.order.id}`}
+                      interactive
+                      pinned={selected}
+                      priority={selected ? "location" : undefined}
+                    >
+                      <MarkerGlyph
+                        tone={tone}
+                        compact={!selected}
+                        pulse={selected && tone === "next" ? "selected" : false}
+                      >
+                        {tone === "delivered" ? (
+                          <Check />
+                        ) : tone === "failed" ? (
+                          <X />
+                        ) : selected ? (
+                          index + 1
+                        ) : null}
+                      </MarkerGlyph>
+                    </FleetMarker>
                   </MapMarker>
                 );
               });
@@ -508,29 +467,24 @@ export function FleetMapCanvas({
                 key={`preview-${stop.id}`}
                 longitude={stop.coordinates[0]}
                 latitude={stop.coordinates[1]}
+                anchor="bottom"
               >
-                <MarkerContent>
-                  <div
-                    className="flex size-7 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold text-white shadow-md"
-                    style={{ backgroundColor: PREVIEW_COLOR }}
-                    aria-label={`Preview stop ${index + 1}: ${stop.name}`}
-                  >
+                <FleetMarker
+                  name={`Preview stop ${index + 1}: ${stop.name}`}
+                  title={`#${index + 1} · ${stop.name}`}
+                  details={previewTrip.trip.label}
+                  pinned
+                  priority="location"
+                >
+                  <MarkerGlyph tone="preview">
                     {index + 1}
-                  </div>
-                </MarkerContent>
-                <MarkerTooltip>
-                  <div>
-                    <p className="font-semibold">{stop.name}</p>
-                    <p className="text-xs">
-                      {previewTrip.trip.label} (planned preview)
-                    </p>
-                  </div>
-                </MarkerTooltip>
+                  </MarkerGlyph>
+                </FleetMarker>
               </MapMarker>
             ))
           : null}
 
-        {/* Vehicles (clustered cleanly when sharing identical/nearby coordinates) */}
+        {/* Vehicle Markers & Co-located Clusters */}
         {vehicleClusters.map((cluster) => {
           if (cluster.vehicles.length === 1) {
             const vehicle = cluster.vehicles[0];
@@ -539,8 +493,14 @@ export function FleetMapCanvas({
 
             const selected = vehicle.id === selectedVehicle?.id;
             const active = vehicle.status !== "available";
-            const gpsWarn =
-              position.health === "stale" || position.health === "none";
+            const gpsWarning =
+              position.health === "stale"
+                ? position.ageMs === null
+                  ? "Invalid GPS"
+                  : "Stale GPS"
+                : position.health === "none"
+                  ? "No GPS"
+                  : undefined;
 
             return (
               <MapMarker
@@ -553,85 +513,36 @@ export function FleetMapCanvas({
                   onSelectVehicle(vehicle);
                 }}
               >
-                <MarkerContent>
-                  <div className="relative flex flex-col items-center">
-                    <div
-                      className={cn(
-                        "relative flex size-9 items-center justify-center rounded-full border-2 border-white text-white shadow-md transition-transform",
-                        selected &&
-                          "scale-115 ring-2 ring-primary ring-offset-2",
-                        position.isEstimated && "border-dashed opacity-85",
-                        !active && !selected && "opacity-80",
-                      )}
-                      style={{ backgroundColor: vehicle.color }}
-                      aria-label={`Vehicle ${vehicle.plate}, ${getOperationalStatusKey(vehicle)}`}
-                    >
-                      {active && position.heading != null ? (
-                        <Navigation
-                          className="size-4"
-                          style={{
-                            transform: `rotate(${position.heading}deg)`,
-                          }}
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <Truck className="size-4" aria-hidden="true" />
-                      )}
-
-                      {gpsWarn ? (
-                        <span
-                          className={cn(
-                            "absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full border border-white text-white",
-                            position.health === "stale"
-                              ? "bg-orange-600"
-                              : "bg-slate-600",
-                          )}
-                          title={
-                            position.health === "stale"
-                              ? "Stale GPS"
-                              : "No GPS fix"
-                          }
-                        >
-                          <WifiOff className="size-2" aria-hidden="true" />
-                        </span>
-                      ) : null}
+                <FleetMarker
+                  name={`Vehicle ${vehicle.plate}${position.isEstimated ? ", estimated location" : ""}`}
+                  title={`${vehicle.plate} · ${vehicle.driver}`}
+                  details={
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <StatusLabel status={getOperationalStatusKey(vehicle)} />
+                      <GpsLabel position={position} />
                     </div>
-
-                    {selected ? (
-                      <span className="mt-1 rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
-                        {vehicle.plate}
-                      </span>
-                    ) : null}
-                  </div>
-                </MarkerContent>
-
-                <MarkerTooltip>
-                  <div className="space-y-0.5">
-                    <p className="font-semibold">
-                      {vehicle.plate} · {vehicle.driver}
-                    </p>
-                    <p className="text-xs opacity-90">
-                      Status:{" "}
-                      {getOperationalStatusKey(vehicle).replaceAll("_", " ")}
-                    </p>
-                    <p className="text-xs opacity-80">
-                      {position.health === "fresh"
-                        ? `GPS fresh · ${formatAgo(position.ageMs ?? 0)}`
-                        : position.health === "delayed"
-                          ? `GPS delayed · ${formatAgo(position.ageMs ?? 0)}`
-                          : position.health === "stale"
-                            ? `Last known · ${formatAgo(position.ageMs ?? 0)}`
-                            : position.health === "simulated"
-                              ? "Simulated position"
-                              : "No GPS fix (estimated location)"}
-                    </p>
-                  </div>
-                </MarkerTooltip>
+                  }
+                  label={selected ? vehicle.plate : undefined}
+                  accentColor={vehicle.color}
+                  warning={gpsWarning}
+                  interactive
+                  selected={selected}
+                  priority={selected ? "selected" : "vehicle"}
+                >
+                  <MarkerGlyph
+                    tone={active ? "vehicle" : "parked"}
+                    color={vehicle.color}
+                    heading={active ? position.heading : null}
+                    estimated={position.isEstimated}
+                    pulse={selected ? "selected" : active ? "live" : false}
+                  >
+                    <Truck />
+                  </MarkerGlyph>
+                </FleetMarker>
               </MapMarker>
             );
           }
 
-          // Multi-vehicle co-located cluster
           const selectedInCluster = cluster.vehicles.find(
             (v) => v.id === selectedVehicle?.id,
           );
@@ -655,253 +566,54 @@ export function FleetMapCanvas({
                 );
               }}
             >
-              <MarkerContent>
-                <div className="relative flex flex-col items-center">
-                  <div
-                    className={cn(
-                      "relative flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border-2 border-white bg-slate-800 px-2 text-xs font-bold text-white shadow-md transition-transform hover:scale-105",
-                      selectedInCluster &&
-                        "bg-primary ring-2 ring-primary ring-offset-2",
-                    )}
-                    aria-label={`${cluster.vehicles.length} vehicles at this location`}
-                  >
-                    <Truck className="size-3.5" aria-hidden="true" />
-                    <span>{cluster.vehicles.length}</span>
-                    {anyGpsWarn ? (
-                      <span className="absolute -right-0.5 -top-0.5 size-3 rounded-full border border-white bg-orange-500" />
-                    ) : null}
-                  </div>
-                  {selectedInCluster ? (
-                    <span className="mt-1 rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
-                      {selectedInCluster.plate} +{cluster.vehicles.length - 1}
-                    </span>
-                  ) : null}
-                </div>
-              </MarkerContent>
-              <MarkerTooltip>
-                <div>
-                  <p className="font-semibold">
-                    {cluster.vehicles.length} vehicles at this location
-                  </p>
-                  <p className="text-xs">
-                    Click to select:{" "}
-                    {cluster.vehicles.map((v) => v.plate).join(", ")}
-                  </p>
-                </div>
-              </MarkerTooltip>
+              <FleetMarker
+                name={`${cluster.vehicles.length} vehicles here`}
+                title={`${cluster.vehicles.length} vehicles at this location`}
+                details={cluster.vehicles.map((v) => v.plate).join(", ")}
+                label={
+                  selectedInCluster
+                    ? `${selectedInCluster.plate} +${cluster.vehicles.length - 1}`
+                    : undefined
+                }
+                accentColor={selectedInCluster?.color}
+                warning={anyGpsWarn ? "GPS issue" : undefined}
+                interactive
+                expanded={activeCluster?.key === cluster.key}
+                selected={selectedInCluster ? true : undefined}
+                priority={
+                  selectedInCluster || activeCluster?.key === cluster.key
+                    ? "selected"
+                    : "vehicle"
+                }
+              >
+                <MarkerGlyph
+                  tone="cluster"
+                  pulse={selectedInCluster ? "selected" : false}
+                >
+                  <Truck />
+                  <span className="fm-cluster-count">
+                    {cluster.vehicles.length}
+                  </span>
+                </MarkerGlyph>
+              </FleetMarker>
             </MapMarker>
           );
         })}
       </Map>
 
-      {/* Unified Top Map Overlay Row (wraps cleanly on narrow map widths to prevent collisions) */}
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-x-2.5 top-2.5 z-10 flex flex-wrap items-start justify-between gap-2 transition-[right]",
-          rightOffsetClass,
-        )}
-      >
-        {(view === "map" || (followMode !== "off" && selectedVehicle)) ? (
-          <div className="flex max-w-full flex-col items-start gap-2">
-            {view === "map" ? (
-              <div className="pointer-events-auto relative w-64 max-w-full">
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    value={quickQuery}
-                    onFocus={() => setQuickOpen(true)}
-                    onChange={(event) => {
-                      setQuickQuery(event.target.value);
-                      setQuickOpen(true);
-                    }}
-                    placeholder="Jump to plate or driver…"
-                    aria-label="Quick search vehicle on map"
-                    className="h-8 border bg-background pl-8 pr-8 text-xs shadow-sm"
-                  />
-                  {quickQuery || quickOpen ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setQuickQuery("");
-                        setQuickOpen(false);
-                      }}
-                      aria-label="Close vehicle search"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted"
-                    >
-                      <X className="size-3.5" aria-hidden="true" />
-                    </button>
-                  ) : null}
-                </div>
-
-                {quickOpen ? (
-                  <div className="mt-1 max-h-64 overflow-y-auto rounded-lg border bg-popover p-1 shadow-md">
-                    {quickMatches.length === 0 ? (
-                      <p className="px-2.5 py-3 text-xs text-muted-foreground">
-                        No matching vehicles.
-                      </p>
-                    ) : (
-                      <ul className="space-y-0.5">
-                        {quickMatches.map((vehicle) => {
-                          const pos = positions.get(vehicle.id);
-                          return (
-                            <li key={vehicle.id}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setQuickOpen(false);
-                                  setQuickQuery("");
-                                  onSelectVehicle(vehicle);
-                                }}
-                                className={cn(
-                                  "flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs hover:bg-accent",
-                                  vehicle.id === selectedId && "bg-primary/10",
-                                )}
-                              >
-                                <div className="min-w-0">
-                                  <p className="truncate font-semibold">
-                                    {vehicle.plate}
-                                  </p>
-                                  <p className="truncate text-[11px] text-muted-foreground">
-                                    {vehicle.driver}
-                                  </p>
-                                </div>
-                                <div className="shrink-0 text-right">
-                                  <StatusBadge
-                                    status={getOperationalStatusKey(vehicle)}
-                                  />
-                                  {pos ? (
-                                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                      {pos.health === "fresh"
-                                        ? "GPS fresh"
-                                        : pos.health === "delayed"
-                                          ? "GPS delayed"
-                                          : pos.health === "stale"
-                                            ? "Last known"
-                                            : pos.health === "simulated"
-                                              ? "Simulated"
-                                              : "No GPS"}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {followMode !== "off" && selectedVehicle ? (
-              <div className="pointer-events-auto flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-xs shadow-sm">
-                <Crosshair
-                  className={cn(
-                    "size-3.5 shrink-0",
-                    followMode === "active"
-                      ? "text-primary"
-                      : "text-amber-600",
-                  )}
-                  aria-hidden="true"
-                />
-                <span className="font-medium">
-                  {followMode === "active"
-                    ? `Following ${selectedVehicle.plate}`
-                    : `Follow paused (${selectedVehicle.plate})`}
-                </span>
-                {followMode === "paused" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="default"
-                    className="h-6 px-2 text-[11px]"
-                    onClick={onResumeFollow}
-                  >
-                    Resume
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-1.5 text-[11px]"
-                    onClick={onStopFollow}
-                  >
-                    Stop
-                  </Button>
-                )}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className="ml-auto flex flex-col items-end gap-2">
-        <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1 rounded-lg border bg-background p-1 shadow-sm">
+      {/* Top-right compact floating controls (Fit fleet + Layers/Key popover) */}
+      <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
+        <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border bg-background/95 p-1 shadow-sm backdrop-blur-md">
           <Button
             type="button"
             size="sm"
             variant="ghost"
-            className="h-7 gap-1 px-2 text-xs"
+            className="h-7 gap-1.5 px-2 text-xs"
             onClick={onFitFleet}
-            title="Fit map to all valid known vehicle and warehouse locations"
+            title="Fit all vehicles"
           >
             <Maximize2 className="size-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">Fit fleet</span>
-          </Button>
-
-          {selectedVehicle ? (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={onRecenterSelected}
-                title={`Center on ${selectedVehicle.plate}`}
-              >
-                <LocateFixed className="size-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">Recenter</span>
-              </Button>
-
-              {selectedVehicle.stops.length > 0 ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={onFitRoute}
-                  title="Fit map to selected vehicle route"
-                >
-                  <RouteIcon className="size-3.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">Fit route</span>
-                </Button>
-              ) : null}
-            </>
-          ) : null}
-
-          <Button
-            type="button"
-            size="sm"
-            variant={layers.routes ? "secondary" : "ghost"}
-            className="h-7 gap-1 px-2 text-xs"
-            aria-pressed={layers.routes}
-            onClick={() =>
-              onLayersChange({ ...layers, routes: !layers.routes })
-            }
-            title={layers.routes ? "Hide road routes" : "Show road routes"}
-          >
-            {layers.routes ? (
-              <Eye className="size-3.5" aria-hidden="true" />
-            ) : (
-              <EyeOff className="size-3.5" aria-hidden="true" />
-            )}
-            <span className="hidden sm:inline">
-              {layers.routes ? "Routes on" : "Routes off"}
-            </span>
+            <span className="hidden sm:inline">Fit all</span>
           </Button>
 
           <Popover>
@@ -911,164 +623,146 @@ export function FleetMapCanvas({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="h-7 gap-1 px-2 text-xs"
-                  aria-label="Map layers"
+                  className="h-7 gap-1.5 px-2 text-xs"
+                  aria-label="Map layers and key"
                 >
                   <Layers className="size-3.5" aria-hidden="true" />
-                  <span className="hidden md:inline">Layers</span>
+                  <span className="hidden sm:inline">Layers</span>
                 </Button>
               }
             />
-            <PopoverContent align="end" className="w-60 space-y-2 p-3 text-xs">
-              <p className="font-semibold text-foreground">Map layers</p>
-              {(
-                [
-                  { key: "routes", label: "Planned road routes" },
-                  {
-                    key: "allActiveRoutes",
-                    label: "Other active vehicle routes",
-                  },
-                  { key: "stops", label: "Delivery stops" },
-                  { key: "warehouses", label: "Warehouses" },
-                  { key: "returns", label: "Return pickups" },
-                ] as const
-              ).map(({ key, label }) => (
-                <label
-                  key={key}
-                  className="flex cursor-pointer items-center justify-between gap-2 py-0.5"
-                >
-                  <span>{label}</span>
-                  <input
-                    type="checkbox"
-                    checked={layers[key]}
-                    disabled={key === "allActiveRoutes" && !layers.routes}
-                    onChange={(event) =>
-                      onLayersChange({
-                        ...layers,
-                        [key]: event.target.checked,
-                      })
-                    }
-                  />
-                </label>
-              ))}
+            <PopoverContent align="end" className="w-64 space-y-3 p-3 text-xs">
+              <div className="space-y-1.5">
+                <p className="font-semibold text-foreground">Map layers</p>
+                {(
+                  [
+                    { key: "routes", label: "Road routes" },
+                    { key: "allActiveRoutes", label: "Other active routes" },
+                    { key: "stops", label: "Delivery stops" },
+                    { key: "warehouses", label: "Warehouses" },
+                    { key: "returns", label: "Return pickups" },
+                  ] as const
+                ).map(({ key, label }) => (
+                  <label
+                    key={key}
+                    className="flex cursor-pointer items-center justify-between gap-2 py-0.5"
+                  >
+                    <span
+                      className={cn(
+                        key === "allActiveRoutes" &&
+                          !layers.routes &&
+                          "opacity-50",
+                      )}
+                    >
+                      {label}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={layers[key]}
+                      disabled={key === "allActiveRoutes" && !layers.routes}
+                      onChange={(event) =>
+                        onLayersChange({
+                          ...layers,
+                          [key]: event.target.checked,
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="space-y-1.5 border-t pt-2.5 text-[11px] text-muted-foreground">
+                <p className="font-semibold text-foreground">Key</p>
+                <ul className="fm-marker-key grid grid-cols-2 gap-x-2 gap-y-2">
+                  {MARKER_KEY.map(({ tone, label, glyph, heading }) => (
+                    <li key={tone} className="flex items-center gap-2">
+                      <span className="grid w-6 shrink-0 place-items-center">
+                        <MarkerGlyph tone={tone} heading={heading}>
+                          {glyph}
+                        </MarkerGlyph>
+                      </span>
+                      {label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </PopoverContent>
           </Popover>
-
-          <Button
-            type="button"
-            size="sm"
-            variant={legendOpen ? "secondary" : "ghost"}
-            className="h-7 gap-1 px-2 text-xs"
-            aria-expanded={legendOpen}
-            onClick={() => setLegendOpen((current) => !current)}
-          >
-            <Info className="size-3.5" aria-hidden="true" />
-            <span className="hidden md:inline">Legend</span>
-          </Button>
         </div>
 
-        {legendOpen ? (
-          <div className="pointer-events-auto w-64 rounded-lg border bg-background p-3 text-xs shadow-md">
-            <div className="flex items-center justify-between border-b pb-1.5">
-              <span className="font-semibold">Map legend</span>
-              <button
-                type="button"
-                onClick={() => setLegendOpen(false)}
-                aria-label="Close legend"
-                className="rounded p-0.5 text-muted-foreground hover:bg-muted"
-              >
-                <X className="size-3.5" aria-hidden="true" />
-              </button>
-            </div>
-            <ul className="mt-2 space-y-1.5 text-[11px]">
-              <li className="flex items-center gap-2">
-                <span className="h-1 w-5 rounded bg-primary" />
-                <span>Planned road route (OSRM)</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span
-                  className="h-0 w-5 border-t-2 border-dashed"
-                  style={{ borderColor: PREVIEW_COLOR }}
-                />
-                <span>Scheduled trip preview</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-white">
-                  1
-                </span>
-                <span>Next actionable delivery stop</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-flex size-4 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-bold text-white">
-                  ✓
-                </span>
-                <span>Delivered stop</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-flex size-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-white">
-                  !
-                </span>
-                <span>Failed stop</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-flex size-4 items-center justify-center rounded bg-slate-900 text-[9px] text-white">
-                  W
-                </span>
-                <span>Warehouse base</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-flex size-4 items-center justify-center rounded-full bg-rose-700 text-[9px] font-bold text-white">
-                  R
-                </span>
-                <span>Return pickup location</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-flex size-4 items-center justify-center rounded-full bg-orange-600 text-white">
-                  <WifiOff className="size-2.5" aria-hidden="true" />
-                </span>
-                <span>Stale or missing GPS fix</span>
-              </li>
-            </ul>
-            <p className="mt-2 border-t pt-1.5 text-[10px] leading-relaxed text-muted-foreground">
-              Lines show planned road navigation from current GPS, not
-              historical GPS trails.
-            </p>
-          </div>
-        ) : null}
-
+        {/* Selected vehicle route ETA pill */}
         {selectedRoadRoute && selectedVehicle ? (
-          <div className="pointer-events-auto hidden rounded-md border bg-background px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm sm:block">
-            <span className="font-medium text-foreground">
+          <div className="fm-panel-enter pointer-events-auto hidden rounded-lg border bg-background/95 px-2.5 py-1 text-xs shadow-sm backdrop-blur-md sm:block">
+            <span className="font-semibold text-foreground">
               {selectedVehicle.plate}
-            </span>{" "}
-            planned leg: {formatDuration(selectedRoadRoute.duration)} ·{" "}
-            {formatDistance(selectedRoadRoute.distance)}
+            </span>
+            <span className="ml-1.5 tabular-nums text-muted-foreground">
+              {formatDuration(selectedRoadRoute.duration)} ·{" "}
+              {formatDistance(selectedRoadRoute.distance)}
+            </span>
           </div>
         ) : null}
-        </div>
       </div>
 
-      {/* Co-located Vehicle Selection Card */}
+      {/* Active / Paused Follow Pill */}
+      {followMode !== "off" && selectedVehicle ? (
+        <div className="fm-panel-enter absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-background/95 py-1 pl-3 pr-1.5 text-xs shadow-sm backdrop-blur-md">
+          <Crosshair
+            className={cn(
+              "size-3.5 shrink-0",
+              followMode === "active" ? "text-primary" : "text-amber-600",
+            )}
+            aria-hidden="true"
+          />
+          <span className="font-medium">
+            {followMode === "active"
+              ? `Following ${selectedVehicle.plate}`
+              : `Paused · ${selectedVehicle.plate}`}
+          </span>
+          {followMode === "paused" ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-6 rounded-full px-2.5 text-[11px]"
+              onClick={onResumeFollow}
+            >
+              Resume
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-6 rounded-full px-2 text-[11px]"
+              onClick={onStopFollow}
+            >
+              Stop
+            </Button>
+          )}
+        </div>
+      ) : null}
+
+      {/* Co-located Vehicle Picker */}
       {activeCluster ? (
         <div
           role="dialog"
           aria-label="Vehicles at this location"
-          className="absolute bottom-14 left-3 z-20 w-72 max-w-[calc(100%-1.5rem)] rounded-lg border bg-card p-2.5 shadow-lg"
+          className="fm-panel-enter absolute bottom-12 right-12 z-20 w-64 max-w-[calc(100%-1.5rem)] rounded-xl border bg-background/95 p-2.5 shadow-lg backdrop-blur-md"
         >
-          <div className="flex items-center justify-between border-b pb-1.5">
+          <div className="flex items-center justify-between pb-1.5 border-b">
             <span className="text-xs font-semibold">
-              {activeCluster.vehicles.length} vehicles at this coordinate
+              {activeCluster.vehicles.length} vehicles here
             </span>
             <button
               type="button"
               onClick={() => setActiveClusterKey(null)}
-              aria-label="Close co-located vehicles list"
+              aria-label="Close list"
               className="rounded p-0.5 text-muted-foreground hover:bg-muted"
             >
               <X className="size-3.5" aria-hidden="true" />
             </button>
           </div>
-          <ul className="mt-1.5 max-h-48 space-y-1 overflow-y-auto">
+          <ul className="mt-1.5 max-h-48 divide-y divide-border/50 overflow-y-auto">
             {activeCluster.vehicles.map((vehicle) => {
               const pos = positions.get(vehicle.id);
               return (
@@ -1080,9 +774,8 @@ export function FleetMapCanvas({
                       onSelectVehicle(vehicle);
                     }}
                     className={cn(
-                      "flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-accent",
-                      vehicle.id === selectedId &&
-                        "border-primary bg-primary/5",
+                      "flex w-full items-center justify-between gap-2 px-1.5 py-2 text-left text-xs hover:bg-accent/60",
+                      vehicle.id === selectedId && "bg-primary/8",
                     )}
                   >
                     <div className="min-w-0">
@@ -1092,8 +785,8 @@ export function FleetMapCanvas({
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-0.5">
-                      <StatusBadge status={getOperationalStatusKey(vehicle)} />
-                      {pos ? <SignalBadge position={pos} compact /> : null}
+                      <StatusLabel status={getOperationalStatusKey(vehicle)} />
+                      {pos ? <GpsLabel position={pos} /> : null}
                     </div>
                   </button>
                 </li>

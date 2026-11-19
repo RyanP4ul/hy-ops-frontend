@@ -12,7 +12,9 @@ The SDK is loaded once across simultaneous maps and dialogs. Failed loads can be
 
 Existing `[longitude, latitude]` data is converted at the Google boundary. Custom markers, coordinate click/drag callbacks, tooltips, popups, route colors/dashes, zoom, north reset, location, fullscreen, camera focus, resize, fit bounds, and follow interruption are supported. Camera updates use Google's `moveCamera`/`panBy` behavior; legacy animation durations are not reproduced. Fleet Map 1's 3D toggle enters street zoom (at least 17) for Google's tilt support. Actual tilt and buildings depend on Google's coverage and capabilities.
 
-Address search and server-side road routing continue using their existing services. Route geometry is now displayed as Google polylines. This migration does not replace those services with Google Places or Google Routes.
+Warehouse create/edit address search uses Google Places Autocomplete (New), with Philippine results. Enable **Places API (New)** alongside Maps JavaScript API for the configured browser key. Selecting a result fills street, city, province, ZIP code, and coordinates, and moves the map pin. Missing address components remain editable; search failures leave manual entry available. The Places library loads only when the warehouse form opens, using the shared Maps SDK loader. See Google's [Places setup and widget guide](https://developers.google.com/maps/documentation/javascript/place-autocomplete-new).
+
+Other address searches and server-side road routing continue using their existing services. Route geometry is displayed as Google polylines.
 
 ## Every changed file
 

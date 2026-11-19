@@ -133,6 +133,56 @@
   }
 }
 
+/* Google exposes these parts for styling its shadow-root input. */
+gmp-place-autocomplete.hyops-address-search {
+  @apply block h-8 w-full min-w-0 rounded-lg border border-input bg-transparent text-base text-foreground transition-colors outline-none md:text-sm dark:bg-input/30;
+  min-height: 0;
+  padding: 0;
+  font-family: inherit;
+  line-height: 1.5;
+  box-shadow: none;
+  color-scheme: light;
+}
+
+gmp-place-autocomplete.hyops-address-search::part(input) {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0.25rem 0.625rem;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  box-shadow: none;
+}
+
+gmp-place-autocomplete.hyops-address-search::part(input)::placeholder {
+  color: var(--muted-foreground);
+}
+
+gmp-place-autocomplete.hyops-address-search:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+gmp-place-autocomplete.hyops-address-search::part(focus-ring) {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+gmp-place-autocomplete.hyops-address-search[data-disabled] {
+  @apply pointer-events-none cursor-not-allowed bg-input/50 opacity-50 dark:bg-input/80;
+}
+
+.dark gmp-place-autocomplete.hyops-address-search {
+  color-scheme: dark;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -205,6 +205,7 @@ export function DeliveryScheduleProvider({
     form.reset({ warehouse_id: warehouseId, order_ids: orderIds, scheduled_date: undefined,
       scheduled_time: "", delivery_type: "INTERNAL", driver_id: -1, vehicle_id: -1,
       delivery_allowance: 0, fuel: 0, toll: 0 });
+    driverExpensesMutation.reset();
     setStep(0); setSub({ is_open: false, mode: DialogMode.DEFAULT });
     warehouseCB.setInputValue(warehouseQuery.data?.rows.find((row: WarehouseOption) => row.id === warehouseId)?.name ?? "");
     for (const picker of [orderCB, driverCB, vehicleCB]) {
@@ -544,6 +545,12 @@ export function DeliveryScheduleProvider({
       if (estimate.expenses.estimatedTollFee === null) toast.warning("Toll price unavailable. Enter the toll amount before scheduling.");
     },
   });
+
+  const routeKey = `${warehouseId}:${(order_ids ?? []).join(",")}`;
+  const resetDriverExpenses = driverExpensesMutation.reset;
+  useEffect(() => {
+    resetDriverExpenses();
+  }, [routeKey, resetDriverExpenses]);
 
   return (
     <DeliveryScheduleContext.Provider

@@ -15,20 +15,29 @@ type PositionedCalendarEvent = {
  * Events whose end time equals another event's start time do not overlap.
  * It also lets an event use extra columns to its right when those columns
  * contain no event that overlaps its time range.
+ *
+ * Pass `getVisualEndTime` when point-in-time markers (such as delivery
+ * departures) occupy a minimum visual height on the grid so nearby departures
+ * are placed side-by-side instead of visually colliding.
  */
 export function layoutOverlappingEvents(
   events: CalendarEventResponse[],
+  getVisualEndTime: (event: CalendarEventResponse) => Date = (event) =>
+    event.end_time,
 ): PositionedCalendarEvent[] {
+  const endMsOf = (event: CalendarEventResponse) =>
+    Math.max(event.end_time.getTime(), getVisualEndTime(event).getTime());
+
   const sorted = [...events].sort(
     (a, b) =>
       a.start_time.getTime() - b.start_time.getTime() ||
-      a.end_time.getTime() - b.end_time.getTime(),
+      endMsOf(a) - endMsOf(b),
   );
   const positioned: PositionedCalendarEvent[] = [];
   let groupStart = 0;
 
   while (groupStart < sorted.length) {
-    let groupEnd = sorted[groupStart].end_time.getTime();
+    let groupEnd = endMsOf(sorted[groupStart]);
     let groupStop = groupStart + 1;
 
     // Events connected by any overlap belong to the same visual group.
@@ -36,7 +45,7 @@ export function layoutOverlappingEvents(
       groupStop < sorted.length &&
       sorted[groupStop].start_time.getTime() < groupEnd
     ) {
-      groupEnd = Math.max(groupEnd, sorted[groupStop].end_time.getTime());
+      groupEnd = Math.max(groupEnd, endMsOf(sorted[groupStop]));
       groupStop += 1;
     }
 
@@ -44,7 +53,7 @@ export function layoutOverlappingEvents(
     const columnEndTimes: number[] = [];
     const allocated = group.map((event) => {
       const start = event.start_time.getTime();
-      const end = event.end_time.getTime();
+      const end = endMsOf(event);
       let column = columnEndTimes.findIndex((columnEnd) => columnEnd <= start);
 
       if (column === -1) {
@@ -61,14 +70,16 @@ export function layoutOverlappingEvents(
 
     for (const current of allocated) {
       let columnSpan = 1;
+      const currentStart = current.event.start_time.getTime();
+      const currentEnd = endMsOf(current.event);
 
       while (current.column + columnSpan < columnCount) {
         const nextColumn = current.column + columnSpan;
         const hasConflict = allocated.some(({ event: other, column }) => {
           if (column !== nextColumn) return false;
           return (
-            other.start_time.getTime() < current.event.end_time.getTime() &&
-            other.end_time.getTime() > current.event.start_time.getTime()
+            other.start_time.getTime() < currentEnd &&
+            endMsOf(other) > currentStart
           );
         });
 
@@ -89,4 +100,3 @@ export function layoutOverlappingEvents(
 
   return positioned;
 }
-

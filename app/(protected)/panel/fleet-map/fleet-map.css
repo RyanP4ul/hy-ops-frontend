@@ -1,0 +1,1146 @@
+/* Fleet Map 3 — Modern CSS architecture
+ * Uses container queries, scroll-state shadows, native <details> animation,
+ * @starting-style entry transitions, responsive stacked tables, and accessible scrollbars.
+ */
+
+.fm-workspace {
+  --fm-surface-light: #ffffff;
+  --fm-surface-dark: #18181b;
+  --fm-surface: var(--fm-surface-light);
+
+  --fm-accent-light: #1d4ed8;
+  --fm-accent-dark: #3b82f6;
+  --fm-accent: var(--fm-accent-light);
+
+  /* >= 3:1 contrast against both track and container surface (WCAG 1.4.11) */
+  --fm-scroll-thumb-light: #71717a;
+  --fm-scroll-thumb-dark: #8e8e98;
+  --fm-scroll-track-light: #f4f4f5;
+  --fm-scroll-track-dark: #1f1f23;
+
+  --fm-scroll-thumb: var(--fm-scroll-thumb-light);
+  --fm-scroll-track: var(--fm-scroll-track-light);
+
+  color-scheme: light;
+  accent-color: var(--fm-accent);
+  --primary: var(--fm-accent);
+  --primary-foreground: #ffffff;
+  --ring: var(--fm-accent);
+}
+
+.dark .fm-workspace {
+  --fm-surface: var(--fm-surface-dark);
+  --fm-accent: var(--fm-accent-dark);
+  --fm-scroll-thumb: var(--fm-scroll-thumb-dark);
+  --fm-scroll-track: var(--fm-scroll-track-dark);
+  color-scheme: dark;
+}
+
+@supports (color: light-dark(white, black)) {
+  .fm-workspace {
+    --fm-surface: light-dark(var(--fm-surface-light), var(--fm-surface-dark));
+    --fm-accent: light-dark(var(--fm-accent-light), var(--fm-accent-dark));
+    --fm-scroll-thumb: light-dark(
+      var(--fm-scroll-thumb-light),
+      var(--fm-scroll-thumb-dark)
+    );
+    --fm-scroll-track: light-dark(
+      var(--fm-scroll-track-light),
+      var(--fm-scroll-track-dark)
+    );
+  }
+}
+
+/* Precision Telemetry Pins — Map Marker System
+ * Stemmed geometric pins for locations/stops (bottom-anchored to exact coordinates),
+ * directional telemetry beacons for moving vehicles (center-anchored),
+ * subtle compositor-only pulse rings gated on prefers-reduced-motion.
+ */
+.fm-workspace {
+  --fm-marker-rim: #ffffff;
+  --fm-marker-focus-ring: #0f172a;
+  --fm-marker-parked-fill: #ffffff;
+  --fm-marker-parked-ink: #0f172a;
+  --fm-marker-parked-rim: #e2e8f0;
+}
+
+.dark .fm-workspace {
+  --fm-marker-rim: #f1f5f9;
+  --fm-marker-focus-ring: #93c5fd;
+  --fm-marker-parked-fill: #1e293b;
+  --fm-marker-parked-ink: #f8fafc;
+  --fm-marker-parked-rim: #94a3b8;
+}
+
+.fm-marker-target {
+  display: grid;
+  min-inline-size: 36px;
+  min-block-size: 36px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: default;
+}
+
+/* Pin tips sit flush on the bottom-center edge to match anchor="bottom" */
+.fm-marker-target[data-pinned] {
+  align-items: end;
+  justify-items: center;
+}
+
+button.fm-marker-target {
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .fm-marker-target {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+}
+
+.fm-marker-visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fm-marker-visual {
+    transition:
+      scale 160ms ease-out,
+      translate 160ms ease-out;
+  }
+}
+
+/* Base marker face (beacons, pills, compact dots, badges) */
+.fm-marker-face {
+  --fm-marker-size: 32px;
+  --fm-marker-icon: 15px;
+  --fm-marker-fill: #1e293b;
+  --fm-marker-ink: #ffffff;
+  --fm-marker-accent: #3b82f6;
+  --fm-marker-radius: 50%;
+  --fm-marker-shadow:
+    0 2px 6px rgb(15 23 42 / 32%),
+    0 1px 2px rgb(15 23 42 / 24%);
+  position: relative;
+  display: inline-flex;
+  min-inline-size: var(--fm-marker-size);
+  block-size: var(--fm-marker-size);
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-inline: 3px;
+  border: 2.5px solid var(--fm-marker-rim);
+  border-radius: var(--fm-marker-radius);
+  background: var(--fm-marker-fill);
+  color: var(--fm-marker-ink);
+  box-shadow:
+    inset 0 0 0 2px var(--fm-marker-accent),
+    var(--fm-marker-shadow);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.fm-marker-face > svg,
+.fm-pin-content > svg {
+  position: relative;
+  inline-size: var(--fm-marker-icon);
+  block-size: var(--fm-marker-icon);
+  flex: none;
+  stroke-width: 2.35;
+}
+
+/* Stemmed pin shapes (teardrop stops, architectural depot, return shield) */
+.fm-marker-face[data-shape="teardrop"],
+.fm-marker-face[data-shape="depot"],
+.fm-marker-face[data-shape="pickup"] {
+  --fm-pin-w: 30px;
+  --fm-pin-h: 37px;
+  --fm-pin-head-y: 36.4%;
+  min-inline-size: 0;
+  inline-size: var(--fm-pin-w);
+  block-size: var(--fm-pin-h);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fm-pin-svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 3px 5px rgb(15 23 42 / 34%));
+}
+
+.fm-pin-body {
+  fill: var(--fm-marker-fill);
+  stroke: var(--fm-marker-rim);
+  stroke-width: 2.6;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
+
+.fm-pin-body[data-dashed] {
+  stroke-dasharray: 4.5 2.5;
+  stroke-linecap: round;
+}
+
+.fm-pin-ring {
+  fill: none;
+  stroke: var(--fm-marker-accent);
+  stroke-width: 2.1;
+}
+
+.fm-pin-inner {
+  fill: none;
+  stroke: rgb(255 255 255 / 18%);
+  stroke-width: 1.25;
+}
+
+.fm-pin-content {
+  position: absolute;
+  inset-inline: 0;
+  top: var(--fm-pin-head-y);
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  color: var(--fm-marker-ink);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.fm-pin-anchor {
+  position: absolute;
+  bottom: -1.5px;
+  left: 50%;
+  translate: -50% 0;
+  inline-size: 9px;
+  block-size: 3.5px;
+  border-radius: 50%;
+  background: rgb(15 23 42 / 30%);
+  pointer-events: none;
+}
+
+/* Directional telemetry beacon (active vehicles) */
+.fm-marker-face[data-tone="vehicle"] {
+  --fm-marker-size: 36px;
+  --fm-marker-icon: 16px;
+  --fm-marker-fill: #0f172a;
+  --fm-marker-ink: #ffffff;
+  --fm-marker-accent: #3b82f6;
+  box-shadow:
+    inset 0 0 0 2.5px var(--fm-marker-accent),
+    0 3px 10px rgb(15 23 42 / 40%),
+    0 1px 3px rgb(15 23 42 / 28%);
+}
+
+.fm-beacon-heading {
+  position: absolute;
+  inset: -11px;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fm-beacon-heading {
+    transition: transform 280ms ease-out;
+  }
+}
+
+.fm-beacon-pointer {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  inline-size: 15px;
+  block-size: 10px;
+  overflow: visible;
+  filter: drop-shadow(0 1px 2px rgb(15 23 42 / 38%));
+}
+
+.fm-beacon-pointer > path {
+  fill: var(--fm-marker-accent);
+  stroke: var(--fm-marker-rim);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
+
+/* Standby / parked vehicle medallion */
+.fm-marker-face[data-tone="parked"] {
+  --fm-marker-size: 32px;
+  --fm-marker-icon: 15px;
+  --fm-marker-fill: var(--fm-marker-parked-fill);
+  --fm-marker-ink: var(--fm-marker-parked-ink);
+  border-color: var(--fm-marker-parked-rim);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in oklab, var(--fm-marker-accent) 70%, transparent),
+    0 2px 6px rgb(15 23 42 / 24%);
+}
+
+/* Co-located vehicle cluster stadium pill */
+.fm-marker-face[data-tone="cluster"] {
+  --fm-marker-size: 34px;
+  --fm-marker-icon: 15px;
+  --fm-marker-radius: 999px;
+  --fm-marker-fill: #0f172a;
+  --fm-marker-accent: #3b82f6;
+  gap: 5px;
+  padding-inline: 9px 6px;
+  box-shadow:
+    inset 0 0 0 1.5px rgb(96 165 250 / 45%),
+    0 3px 0 -1px #1e3a8a,
+    0 5px 12px rgb(15 23 42 / 38%);
+}
+
+.fm-cluster-count {
+  display: inline-grid;
+  min-inline-size: 19px;
+  block-size: 19px;
+  place-items: center;
+  border-radius: 999px;
+  padding-inline: 5px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Warehouse architectural stemmed depot pin */
+.fm-marker-face[data-tone="warehouse"] {
+  --fm-pin-w: 36px;
+  --fm-pin-h: 40px;
+  --fm-pin-head-y: 38.6%;
+  --fm-marker-icon: 15px;
+  --fm-marker-fill: #1e293b;
+  --fm-marker-ink: #ffffff;
+}
+
+/* Return pickup shield pin */
+.fm-marker-face[data-tone="return"] {
+  --fm-pin-w: 32px;
+  --fm-pin-h: 39px;
+  --fm-pin-head-y: 38.6%;
+  --fm-marker-icon: 14px;
+  --fm-marker-fill: #be185d;
+  --fm-marker-ink: #ffffff;
+}
+
+/* Delivery stop teardrops */
+.fm-marker-face[data-tone="next"] {
+  --fm-pin-w: 34px;
+  --fm-pin-h: 42px;
+  --fm-marker-icon: 14px;
+  --fm-marker-fill: #1d4ed8;
+  --fm-marker-ink: #ffffff;
+  --fm-marker-accent: #2563eb;
+}
+
+.fm-marker-face[data-tone="next"] .fm-pin-content {
+  font-size: 12px;
+}
+
+.fm-marker-face[data-tone="pending"] {
+  --fm-marker-fill: #fffbeb;
+  --fm-marker-ink: #92400e;
+  --fm-marker-accent: #d97706;
+}
+
+.fm-marker-face[data-tone="delivered"] {
+  --fm-marker-fill: #059669;
+  --fm-marker-ink: #ffffff;
+}
+
+.fm-marker-face[data-tone="failed"] {
+  --fm-marker-fill: #dc2626;
+  --fm-marker-ink: #ffffff;
+}
+
+.fm-marker-face[data-tone="preview"] {
+  --fm-marker-fill: #4f46e5;
+  --fm-marker-ink: #ffffff;
+}
+
+/* GPS warning badge */
+.fm-marker-face[data-tone="gps"] {
+  --fm-marker-size: 19px;
+  --fm-marker-icon: 11px;
+  --fm-marker-fill: #fbbf24;
+  --fm-marker-ink: #422006;
+  --fm-marker-accent: transparent;
+  padding-inline: 0;
+  border-width: 2px;
+  box-shadow: 0 2px 4px rgb(15 23 42 / 36%);
+}
+
+/* Compact stop dots (for unselected vehicles) */
+.fm-marker-face[data-compact] {
+  --fm-marker-size: 17px;
+  --fm-marker-icon: 10px;
+  --fm-marker-accent: transparent;
+  padding-inline: 0;
+  border-width: 2px;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 30%);
+}
+
+.fm-marker-face[data-compact][data-tone="pending"] {
+  --fm-marker-size: 12px;
+  --fm-marker-fill: #f59e0b;
+  --fm-marker-accent: transparent;
+}
+
+/* Estimated GPS visual treatment */
+.fm-marker-face[data-estimated] {
+  border-style: dashed;
+}
+
+/* Subtle live / selected pulse ring (compositor-only, reduced-motion gated) */
+.fm-marker-pulse {
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: inherit;
+  border: 2px solid var(--fm-marker-accent);
+  background: color-mix(in oklab, var(--fm-marker-accent) 22%, transparent);
+  pointer-events: none;
+  opacity: 0.35;
+  transform: scale(1.16);
+}
+
+.fm-marker-face[data-pulse="selected"] > .fm-marker-pulse {
+  border-color: #2563eb;
+  background: rgb(37 99 235 / 20%);
+  opacity: 0.45;
+  transform: scale(1.24);
+}
+
+/* Ground-anchor radar ring at the tip of Next Stop pins */
+.fm-marker-face[data-shape="teardrop"] > .fm-marker-pulse {
+  inset: auto;
+  bottom: -4px;
+  left: 50%;
+  translate: -50% 0;
+  inline-size: 16px;
+  block-size: 9px;
+  border-radius: 50%;
+  border-width: 1.5px;
+  border-color: #2563eb;
+  background: rgb(37 99 235 / 26%);
+  opacity: 0.55;
+  transform: scale(1.15);
+}
+
+@keyframes fm-beacon-pulse {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(1.62);
+  }
+}
+
+@keyframes fm-beacon-pulse-selected {
+  0% {
+    opacity: 0.68;
+    transform: scale(0.98);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@keyframes fm-ground-pulse {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.8);
+  }
+  80%,
+  100% {
+    opacity: 0;
+    transform: scale(2.15);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fm-marker-face[data-pulse="live"] > .fm-marker-pulse {
+    animation: fm-beacon-pulse 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .fm-marker-face[data-pulse="selected"] > .fm-marker-pulse {
+    animation: fm-beacon-pulse-selected 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .fm-marker-face[data-shape="teardrop"][data-pulse] > .fm-marker-pulse {
+    animation: fm-ground-pulse 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+}
+
+/* Badges (GPS alert & warehouse fleet count) */
+.fm-marker-badge {
+  position: absolute;
+  inset-block-start: -5px;
+  inset-inline-start: calc(100% - 10px);
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.fm-marker-count {
+  display: grid;
+  min-inline-size: 18px;
+  block-size: 18px;
+  place-items: center;
+  border: 2px solid var(--fm-marker-rim);
+  border-radius: 999px;
+  padding-inline: 4px;
+  background: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgb(15 23 42 / 32%);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Selected vehicle plate chip */
+.fm-marker-label {
+  position: absolute;
+  inset-block-start: calc(100% + 12px);
+  left: 50%;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgb(255 255 255 / 26%);
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #0f172a;
+  color: #f8fafc;
+  box-shadow:
+    0 3px 8px rgb(15 23 42 / 38%),
+    0 0 0 1px rgb(15 23 42 / 25%);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.fm-marker-label::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  translate: -50% 0;
+  inline-size: 7px;
+  block-size: 7px;
+  rotate: 45deg;
+  border-top: 1px solid rgb(255 255 255 / 26%);
+  border-left: 1px solid rgb(255 255 255 / 26%);
+  background: #0f172a;
+}
+
+.fm-marker-label-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--fm-label-accent, #3b82f6);
+  box-shadow: 0 0 0 1.5px rgb(255 255 255 / 35%);
+  flex: none;
+}
+
+/* Selected / emphasized marker states */
+.fm-marker-target[data-emphasized]
+  .fm-marker-visual
+  > .fm-marker-face:is([data-shape="beacon"], [data-shape="pill"]) {
+  box-shadow:
+    inset 0 0 0 2.5px var(--fm-marker-accent),
+    0 0 0 2.5px #2563eb,
+    0 0 0 5.5px rgb(37 99 235 / 28%),
+    0 6px 14px rgb(15 23 42 / 42%);
+}
+
+.fm-marker-target[data-emphasized]
+  .fm-marker-visual
+  > .fm-marker-face:is([data-shape="teardrop"], [data-shape="depot"], [data-shape="pickup"])
+  .fm-pin-svg {
+  filter:
+    drop-shadow(0 0 2px #2563eb)
+    drop-shadow(0 0 5px rgb(37 99 235 / 45%))
+    drop-shadow(0 5px 8px rgb(15 23 42 / 36%));
+}
+
+/* Hover, active press, and focus-visible states (each visually distinct & combinable) */
+@media (hover: hover) {
+  button.fm-marker-target:hover .fm-marker-visual {
+    scale: 1.07;
+  }
+
+  button.fm-marker-target[data-pinned]:hover .fm-marker-visual {
+    scale: 1.04;
+    translate: 0 -2px;
+  }
+
+  button.fm-marker-target:hover .fm-pin-svg {
+    filter: drop-shadow(0 6px 9px rgb(15 23 42 / 38%));
+  }
+}
+
+button.fm-marker-target:active .fm-marker-visual,
+button.fm-marker-target[data-pinned]:active .fm-marker-visual {
+  scale: 0.94;
+  translate: 0 0;
+}
+
+.fm-marker-target:focus-visible {
+  outline: none;
+}
+
+.fm-marker-target:focus-visible
+  .fm-marker-visual
+  > .fm-marker-face:is([data-shape="beacon"], [data-shape="pill"], [data-shape="dot"]) {
+  outline: 2.5px solid var(--fm-marker-focus-ring);
+  outline-offset: 4px;
+  box-shadow:
+    inset 0 0 0 2.5px var(--fm-marker-accent),
+    0 0 0 4px var(--fm-marker-rim),
+    0 4px 10px rgb(15 23 42 / 35%);
+}
+
+.fm-marker-target:focus-visible[data-pinned] .fm-marker-visual {
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px var(--fm-marker-rim);
+  outline: 2.5px solid var(--fm-marker-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Stacking priority across marker categories */
+:has(> .fm-marker-location) {
+  z-index: 1;
+}
+
+:has(> .fm-marker-vehicle) {
+  z-index: 2;
+}
+
+:has(> .fm-marker-selected) {
+  z-index: 3;
+}
+
+:has(> .fm-marker:focus-within) {
+  z-index: 11;
+}
+
+/* Marker tooltip with subtle pointer caret */
+.fm-marker-tooltip {
+  width: max-content;
+  max-width: 240px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 8px 20px rgb(15 23 42 / 20%);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.fm-marker-tooltip::after {
+  content: "";
+  position: absolute;
+  bottom: -4.5px;
+  left: 50%;
+  translate: -50% 0;
+  inline-size: 8px;
+  block-size: 8px;
+  rotate: 45deg;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--popover);
+}
+
+.fm-marker-details {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* Layers popover Key legend — miniature precision silhouettes */
+.fm-marker-key .fm-marker-face {
+  --fm-marker-size: 18px;
+  --fm-marker-icon: 10px;
+  --fm-marker-shadow: none;
+  gap: 2px;
+  padding-inline: 2px;
+  border-width: 1.5px;
+  box-shadow: inset 0 0 0 1.5px var(--fm-marker-accent);
+  font-size: 9px;
+}
+
+.fm-marker-key .fm-marker-face[data-shape="teardrop"],
+.fm-marker-key .fm-marker-face[data-shape="depot"],
+.fm-marker-key .fm-marker-face[data-shape="pickup"] {
+  --fm-pin-w: 17px;
+  --fm-pin-h: 21px;
+  --fm-marker-icon: 8.5px;
+  border: 0;
+  box-shadow: none;
+}
+
+.fm-marker-key .fm-pin-svg {
+  filter: drop-shadow(0 1px 1.5px rgb(15 23 42 / 22%));
+}
+
+.fm-marker-key .fm-pin-body {
+  stroke-width: 3;
+}
+
+.fm-marker-key .fm-pin-content {
+  font-size: 8.5px;
+}
+
+.fm-marker-key .fm-pin-anchor,
+.fm-marker-key .fm-marker-pulse {
+  display: none;
+}
+
+.fm-marker-key .fm-beacon-heading {
+  inset: -5px;
+}
+
+.fm-marker-key .fm-beacon-pointer {
+  inline-size: 8px;
+  block-size: 5px;
+}
+
+.fm-marker-key .fm-marker-face[data-tone="cluster"] {
+  --fm-marker-size: 18px;
+  --fm-marker-icon: 9px;
+  padding-inline: 4px 3px;
+  gap: 3px;
+  box-shadow: none;
+}
+
+.fm-marker-key .fm-cluster-count {
+  min-inline-size: 12px;
+  block-size: 12px;
+  padding-inline: 3px;
+  font-size: 8px;
+}
+
+.fm-marker-key .fm-marker-face[data-tone="gps"] {
+  --fm-marker-size: 16px;
+  --fm-marker-icon: 9px;
+  border-width: 1px;
+  box-shadow: none;
+}
+
+/* Forced Colors Mode (Windows High Contrast) fallbacks */
+@media (forced-colors: active) {
+  .fm-marker-face {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .fm-pin-body {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+
+  .fm-pin-content {
+    color: CanvasText;
+  }
+
+  .fm-beacon-pointer > path {
+    fill: Highlight;
+    stroke: CanvasText;
+  }
+
+  .fm-marker-target[data-emphasized] .fm-marker-face,
+  .fm-marker-target[data-emphasized] .fm-pin-body {
+    border-color: Highlight;
+    stroke: Highlight;
+  }
+
+  .fm-marker-target:focus-visible .fm-marker-visual,
+  .fm-marker-target:focus-visible .fm-marker-face {
+    outline: 2px solid Highlight;
+  }
+
+  .fm-marker-pulse,
+  .fm-pin-anchor {
+    display: none;
+  }
+}
+
+/* Custom thin scrollbars with accessible contrast + WebKit fallback */
+.fm-scroller,
+.fm-table-region {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fm-scroll-thumb) var(--fm-scroll-track);
+}
+
+@supports not (scrollbar-color: auto) {
+  .fm-scroller,
+  .fm-table-region {
+    /* Reset scrollbar-width so legacy ::-webkit-scrollbar is not suppressed */
+    scrollbar-width: auto;
+  }
+
+  .fm-scroller::-webkit-scrollbar,
+  .fm-table-region::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .fm-scroller::-webkit-scrollbar-thumb,
+  .fm-table-region::-webkit-scrollbar-thumb {
+    background: var(--fm-scroll-thumb);
+    border-radius: 999px;
+  }
+
+  .fm-scroller::-webkit-scrollbar-track,
+  .fm-table-region::-webkit-scrollbar-track {
+    background: var(--fm-scroll-track);
+  }
+}
+
+/* Scrollability affordance hints — sticky radial shadows on vertical scrollers */
+.fm-scroller {
+  overflow-y: auto;
+  container-type: scroll-state;
+}
+
+.fm-scroller::before,
+.fm-scroller::after {
+  content: "";
+  display: block;
+  position: sticky;
+  block-size: 0.75rem;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.fm-scroller::before {
+  inset-block-start: 0;
+  margin-block-end: -0.75rem;
+  background: radial-gradient(
+    farthest-side at 50% 0,
+    rgb(0 0 0 / 0.14),
+    transparent
+  );
+}
+
+.fm-scroller::after {
+  inset-block-end: 0;
+  margin-block-start: -0.75rem;
+  background: radial-gradient(
+    farthest-side at 50% 100%,
+    rgb(0 0 0 / 0.14),
+    transparent
+  );
+}
+
+.dark .fm-scroller::before {
+  background: radial-gradient(
+    farthest-side at 50% 0,
+    rgb(0 0 0 / 0.42),
+    transparent
+  );
+}
+
+.dark .fm-scroller::after {
+  background: radial-gradient(
+    farthest-side at 50% 100%,
+    rgb(0 0 0 / 0.42),
+    transparent
+  );
+}
+
+@container scroll-state(scrollable: block-start) {
+  .fm-scroller::before {
+    opacity: 1;
+  }
+}
+
+@container scroll-state(scrollable: block-end) {
+  .fm-scroller::after {
+    opacity: 1;
+  }
+}
+
+/* Fallback 1: scroll-driven animations when scroll-state queries are unsupported */
+@supports not (container-type: scroll-state) {
+  .fm-scroller::before,
+  .fm-scroller::after {
+    animation: fm-show-shadow linear both;
+    animation-timeline: scroll();
+  }
+
+  .fm-scroller::before {
+    animation-range: 0 1.5rem;
+  }
+
+  .fm-scroller::after {
+    animation-direction: reverse;
+    animation-range: calc(100% - 1.5rem) 100%;
+  }
+}
+
+@keyframes fm-show-shadow {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Fallback 2: background-attachment covers when neither modern feature is supported */
+@supports not ((container-type: scroll-state) or (animation-timeline: scroll())) {
+  .fm-scroller::before,
+  .fm-scroller::after {
+    display: none;
+  }
+
+  .fm-scroller {
+    background:
+      linear-gradient(var(--fm-surface) 30%, transparent) top / 100% 2rem
+        no-repeat local,
+      linear-gradient(transparent, var(--fm-surface) 70%) bottom / 100% 2rem
+        no-repeat local,
+      radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 0.12), transparent)
+        top / 100% 0.75rem no-repeat,
+      radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 0.12), transparent)
+        bottom / 100% 0.75rem no-repeat,
+      var(--fm-surface);
+  }
+}
+
+/* Native <details> accordion for delivery stops */
+.fm-stop-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.fm-stop-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fm-stop-details > summary::before {
+  content: "";
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+  background-color: currentColor;
+  opacity: 0.55;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E")
+    no-repeat center / contain;
+  rotate: -90deg;
+}
+
+.fm-stop-details[open] > summary::before {
+  rotate: 0deg;
+  opacity: 0.9;
+}
+
+.fm-stop-details::details-content {
+  interpolate-size: allow-keywords;
+  overflow: clip;
+  contain: layout;
+}
+
+.fm-stop-details:not([open])::details-content {
+  block-size: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fm-stop-details > summary::before {
+    transition:
+      rotate 0.18s ease-out,
+      opacity 0.18s ease-out;
+  }
+
+  .fm-stop-details::details-content {
+    transition: block-size, content-visibility, display;
+    transition-duration: 0.22s;
+    transition-timing-function: ease-out;
+    transition-behavior: allow-discrete;
+  }
+}
+
+/* Entry animations for floating overlays, notices, and drawers via @starting-style */
+.fm-panel-enter {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    display,
+    opacity ease-out,
+    translate ease-out;
+  transition-duration: 0.18s;
+  transition-behavior: allow-discrete;
+}
+
+@starting-style {
+  .fm-panel-enter {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-panel-enter {
+    translate: none;
+    transition-duration: 0.1s;
+  }
+
+  @starting-style {
+    .fm-panel-enter {
+      translate: none;
+    }
+  }
+}
+
+/* Responsive semantic data table using @container queries and sticky headers */
+.fm-table-region {
+  overflow: auto;
+  max-inline-size: 100%;
+  container-type: inline-size;
+}
+
+.fm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  --label-2: "Driver";
+  --label-3: "Status";
+  --label-4: "GPS";
+  --label-5: "Assignment";
+  --label-6: "Stops";
+  --label-7: "Updated";
+}
+
+.fm-table--warehouses {
+  --label-2: "Address";
+  --label-3: "Fleet";
+  --label-4: "Active";
+  --label-5: "Available";
+  --label-6: "Action";
+}
+
+.fm-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+}
+
+.fm-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background-color: var(--fm-surface);
+}
+
+.fm-table tbody tr:hover th {
+  background-color: color-mix(in oklab, var(--fm-surface) 92%, var(--accent));
+}
+
+.fm-table tbody tr[data-selected="true"] th {
+  background-color: color-mix(in oklab, var(--fm-surface) 92%, var(--primary));
+}
+
+@container (width < 640px) {
+  .fm-table,
+  .fm-table thead,
+  .fm-table tbody,
+  .fm-table tr,
+  .fm-table th,
+  .fm-table td {
+    display: block;
+  }
+
+  .fm-table thead {
+    display: none;
+  }
+
+  .fm-table tbody {
+    display: grid;
+    gap: 0.625rem;
+    padding: 0.75rem;
+  }
+
+  .fm-table tbody tr {
+    border: 1px solid var(--border);
+    border-radius: 0.625rem;
+    overflow: hidden;
+    background: var(--fm-surface);
+  }
+
+  .fm-table tbody th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    border-bottom: 1px solid var(--border);
+    padding: 0.625rem 0.75rem;
+  }
+
+  .fm-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+    text-align: right;
+  }
+
+  .fm-table tbody td:last-child {
+    border-bottom: 0;
+  }
+
+  .fm-table tbody td::before {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .fm-table tbody td:nth-child(2)::before {
+    content: var(--label-2);
+  }
+  .fm-table tbody td:nth-child(3)::before {
+    content: var(--label-3);
+  }
+  .fm-table tbody td:nth-child(4)::before {
+    content: var(--label-4);
+  }
+  .fm-table tbody td:nth-child(5)::before {
+    content: var(--label-5);
+  }
+  .fm-table tbody td:nth-child(6)::before {
+    content: var(--label-6);
+  }
+  .fm-table tbody td:nth-child(7)::before {
+    content: var(--label-7);
+  }
+}

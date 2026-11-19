@@ -1,7 +1,5 @@
 "use client";
 import Link from "next/link";
-import { ExpenseSettings } from "@/components/delivery-estimate-settings";
-import { DeliveryEstimateMap } from "@/components/delivery-estimate-map";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +25,6 @@ import {
   ArrowDown,
   DollarSign,
   Loader2,
-  FileText,
   Move,
   CheckCircle2Icon,
 } from "lucide-react";
@@ -51,7 +48,6 @@ import { DialogMode } from "@/types/dialog";
 import { DeliveryScheduleFormData } from "@/schema/delivery-schedule";
 import {
   Field,
-  FieldDescription,
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
@@ -89,12 +85,12 @@ import {
 } from "@/components/ui/item";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { REQUESTS } from "@/constant/request";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useState } from "react";
 import { QueryFeedback } from "@/components/query-feedback";
 import { WorkflowSummary, type WorkflowStep } from "@/components/workflow-stepper";
 
+import { ExpensesStep } from "./expenses-step";
 import { ScheduleWorkspace } from "./schedule-workspace";
 
 export default function DeliveryScheduleDialog() {
@@ -118,7 +114,6 @@ export default function DeliveryScheduleDialog() {
     vehicleQuery,
     sortDistanceMutation,
     driverExpensesMutation,
-    expenseSettings,
   } = useDeliverySchedule();
   const queryClient = useQueryClient();
   const reviewOrders = orderDetailQuery.data ?? [];
@@ -177,8 +172,7 @@ export default function DeliveryScheduleDialog() {
       details: ["Check each customer's destination and map coordinates.", "Arrange stops in the order the driver should visit them."] },
     { title: "Driver & vehicle", description: "Choose a delivery type and assign the people and vehicle needed.", icon: Truck,
       details: ["Confirm the assigned driver and vehicle before continuing.", "Review availability for the selected departure before continuing."] },
-    { title: "Expenses", description: "Review the allowance, fuel and toll estimates for this run.", icon: DollarSign,
-      details: ["Calculate expenses after confirming the route and vehicle.", "Review the amounts before continuing. Estimates are separate from order totals."] },
+    { title: "Expenses", description: "", icon: DollarSign },
     { title: "Review & schedule", description: "Confirm the departure, assignments, stops and expenses.", icon: ClipboardCheck,
       details: ["Return to an earlier step to correct details before scheduling.", "The schedule is submitted only when you select Create delivery schedule."] },
   ];
@@ -269,6 +263,7 @@ export default function DeliveryScheduleDialog() {
         });
       }
       form.reset();
+      driverExpensesMutation.reset();
       setStep(0);
       warehouseCB.setInputValue("");
       orderCB.setInputValue("");
@@ -807,192 +802,7 @@ export default function DeliveryScheduleDialog() {
           </>
         )}
 
-        {step === 4 && (
-          <>
-            <div className="space-y-4">
-              <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-                <div>
-                  <h3 className="text-sm font-semibold">Estimated Expenses</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Calculate an estimate, then review the allowance, fuel and toll amounts.
-                  </p>
-                </div>
-
-                <Button
-                  size="lg"
-                  onClick={() => driverExpensesMutation.mutate()}
-                  disabled={driverExpensesMutation.isPending || expenseSettings.config.isPending}
-                >
-                  {driverExpensesMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="mr-2 h-4 w-4" />
-                  )}
-                  Calculate Driver Expenses
-                </Button>
-              </div>
-
-              <ExpenseSettings settings={expenseSettings} disabled={driverExpensesMutation.isPending} showTollOverride={false} />
-              {driverExpensesMutation.error && <p role="alert" className="text-sm text-destructive">{driverExpensesMutation.error.message}</p>}
-              {driverExpensesMutation.data && (
-                <>
-                  <DeliveryEstimateMap coordinates={driverExpensesMutation.data.route.geometry.coordinates} />
-                  <p className="text-xs text-muted-foreground">{driverExpensesMutation.data.tollDetection.note}</p>
-                  {driverExpensesMutation.data.expenses.estimatedTollFee === null && <p role="alert" className="text-sm text-destructive">Toll amount unknown. Enter the full trip toll below, or confirm zero after checking the route.</p>}
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">Distance</p>
-                      <p className="mt-1 font-medium">
-                        {driverExpensesMutation.data?.route.distanceKm.toFixed(
-                          2,
-                        ) || "0.00"}{" "}
-                        km
-                      </p>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">Duration</p>
-                      <p className="mt-1 font-medium">
-                        {driverExpensesMutation.data?.route.durationMinutes ||
-                          "0"}{" "}
-                        minutes
-                      </p>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">
-                        Fuel Liters
-                      </p>
-                      <p className="mt-1 font-medium">
-                        {driverExpensesMutation.data?.expenses.estimatedFuelLiters.toFixed(
-                          2,
-                        ) || "0.00"}{" "}
-                        L
-                      </p>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground">Has Tolls</p>
-                      <p className="mt-1 font-medium">
-                        {driverExpensesMutation.data?.tollDetection.status ===
-                        "DETECTED"
-                          ? "Yes"
-                          : "No toll expected by Google"}
-                      </p>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Controller
-                  control={form.control}
-                  name="delivery_allowance"
-                  render={({ field, fieldState }) => (
-                    <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="delivery_allowance">
-                        Delivery allowance (PHP){" "}
-                        <span className="text-destructive">*</span>
-                      </FieldLabel>
-
-                      <Input
-                        {...field}
-                        id="delivery_allowance"
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        disabled={driverExpensesMutation.isPending}
-                        aria-invalid={fieldState.invalid}
-                        onChange={(event) => {
-                          field.onChange(event.target.valueAsNumber);
-                        }}
-                      />
-
-                      {fieldState.invalid && (
-                        <FieldError errors={[fieldState.error]} />
-                      )}
-                    </Field>
-                  )}
-                />
-
-                <Controller
-                  control={form.control}
-                  name="fuel"
-                  render={({ field, fieldState }) => (
-                    <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="fuel">
-                        Fuel amount (PHP) <span className="text-destructive">*</span>
-                      </FieldLabel>
-
-                      <Input
-                        {...field}
-                        id="fuel"
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        disabled={driverExpensesMutation.isPending}
-                        aria-invalid={fieldState.invalid}
-                        onChange={(event) => {
-                          field.onChange(event.target.valueAsNumber);
-                        }}
-                      />
-
-                      {fieldState.invalid && (
-                        <FieldError errors={[fieldState.error]} />
-                      )}
-                    </Field>
-                  )}
-                />
-
-                <Controller
-                  control={form.control}
-                  name="toll"
-                  render={({ field, fieldState }) => (
-                    <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="toll">Toll amount (PHP)</FieldLabel>
-
-                      <Input
-                        {...field}
-                        id="toll"
-                        type="number"
-                        value={Number.isFinite(field.value) ? field.value : ""}
-                        min={0}
-                        step="0.01"
-                        disabled={driverExpensesMutation.isPending}
-                        aria-invalid={fieldState.invalid}
-                        onChange={(event) => {
-                          field.onChange(event.target.valueAsNumber);
-                        }}
-                      />
-
-                      <FieldDescription>
-                        Review the Google toll estimate for your vehicle class. You can enter or correct the full trip toll here.
-                      </FieldDescription>
-
-                      {fieldState.invalid && (
-                        <FieldError errors={[fieldState.error]} />
-                      )}
-                    </Field>
-                  )}
-                />
-              </div>
-
-              <div className="rounded-xl border bg-card p-5">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Total Driver Expenses
-                  </p>
-                  <FileText className="size-4 text-muted-foreground" />
-                </div>
-                <p className="mt-3 text-2xl font-semibold">
-                  {Number.isFinite(toll)
-                    ? formatCurrency(delivery_allowance + fuel + toll)
-                    : `${formatCurrency(delivery_allowance + fuel)} + unknown toll`}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Allowance, fuel and toll estimates for this delivery run. Order values are shown separately.
-                </p>
-              </div>
-            </div>
-          </>
-        )}
+        {step === 4 && <ExpensesStep />}
 
         {step === 5 && (
           <section className="space-y-4">

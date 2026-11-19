@@ -76,7 +76,7 @@ export default function WarehouseDialog() {
           <div className="grid md:grid-cols-2">
             <div className="relative h-48 bg-muted md:h-auto md:min-h-130">
               {!hasPoint && <p role="status" className="absolute z-10 bg-background p-2 text-xs">No coordinates selected. Enter coordinates manually if map search is unavailable.</p>}
-              <Map ref={mapRef} center={[longitude, latitude]} zoom={16}>
+              <Map clean ref={mapRef} center={[longitude, latitude]} zoom={16}>
                 {hasPoint && <MapMarker longitude={point[0]!} latitude={point[1]!}>
                   <MarkerContent>
                     <div className="flex size-5 items-center justify-center rounded-full border-2 border-white bg-primary shadow-lg" />

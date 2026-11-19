@@ -7,11 +7,6 @@ import { fleetKeys } from "./use-fleet-query";
 
 const EMPTY_STOP_MAP = new Map<string, StopEnrichment>();
 
-/**
- * Optional read-only enrichment from GET /api/deliveries?active=true&limit=100.
- * Supplies real failed-stop status, failure reasons, numeric order IDs, and
- * order group metadata without altering the /api/fleet contract.
- */
 export function useDeliveryEnrichment(enabled: boolean) {
   const query = useQuery({
     queryKey: fleetKeys.enrichment,

@@ -107,38 +107,94 @@ export type OrderItemDetail = z.infer<typeof OrderItemDetailSchema>;
 //   price: number;
 // };
 
+export type OrderGroupMemberSummary = {
+  id: number;
+  order_number: string;
+  order_group_position: number | null;
+  status: string;
+  warehouse_name?: string | null;
+  shipping_address?: string | null;
+  total: number | null;
+};
+
 export type OrderRow = Partial<OrderGroupFields> & {
+  entry_type?: "SINGLE" | "GROUP";
   sales_channel?: "STANDARD" | "WALK_IN";
   product_number?: string;
   id: number;
+  warehouse_id?: number | null;
+  warehouse_name?: string | null;
+  warehouse_names?: string[];
   shipping_address?: string | null;
+  destinations?: string[];
   customer_name: string;
   email: string;
   customer_company: string;
   delivery_type: string;
   status: string;
+  status_counts?: Record<string, number>;
+  active_member_count?: number;
+  ready_for_scheduling_count?: number;
+  pending_action_count?: number;
+  processing_action_count?: number;
   item_count: number;
   total_quantity: number;
   total: number | null;
   items?: OrderItemDetail[];
+  members?: OrderTableRow[];
 };
+
+export type OrderTableRow = OrderRow & {
+  version: number;
+};
+
+export function formatOrderGroupCode(groupNumber?: string | null): string {
+  if (!groupNumber) return "";
+  if (groupNumber.length <= 14) return groupNumber;
+  return `${groupNumber.slice(0, 7)}…${groupNumber.slice(-4)}`;
+}
 
 export type OrderForm = z.infer<typeof orderSchema>;
 
 export type OrderItemDetailView = Omit<OrderItemDetail, "price"> & {
+  product_name?: string | null;
   price: number | null;
 };
 
 export type CombinedPaymentInfo = { payment_number: string; amount: number; allocated_amount: number; reference_number?: string | null };
 
+export type OrderDeliveryAssignment = {
+  delivery_id: number;
+  delivery_status: string;
+  delivery_type: string;
+  scheduled_date: string;
+  departure_time: string;
+  stop_status: string;
+  delivered_at: string | null;
+  driver_name: string | null;
+  vehicle_plate: string | null;
+  vehicle_type: string | null;
+};
+
 export type OrderDetail = Omit<OrderForm, "items" | "payment_type"> & Partial<OrderGroupFields> & {
   sales_channel?: "STANDARD" | "WALK_IN";
+  warehouse_name?: string | null;
   payment_type?: string | null;
   id: number;
   order_number: string;
+  invoice_number?: string | null;
+  walk_in_amount_tendered?: number | null;
   combined_payment?: CombinedPaymentInfo | null;
+  delivery?: OrderDeliveryAssignment | null;
+  group_members?: OrderGroupMemberSummary[];
   version: number;
   customer_name: string;
+  customer_company?: string | null;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+  status?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
   items: OrderItemDetailView[];
 };
 

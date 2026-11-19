@@ -50,16 +50,15 @@ export function pluralize(
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-/** "just now", "42s ago", "5m ago", "3h ago". */
 export function formatAgo(ageMs: number): string {
   const seconds = Math.max(0, Math.round(ageMs / 1000));
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 5) return "now";
+  if (seconds < 60) return `${seconds}s`;
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }
 
 export function formatSpeed(speedKph: number | null): string {

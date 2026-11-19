@@ -7,10 +7,13 @@ import OrderDialog from "./components/dialog";
 import OrderPage from "./components/order-page";
 import { MotionPage } from "@/components/page-motion";
 import { ManagementPageHeading } from "@/components/management-list";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect } from "react";
 import { Dialog } from "@/components/ui/dialog";
 import { useSearchParams } from "next/navigation";
 import { WalkInSaleDialog } from "./components/walk-in/walk-in-sale-dialog";
+import { OrderDetailsDrawer } from "@/components/order-details";
+import { QueryFeedback } from "@/components/query-feedback";
+import { DialogMode } from "@/types/dialog";
 
 export default function Page() {
   return (
@@ -34,19 +37,20 @@ export default function Page() {
 
 function PageContent() {
   const searchParams = useSearchParams();
-  const { walkInOpen, setWalkInOpen } = useOrders();
+  const { walkInOpen, setWalkInOpen, orderViewQuery, viewOrder } = useOrders();
   const { state, closeModal } = useModal();
+  const isViewDrawerOpen = state.isOpen && state.mode === DialogMode.VIEW;
 
   useEffect(() => {
     if (searchParams.get("walkin") === "true") {
       setWalkInOpen(true);
     }
-  }, [searchParams]);
+  }, [searchParams, setWalkInOpen]);
 
   return (
     <>
       <Dialog
-        open={state.isOpen}
+        open={state.isOpen && !isViewDrawerOpen}
         onOpenChange={(open) => {
           if (!open) {
             closeModal();
@@ -63,6 +67,19 @@ function PageContent() {
           <OrderPage />
         </section>
       </Dialog>
+      <OrderDetailsDrawer
+        open={isViewDrawerOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeModal();
+          }
+        }}
+        title={state.title}
+        order={orderViewQuery.data ?? null}
+        isLoading={orderViewQuery.isLoading}
+        feedback={<QueryFeedback query={orderViewQuery} label="order details" />}
+        onSelectOrder={(orderId) => viewOrder(orderId)}
+      />
       <WalkInSaleDialog open={walkInOpen} onOpenChange={setWalkInOpen} />
     </>
   );

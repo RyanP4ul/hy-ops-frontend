@@ -1,23 +1,24 @@
 import z from "zod";
 
 export const sessionsAndLogsTableSchema = z.object({
-  id: z.number().nonnegative(),
+  id: z.union([z.string().min(1), z.number().nonnegative()]),
+  ip_address: z.string().optional(),
   page: z.string().min(1).nonempty(),
   user: z.object({
-    sub: z.string().min(1).nonempty(),
+    sub: z.union([z.string().min(1), z.number().nonnegative()]),
     email: z.string().email().min(1).nonempty(),
     name: z.string().min(1).nonempty(),
     role: z.string().min(1).nonempty(),
     token_version: z.number().nonnegative(),
     user_agent: z.object({
-      raw: z.string().min(1).nonempty(),
+      raw: z.string(),
       browser: z.object({
         name: z.string().min(1).nonempty(),
-        version: z.string().min(1).nonempty(),
+        version: z.string(),
       }),
       os: z.object({
         name: z.string().min(1).nonempty(),
-        version: z.string().min(1).nonempty(),
+        version: z.string(),
       }),
       device: z.object({
         type: z.string().min(1).nonempty(),

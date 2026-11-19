@@ -1,4 +1,4 @@
-type CalendarViewMode = "Day" | "Week" | "Month";
+type CalendarViewMode = "Agenda" | "Day" | "Week" | "Month";
 type CalendarCategory =
   | "DELIVERY"
   | "INVENTORY_WAREHOUSE"

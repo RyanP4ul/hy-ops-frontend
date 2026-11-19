@@ -4,29 +4,17 @@ import { Input } from "@/components/ui/input";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useWarehouses } from "../provider";
-import { WarehouseForm, warehouseSchema } from "@/schema/warehouse";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
-import { Loader2 } from "lucide-react";
+import { WarehouseForm } from "@/schema/warehouse";
+import { useCallback, useEffect, useRef } from "react";
+import { Controller } from "react-hook-form";
 import { ToastSubmit, ToastValidationError } from "@/components/util";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { REQUESTS } from "@/constant/request";
-import { Map, MapMarker, MapRef, MarkerContent } from "@/components/ui/map";
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/ui/combobox";
-import { GeocodeResult } from "@/types/geocode";
-import { useQuery } from "@tanstack/react-query";
 import { QueryFeedback } from "@/components/query-feedback";
-import { debounce } from "@/utils/debounce";
+import { GoogleAddressSearch } from "@/components/google-address-search";
+import type { GooglePlaceAddress } from "@/lib/google-place-address";
 
 export default function Form() {
   const {
@@ -34,8 +22,6 @@ export default function Form() {
     warehouseQuery,
     warehouseDetailQuery,
     selected,
-    setSearchAddress,
-    geocodeQuery,
     mapRef,
     setLatitude,
     setLongitude,
@@ -65,10 +51,7 @@ export default function Form() {
         state: warehouseDetailQuery.data?.state ?? "",
         zip_code: warehouseDetailQuery.data?.zip_code ?? "",
       });
-
-      setSearchAddress("");
     } else {
-      setSearchAddress("");
       form.reset({
         latitude: null,
         longitude: null,
@@ -80,14 +63,16 @@ export default function Form() {
         zip_code: "",
       });
     }
-  }, [state.isOpen, state.mode, selected.id, selected.version, warehouseDetailQuery.isFetching, warehouseDetailQuery.data, form, mapRef, setLatitude, setLongitude, setSearchAddress]);
+  }, [state.isOpen, state.mode, selected.id, selected.version, warehouseDetailQuery.isFetching, warehouseDetailQuery.data, form, mapRef, setLatitude, setLongitude]);
 
-  const debouncedSearch = useMemo(
-    () => debounce(setSearchAddress, 500),
-    [setSearchAddress],
-  );
-
-  useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
+  const selectAddress = useCallback((address: GooglePlaceAddress) => {
+    for (const name of ["search_address", "street_address", "city", "state", "zip_code", "latitude", "longitude"] as const) {
+      form.setValue(name, address[name], { shouldDirty: true, shouldValidate: true });
+    }
+    setLatitude(address.latitude);
+    setLongitude(address.longitude);
+    mapRef.current?.flyTo({ center: [address.longitude, address.latitude], zoom: 16 });
+  }, [form, mapRef, setLatitude, setLongitude]);
 
   const onSuccess = () => {
     warehouseQuery.refetch();
@@ -146,98 +131,14 @@ export default function Form() {
         className="space-y-4"
       >
         {state.mode === DialogMode.EDIT && <QueryFeedback query={warehouseDetailQuery} label="warehouse details" />}
-        {geocodeQuery.isError && <QueryFeedback query={geocodeQuery} label="address search" />}
-        <div className="gap-4">
-          <Controller
-            name="search_address"
-            control={form.control}
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel htmlFor="search_address">Search Address</FieldLabel>
-                <Combobox
-                  {...field}
-                  items={geocodeQuery.data ?? []}
-                  aria-invalid={fieldState.invalid}
-                  onValueChange={(value) => {
-                    const selectedAddress = geocodeQuery.data?.find(
-                      (item) => item.place_id === Number(value),
-                    );
-
-                    if (!selectedAddress) return;
-
-                    // form.setValue(
-                    //   "search_address",
-                    //   selectedAddress.display_name,
-                    // );
-
-                    // field.onChange(selectedAddress.display_name);
-
-                    const street = [
-                      selectedAddress.address.house_number,
-                      selectedAddress.address.road,
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
-
-                    form.setValue("street_address", street || "");
-
-                    form.setValue("city", selectedAddress.address.city || selectedAddress.address.town || selectedAddress.address.municipality || "");
-
-                    form.setValue("state", selectedAddress.address.state || "");
-
-                    form.setValue(
-                      "zip_code",
-                      selectedAddress.address.postcode || "",
-                    );
-
-                    const newLatitude = Number(selectedAddress.lat);
-                    const newLongitude = Number(selectedAddress.lon);
-
-                    form.setValue("latitude", newLatitude, { shouldDirty: true });
-                    form.setValue("longitude", newLongitude, { shouldDirty: true });
-                    setLatitude(newLatitude);
-                    setLongitude(newLongitude);
-
-                    mapRef.current?.flyTo({
-                      center: [newLongitude, newLatitude],
-                      zoom: 16,
-                      duration: 1000,
-                    });
-                  }}
-                >
-                  <ComboboxInput
-                    id="search_address"
-                    placeholder="Search Warehouse Address"
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      debouncedSearch(value);
-                    }}
-                  />
-                  <ComboboxContent>
-                    <ComboboxEmpty>No address found.</ComboboxEmpty>
-                    <ComboboxList>
-                      {(item) => (
-                        <ComboboxItem
-                          key={item.place_id}
-                          value={item.place_id.toString()}
-                        >
-                          {item.display_name}
-                        </ComboboxItem>
-                      )}
-                    </ComboboxList>
-                  </ComboboxContent>
-                </Combobox>
-
-                {fieldState.invalid && (
-                  <FieldError errors={[fieldState.error]} />
-                )}
-              </Field>
-            )}
+        <Field>
+          <FieldLabel htmlFor="search_address">Search Address</FieldLabel>
+          <GoogleAddressSearch
+            key={`${state.mode}:${selected.id}:${selected.version}`}
+            onSelect={selectAddress}
+            disabled={form.formState.isSubmitting || (state.mode === DialogMode.EDIT && warehouseDetailQuery.isFetching)}
           />
-        </div>
-        <p className="text-sm text-muted-foreground" role={geocodeQuery.isError ? "status" : undefined}>
-          {geocodeQuery.isError ? "Address search is unavailable. " : ""}You can enter the address below without using search. Coordinates are optional; use a verified map location.
-        </p>
+        </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {(["latitude", "longitude"] as const).map((coordinate) => (
             <Controller key={coordinate} name={coordinate} control={form.control} render={({ field, fieldState }) => (

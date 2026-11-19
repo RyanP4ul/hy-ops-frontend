@@ -8,6 +8,7 @@ import { createContext, useContext, useState } from "react";
 import { useForm, UseFormReturn } from "react-hook-form";
 import {
   PaymentFormType,
+  PaymentListEntry,
   PaymentRowType,
   paymentSchema,
 } from "@/schema/payment";
@@ -22,7 +23,7 @@ type Selected = {
 type PaymentsContext = {
   form: UseFormReturn<PaymentFormType>;
   paymentsQuery: ReturnType<
-    typeof useQuery<{ rows: PaymentRowType[]; total: number }>
+    typeof useQuery<{ rows: PaymentListEntry[]; total: number }>
   >;
   page: { pageIndex: number; pageSize: number };
   setPage: React.Dispatch<
@@ -65,9 +66,10 @@ export function PaymentsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const paymentsQuery = useQuery({
-    queryKey: ["payments", page.pageIndex, page.pageSize, search, sortBy],
+    queryKey: ["payments", "grouped", page.pageIndex, page.pageSize, search, sortBy],
     queryFn: async () => {
       const params = new URLSearchParams({
+        grouped: "true",
         page: String(page.pageIndex),
         limit: String(page.pageSize),
         sort_by: `${sortBy.id}:${sortBy.type}`,
@@ -80,7 +82,7 @@ export function PaymentsProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) throw new Error("Failed to fetch payments");
 
       return {
-        rows: (await response.json()) as PaymentRowType[],
+        rows: (await response.json()) as PaymentListEntry[],
         total: Number(response.headers.get("X-Total-Count") ?? 0),
       };
     },

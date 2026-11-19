@@ -1,14 +1,4 @@
-import {
-  AlertCircle,
-  Check,
-  ChevronDown,
-  ExternalLink,
-  ImageIcon,
-  Layers,
-  MapPin,
-  Phone,
-  ShieldAlert,
-} from "lucide-react";
+import { MapPin, Phone } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -30,12 +20,11 @@ type StopTimelineProps = {
   stops: DeliveryStop[];
   vehicleStatus: Vehicle["status"];
   nextStopId: string | undefined;
-  expandedId: string | null;
+  focusedStopId: string | null;
   enrichmentByStopId: Map<string, StopEnrichment>;
   simulationOn: boolean;
   savingStopId: string | null;
   stopActionError: string | null;
-  onToggle: (stopId: string) => void;
   onFocusStop: (coordinates: Coordinates) => void;
   onConfirmStopDelivered: (stopId: string) => Promise<boolean>;
 };
@@ -44,12 +33,11 @@ export function StopTimeline({
   stops,
   vehicleStatus,
   nextStopId,
-  expandedId,
+  focusedStopId,
   enrichmentByStopId,
   simulationOn,
   savingStopId,
   stopActionError,
-  onToggle,
   onFocusStop,
   onConfirmStopDelivered,
 }: StopTimelineProps) {
@@ -67,43 +55,38 @@ export function StopTimeline({
     sequence: number;
   } | null>(null);
 
-  const rowRefs = useRef(new Map<string, HTMLDivElement | null>());
+  const detailsRefs = useRef(new Map<string, HTMLDetailsElement | null>());
 
+  // When a stop is clicked on the map, open its native <details> and scroll it into view.
   useEffect(() => {
-    if (!expandedId) return;
-    const node = rowRefs.current.get(expandedId);
-    node?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [expandedId]);
+    if (!focusedStopId) return;
+    const node = detailsRefs.current.get(focusedStopId);
+    if (node) {
+      node.open = true;
+      node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [focusedStopId]);
 
   return (
     <>
-      <div className="space-y-2.5">
+      <div className="divide-y divide-border/60 rounded-lg border bg-background">
         {groups.map((group) => {
           const isMultiOrder = group.entries.length > 1;
-          const seqRange = isMultiOrder
-            ? `Stops #${group.entries[0].sequence}–#${group.entries[group.entries.length - 1].sequence}`
-            : `Stop #${group.entries[0].sequence}`;
 
           return (
-            <div
-              key={group.key}
-              className="rounded-lg border bg-card/60 p-2.5"
-            >
+            <div key={group.key} className="px-2.5 py-2">
               {isMultiOrder ? (
-                <div className="mb-2 flex items-start justify-between gap-2 border-b pb-2">
+                <div className="mb-1.5 flex items-start justify-between gap-2 pb-1.5 border-b border-border/50">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                        <Layers className="size-3" aria-hidden="true" />
-                        {seqRange} · {group.entries.length} orders
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="font-medium text-primary">
+                        {group.entries.length} orders · same stop
                       </span>
                       {group.orderGroupNumber ? (
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {group.orderGroupNumber}
-                        </span>
+                        <span>· {group.orderGroupNumber}</span>
                       ) : null}
                     </div>
-                    <p className="mt-1 truncate text-xs font-semibold text-foreground">
+                    <p className="truncate text-xs font-semibold text-foreground">
                       {group.destinationName}
                     </p>
                     <p className="truncate text-[11px] text-muted-foreground">
@@ -113,267 +96,214 @@ export function StopTimeline({
                   <button
                     type="button"
                     onClick={() => onFocusStop(group.coordinates)}
-                    aria-label={`Focus ${group.destinationName} on map`}
-                    className="shrink-0 rounded border bg-background p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                    title="Focus destination on map"
+                    aria-label={`Locate ${group.destinationName}`}
+                    title="Locate on map"
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <MapPin className="size-3.5" aria-hidden="true" />
                   </button>
                 </div>
               ) : null}
 
-              <ol className="space-y-2">
+              <div className={cn(isMultiOrder && "divide-y divide-border/40")}>
                 {group.entries.map(({ stop, sequence, enrichment }) => {
                   const actualStatus =
                     enrichment?.actualStatus ??
                     (stop.status === "completed" ? "delivered" : "pending");
                   const isDelivered = actualStatus === "delivered";
                   const isFailed = actualStatus === "failed";
-                  const isSkipped = !isDelivered && !isFailed && stop.skippedForNow;
-                  const isNext = !isDelivered && !isFailed && !isSkipped && stop.id === nextStopId;
-                  const expanded = expandedId === stop.id;
+                  const isSkipped =
+                    !isDelivered && !isFailed && stop.skippedForNow;
+                  const isNext =
+                    !isDelivered &&
+                    !isFailed &&
+                    !isSkipped &&
+                    stop.id === nextStopId;
+
+                  const statusText = isDelivered
+                    ? "Done"
+                    : isFailed
+                      ? "Failed"
+                      : isSkipped
+                        ? "Skipped"
+                        : isNext
+                          ? "Next"
+                          : null;
 
                   return (
-                    <li key={stop.id}>
-                      <div
-                        ref={(el) => {
-                          rowRefs.current.set(stop.id, el);
-                        }}
-                        className={cn(
-                          "rounded-md transition-colors",
-                          isMultiOrder && "border bg-background/80 p-2",
-                          expanded && "ring-1 ring-primary/40",
-                        )}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => onToggle(stop.id)}
-                          aria-expanded={expanded}
-                          className="flex w-full items-start gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <details
+                      key={stop.id}
+                      ref={(el) => {
+                        detailsRefs.current.set(stop.id, el);
+                      }}
+                      className={cn(
+                        "fm-stop-details group",
+                        isMultiOrder && "py-1.5 first:pt-0 last:pb-0",
+                      )}
+                    >
+                      <summary className="flex items-start gap-2 rounded py-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <span
+                          className={cn(
+                            "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums",
+                            isDelivered &&
+                              "bg-emerald-600 text-white",
+                            isFailed && "bg-destructive text-white",
+                            isNext && "bg-primary text-primary-foreground",
+                            !isDelivered &&
+                              !isFailed &&
+                              !isNext &&
+                              "border bg-muted/40 text-muted-foreground",
+                          )}
                         >
-                          <span
-                            className={cn(
-                              "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold",
-                              isDelivered &&
-                                "border-emerald-600 bg-emerald-600 text-white",
-                              isFailed &&
-                                "border-destructive bg-destructive text-white",
-                              isNext &&
-                                "border-primary bg-primary text-primary-foreground",
-                              !isDelivered &&
-                                !isFailed &&
-                                !isNext &&
-                                "border-border bg-background text-muted-foreground",
-                            )}
-                          >
-                            {isDelivered ? (
-                              <Check className="size-3.5" aria-hidden="true" />
-                            ) : isFailed ? (
-                              <AlertCircle className="size-3.5" aria-hidden="true" />
-                            ) : (
-                              sequence
-                            )}
-                          </span>
+                          {isDelivered ? "✓" : isFailed ? "!" : sequence}
+                        </span>
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="truncate text-xs font-semibold text-foreground">
-                                {isMultiOrder ? stop.order.id : stop.name}
-                              </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="truncate text-xs font-medium text-foreground">
+                              {isMultiOrder ? stop.order.id : stop.name}
+                            </span>
+                            {statusText ? (
                               <span
                                 className={cn(
-                                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                                  "shrink-0 text-[10px] font-medium",
                                   isDelivered &&
-                                    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
-                                  isFailed &&
-                                    "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300",
-                                  isNext && "bg-primary/10 text-primary",
-                                  isSkipped && "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
-                                  !isDelivered &&
-                                    !isFailed &&
-                                    !isNext &&
-                                    !isSkipped &&
-                                    "bg-muted text-muted-foreground",
+                                    "text-emerald-700 dark:text-emerald-400",
+                                  isFailed && "text-destructive",
+                                  isNext && "text-primary",
+                                  isSkipped &&
+                                    "text-amber-700 dark:text-amber-400",
                                 )}
                               >
-                                {isDelivered
-                                  ? "Delivered"
-                                  : isFailed
-                                    ? "Failed"
-                                    : isSkipped
-                                      ? "Skipped for now"
-                                    : isNext
-                                      ? "Next stop"
-                                      : "Pending"}
+                                {statusText}
                               </span>
-                            </div>
-
-                            {!isMultiOrder ? (
-                              <p className="truncate text-[11px] text-muted-foreground">
-                                {stop.address}
-                              </p>
                             ) : null}
+                          </span>
 
-                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                              {!isMultiOrder ? (
-                                <span className="font-medium text-foreground/80">
-                                  {stop.order.id}
-                                </span>
-                              ) : null}
-                              <span>· {stop.order.customer.name}</span>
-                              {enrichment?.orderGroupNumber && !isMultiOrder ? (
-                                <span className="rounded bg-muted px-1 py-0.25 text-[10px]">
-                                  {enrichment.orderGroupNumber}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
+                          {!isMultiOrder ? (
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {stop.address}
+                            </span>
+                          ) : null}
 
-                          <ChevronDown
-                            className={cn(
-                              "mt-1 size-4 shrink-0 text-muted-foreground transition-transform",
-                              expanded && "rotate-180",
-                            )}
-                            aria-hidden="true"
-                          />
-                        </button>
+                          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground/90">
+                            {!isMultiOrder ? `${stop.order.id} · ` : ""}
+                            {stop.order.customer.name}
+                            {enrichment?.orderGroupNumber && !isMultiOrder
+                              ? ` · ${enrichment.orderGroupNumber}`
+                              : ""}
+                          </span>
+                        </span>
+                      </summary>
 
-                        {expanded ? (
-                          <div className="mt-2.5 space-y-2.5 border-t pt-2.5 text-xs">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="font-medium text-foreground">
-                                  {stop.order.customer.name}
-                                </p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  {stop.order.customer.code} ·{" "}
-                                  {stop.order.items.length} line item
-                                  {stop.order.items.length === 1 ? "" : "s"}
-                                </p>
-                              </div>
-                              {stop.order.customer.phone ? (
-                                <a
-                                  href={`tel:${stop.order.customer.phone}`}
-                                  className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium hover:bg-accent"
-                                >
-                                  <Phone className="size-3" aria-hidden="true" />
-                                  {stop.order.customer.phone}
-                                </a>
-                              ) : null}
-                            </div>
+                      <div className="mt-2 space-y-2 border-t border-border/50 pl-6 pt-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {stop.order.customer.code} ·{" "}
+                            {stop.order.items.length}{" "}
+                            {stop.order.items.length === 1 ? "item" : "items"}
+                          </span>
+                          {stop.order.customer.phone ? (
+                            <a
+                              href={`tel:${stop.order.customer.phone}`}
+                              className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-foreground hover:text-primary"
+                            >
+                              <Phone className="size-3" aria-hidden="true" />
+                              {stop.order.customer.phone}
+                            </a>
+                          ) : null}
+                        </div>
 
-                            {isFailed && enrichment?.failureReason ? (
-                              <div
-                                role="alert"
-                                className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive"
-                              >
-                                <strong>Failure reason:</strong>{" "}
-                                {enrichment.failureReason}
-                              </div>
-                            ) : null}
-
-                            {enrichment?.returnStatus ? (
-                              <p className="text-[11px] font-medium text-rose-700 dark:text-rose-300">
-                                Return pickup status: {enrichment.returnStatus}
-                              </p>
-                            ) : null}
-
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 gap-1 px-2 text-[11px]"
-                                onClick={() => onFocusStop(stop.coordinates)}
-                              >
-                                <MapPin className="size-3" aria-hidden="true" />
-                                Focus stop
-                              </Button>
-
-                              {!simulationOn ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 gap-1 px-2 text-[11px]"
-                                  onClick={() =>
-                                    setProofStop({
-                                      id: stop.id,
-                                      orderNumber: stop.order.id,
-                                    })
-                                  }
-                                >
-                                  <ImageIcon
-                                    className="size-3"
-                                    aria-hidden="true"
-                                  />
-                                  View proof
-                                </Button>
-                              ) : null}
-
-                              {enrichment?.orderId ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 gap-1 px-2 text-[11px]"
-                                  onClick={() =>
-                                    setOrderModal({
-                                      orderId: enrichment.orderId,
-                                      orderNumber: stop.order.id,
-                                    })
-                                  }
-                                >
-                                  <ExternalLink
-                                    className="size-3"
-                                    aria-hidden="true"
-                                  />
-                                  View full order details
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 gap-1 px-2 text-[11px]"
-                                  nativeButton={false}
-                                  render={<Link href="/panel/orders" />}
-                                >
-                                  <ExternalLink
-                                    className="size-3"
-                                    aria-hidden="true"
-                                  />
-                                  Orders module
-                                </Button>
-                              )}
-
-                              {!simulationOn &&
-                              vehicleStatus === "delivering" &&
-                              actualStatus === "pending" ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 gap-1 border-primary/40 px-2 text-[11px] text-primary hover:bg-primary/5"
-                                  disabled={savingStopId === stop.id}
-                                  onClick={() =>
-                                    setConfirmStop({ stop, sequence })
-                                  }
-                                >
-                                  <ShieldAlert
-                                    className="size-3"
-                                    aria-hidden="true"
-                                  />
-                                  Review delivery
-                                </Button>
-                              ) : null}
-                            </div>
-                          </div>
+                        {isFailed && enrichment?.failureReason ? (
+                          <p
+                            role="alert"
+                            className="rounded border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive"
+                          >
+                            {enrichment.failureReason}
+                          </p>
                         ) : null}
+
+                        {enrichment?.returnStatus ? (
+                          <p className="text-[11px] font-medium text-rose-700 dark:text-rose-300">
+                            Return pickup: {enrichment.returnStatus}
+                          </p>
+                        ) : null}
+
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => onFocusStop(stop.coordinates)}
+                          >
+                            Locate
+                          </Button>
+
+                          {!simulationOn ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() =>
+                                setProofStop({
+                                  id: stop.id,
+                                  orderNumber: stop.order.id,
+                                })
+                              }
+                            >
+                              Proof
+                            </Button>
+                          ) : null}
+
+                          {enrichment?.orderId ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() =>
+                                setOrderModal({
+                                  orderId: enrichment.orderId,
+                                  orderNumber: stop.order.id,
+                                })
+                              }
+                            >
+                              Order
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              nativeButton={false}
+                              render={<Link href="/panel/orders" />}
+                            >
+                              Orders
+                            </Button>
+                          )}
+
+                          {!simulationOn &&
+                          vehicleStatus === "delivering" &&
+                          actualStatus === "pending" ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="default"
+                              className="ml-auto h-6 px-2 text-[11px]"
+                              disabled={savingStopId === stop.id}
+                              onClick={() => setConfirmStop({ stop, sequence })}
+                            >
+                              Mark delivered
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
-                    </li>
+                    </details>
                   );
                 })}
-              </ol>
+              </div>
             </div>
           );
         })}

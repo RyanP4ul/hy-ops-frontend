@@ -1,11 +1,9 @@
-import { CalendarClock, Eye, EyeOff, Send } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDay, formatTime, pluralize } from "../lib/format";
 import type { Trip } from "../types";
-import { EmptyState } from "./empty-state";
 
 type UpcomingTripsProps = {
   trips: Trip[];
@@ -30,132 +28,125 @@ export function UpcomingTrips({
 
   if (trips.length === 0) {
     return (
-      <EmptyState icon={CalendarClock} title="No upcoming trips">
-        Trips scheduled for this vehicle will show up here.
-      </EmptyState>
+      <p className="py-8 text-center text-xs text-muted-foreground">
+        No upcoming trips scheduled.
+      </p>
     );
   }
 
   return (
-    <ul className="space-y-2.5">
-      {trips.map((trip) => {
-        const previewing = previewTripId === trip.id;
-        const confirming = confirmingId === trip.id;
+    <div className="space-y-2.5">
+      <ul className="divide-y divide-border/60 rounded-lg border bg-background">
+        {trips.map((trip) => {
+          const previewing = previewTripId === trip.id;
+          const confirming = confirmingId === trip.id;
 
-        return (
-          <li
-            key={trip.id}
-            className={cn(
-              "rounded-lg border bg-card p-3",
-              previewing && "border-primary ring-1 ring-primary",
-            )}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={cn(
-                      "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                      trip.phase === "overdue"
-                        ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-200"
-                        : "bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-200",
-                    )}
-                  >
-                    {trip.phase === "overdue" ? "Overdue" : "Upcoming"}
-                  </span>
-                  <p className="truncate text-sm font-semibold">{trip.label}</p>
+          return (
+            <li
+              key={trip.id}
+              className={cn(
+                "space-y-2 p-2.5 transition-colors",
+                previewing && "bg-primary/5",
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-xs font-semibold text-foreground">
+                      {trip.label}
+                    </span>
+                    {trip.phase === "overdue" ? (
+                      <span className="shrink-0 text-[10px] font-semibold text-destructive">
+                        Overdue
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+                    {formatDay(trip.scheduledAt)} · {formatTime(trip.scheduledAt)}
+                  </p>
                 </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {formatDay(trip.scheduledAt)} · {formatTime(trip.scheduledAt)}
-                </p>
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  {pluralize(trip.stops.length, "stop")}
+                </span>
               </div>
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                {pluralize(trip.stops.length, "stop")}
-              </span>
-            </div>
 
-            <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-              {trip.stops.map((stop) => stop.name).join(" → ")}
-            </p>
+              <p className="line-clamp-2 text-[11px] text-muted-foreground">
+                {trip.stops.map((stop) => stop.name).join(" → ")}
+              </p>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={previewing ? "default" : "outline"}
-                className="h-7 gap-1.5 px-2.5 text-xs"
-                onClick={() => onPreview(previewing ? null : trip.id)}
-              >
-                {previewing ? (
-                  <EyeOff className="size-3.5" aria-hidden="true" />
-                ) : (
-                  <Eye className="size-3.5" aria-hidden="true" />
-                )}
-                {previewing ? "Hide preview" : "Preview route"}
-              </Button>
-
-              {trip.phase === "overdue" ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="ml-auto h-7 px-2.5 text-xs"
-                  nativeButton={false}
-                  render={<Link href="/panel/deliveries?overdue=true" />}
-                >
-                  Reschedule in Deliveries
-                </Button>
-              ) : confirming ? (
-                <div className="ml-auto flex items-center gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-xs"
-                    disabled={dispatching}
-                    onClick={() => setConfirmingId(null)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 px-2.5 text-xs"
-                    disabled={dispatching}
-                    onClick={() => {
-                      setConfirmingId(null);
-                      onDispatch(trip.id);
-                    }}
-                  >
-                    {dispatching ? "Dispatching…" : "Confirm dispatch"}
-                  </Button>
-                </div>
-              ) : (
+              <div className="flex items-center gap-1.5 pt-0.5">
                 <Button
                   type="button"
                   size="sm"
-                  className="ml-auto h-7 gap-1.5 px-2.5 text-xs"
-                  disabled={dispatchBlockedReason !== null || dispatching}
-                  title={dispatchBlockedReason ?? undefined}
-                  onClick={() => setConfirmingId(trip.id)}
+                  variant={previewing ? "secondary" : "outline"}
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => onPreview(previewing ? null : trip.id)}
                 >
-                  <Send className="size-3.5" aria-hidden="true" />
-                  Dispatch
+                  {previewing ? "Hide preview" : "Preview"}
                 </Button>
-              )}
-            </div>
-          </li>
-        );
-      })}
+
+                {trip.phase === "overdue" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto h-6 px-2 text-[11px]"
+                    nativeButton={false}
+                    render={<Link href="/panel/deliveries?overdue=true" />}
+                  >
+                    Reschedule
+                  </Button>
+                ) : confirming ? (
+                  <div className="ml-auto flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[11px]"
+                      disabled={dispatching}
+                      onClick={() => setConfirmingId(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      disabled={dispatching}
+                      onClick={() => {
+                        setConfirmingId(null);
+                        onDispatch(trip.id);
+                      }}
+                    >
+                      {dispatching ? "Dispatching…" : "Confirm"}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="ml-auto h-6 px-2.5 text-[11px]"
+                    disabled={dispatchBlockedReason !== null || dispatching}
+                    title={dispatchBlockedReason ?? undefined}
+                    onClick={() => setConfirmingId(trip.id)}
+                  >
+                    Dispatch
+                  </Button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
 
       {dispatchBlockedReason ? (
-        <li className="text-xs text-muted-foreground">
-          Dispatch unavailable: {dispatchBlockedReason}.
-        </li>
+        <p className="text-[11px] text-muted-foreground">
+          Unavailable to dispatch: {dispatchBlockedReason}.
+        </p>
       ) : simulationOn ? (
-        <li className="text-xs text-violet-700 dark:text-violet-300">
-          Simulation mode: dispatching here is local only and not saved.
-        </li>
+        <p className="text-[11px] text-violet-700 dark:text-violet-300">
+          Simulation mode — dispatch is local only.
+        </p>
       ) : null}
-    </ul>
+    </div>
   );
 }

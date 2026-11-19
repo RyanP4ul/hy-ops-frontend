@@ -51,7 +51,6 @@ export function getRoute(
   warehouses: WarehouseLocation[],
 ): Coordinates[] {
   const warehouse = getWarehouse(vehicle, warehouses);
-
   return [
     warehouse.coordinates,
     ...vehicle.stops.map((stop) => stop.coordinates),
@@ -68,22 +67,16 @@ export function getPosition(
   const fallback: Coordinates = warehouse.coordinates ?? DEFAULT_MAP_CENTER;
   const route = getRoute(vehicle, warehouses);
 
-  if (vehicle.status === "available") {
-    return fallback;
-  }
+  if (vehicle.status === "available") return fallback;
 
   const start = route[vehicle.legIndex];
   const end = route[vehicle.legIndex + 1];
-
-  if (!start || !end) {
-    return fallback;
-  }
+  if (!start || !end) return fallback;
 
   const leg = roadRoute?.legs[vehicle.legIndex];
   return leg ? pointAlongRoad(leg.coordinates, vehicle.progress) : start;
 }
 
-/** Interpolate by distance along the road polyline rather than across the block. */
 export function pointAlongRoad(
   points: Coordinates[],
   progress: number,
@@ -105,7 +98,6 @@ export function pointAlongRoad(
   return points[points.length - 1];
 }
 
-/** Great-circle distance in metres (haversine). */
 export function distanceMeters(a: Coordinates, b: Coordinates): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(b[1] - a[1]);
@@ -135,10 +127,6 @@ export type CoLocatedVehicleGroup = {
   vehicles: Vehicle[];
 };
 
-/**
- * Groups vehicles sharing identical or very close coordinates without altering
- * their underlying coordinates, preventing unreadable stacked markers.
- */
 export function clusterCoLocatedVehicles(
   vehicles: Vehicle[],
   positions: Map<string, ResolvedPosition>,
@@ -152,7 +140,8 @@ export function clusterCoLocatedVehicles(
     if (!pos || !isValidCoordinate(pos.coordinates)) continue;
 
     const existing = groups.find(
-      (group) => distanceMeters(group.coordinates, pos.coordinates) <= radiusMeters,
+      (group) =>
+        distanceMeters(group.coordinates, pos.coordinates) <= radiusMeters,
     );
     if (existing) {
       existing.vehicles.push(vehicle);
@@ -165,7 +154,6 @@ export function clusterCoLocatedVehicles(
     }
   }
 
-  // Sort so groups containing the selected vehicle render last (highest z-order).
   return groups.sort((a, b) => {
     const aSelected = a.vehicles.some((v) => v.id === selectedId);
     const bSelected = b.vehicles.some((v) => v.id === selectedId);

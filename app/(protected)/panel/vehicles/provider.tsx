@@ -57,9 +57,6 @@ export function VehiclesProvider({ children }: { children: React.ReactNode }) {
     defaultValues: {
       warehouse_id: -1,
       plate_number: "",
-      status: "available",
-      type: "truck",
-
     },
   });
 

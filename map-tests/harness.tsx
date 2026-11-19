@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import { Map, MapControls, MapMarker, MapRoute, MarkerContent, MarkerPopup, MarkerTooltip, useMap } from "../components/ui/map";
+import { DashboardMapMarker } from "../app/(protected)/panel/(main)/components/dashboard-map-marker";
 
 function MapContents() {
   const { map } = useMap();
@@ -28,7 +29,9 @@ function App() {
   return <>
     <button type="button" onClick={() => setSecondary(value => !value)}>Toggle second map</button>
     <div style={{ height: 500, width: 700 }}><Map center={[121.02, 14.6]} zoom={12}><MapContents /></Map></div>
-    {secondary && <div style={{ height: 150, width: 300 }}><Map center={[121, 14.6]} /></div>}
+    {secondary && <div style={{ height: 150, width: 300 }}><Map clean center={[121, 14.6]}>
+      <DashboardMapMarker longitude={121} latitude={14.6} tooltip="Dashboard vehicle"><span>Truck</span></DashboardMapMarker>
+    </Map></div>}
   </>;
 }
 createRoot(document.getElementById("root")!).render(<App />);

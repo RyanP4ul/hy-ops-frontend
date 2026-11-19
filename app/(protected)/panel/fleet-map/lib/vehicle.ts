@@ -39,11 +39,6 @@ export function getOperationalStatusKey(
   return vehicle.blockedReason ?? vehicle.status;
 }
 
-export function getTripValue(stops: DeliveryStop[]): number | null {
-  if (stops.some((stop) => stop.order.totalAmount === null)) return null;
-  return stops.reduce((sum, stop) => sum + (stop.order.totalAmount ?? 0), 0);
-}
-
 export function getProgressPercent(vehicle: Vehicle): number {
   if (vehicle.stops.length === 0) return 0;
   return Math.round((vehicle.completedStops / vehicle.stops.length) * 100);
@@ -52,8 +47,10 @@ export function getProgressPercent(vehicle: Vehicle): number {
 export function getNextPendingStop(
   vehicle: Vehicle,
 ): DeliveryStop | undefined {
-  const pending = vehicle.stops.filter(stop => stop.status === "pending" && !stop.skippedForNow);
-  return pending.find(stop => stop.deliverNext) ?? pending[0];
+  const pending = vehicle.stops.filter(
+    (stop) => stop.status === "pending" && !stop.skippedForNow,
+  );
+  return pending.find((stop) => stop.deliverNext) ?? pending[0];
 }
 
 export function computeFleetCounts(
@@ -214,11 +211,6 @@ export type DestinationStopGroup = {
   entries: StopEntry[];
 };
 
-/**
- * Groups consecutive or co-located stops only when they share BOTH verified
- * coordinates AND normalized shipping address (or a shared backend order_group_id
- * with matching coordinates). Never groups solely on customer name.
- */
 export function groupStopsByVerifiedDestination(
   stops: DeliveryStop[],
   enrichmentByStopId: Map<string, StopEnrichment>,
@@ -250,8 +242,7 @@ export function groupStopsByVerifiedDestination(
         return true;
       }
       return (
-        canMatchAddress &&
-        group.address.trim().toLowerCase() === normAddress
+        canMatchAddress && group.address.trim().toLowerCase() === normAddress
       );
     });
 

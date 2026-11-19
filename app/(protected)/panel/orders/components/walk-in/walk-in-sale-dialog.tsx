@@ -1,30 +1,22 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2,
+  Check,
   Loader2,
   Minus,
-  Package,
   Plus,
   Printer,
-  ReceiptText,
-  RotateCcw,
   Search,
-  ShoppingBag,
-  Store,
-  Trash2,
-  Truck,
-  UserCheck,
-  UserRound,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOrders } from "../../provider";
 import { QueryFeedback } from "@/components/query-feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -46,14 +38,19 @@ import { request } from "@/components/http";
 import { formatCurrency } from "@/utils/date-util";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { REQUESTS } from "@/constant/request";
+import { cn } from "@/lib/utils";
 import {
   walkInOrderFormSchema,
   type WalkInCartItem,
   type WalkInSaleResult,
 } from "@/schema/walk-in-order";
 import Invoice from "../invoice";
-import Link from "next/link";
-import { DeliveryFields, type DeliveryDetails, type SavedDeliveryAddress } from "./delivery-fields";
+import {
+  DeliveryFields,
+  type DeliveryDetails,
+  type DeliveryFieldErrors,
+  type SavedDeliveryAddress,
+} from "./delivery-fields";
 
 type InventoryCatalogRow = {
   id: number;
@@ -97,22 +94,40 @@ export function WalkInSaleDialog({
   const [customerId, setCustomerId] = useState<number | undefined>(undefined);
   const [walkInName, setWalkInName] = useState("");
   const [walkInPhone, setWalkInPhone] = useState("");
-  const [fulfillment, setFulfillment] = useState<"TAKEAWAY" | "DELIVERY">("TAKEAWAY");
-  const [delivery, setDelivery] = useState<DeliveryDetails>({ shipping_recipient: "", shipping_phone: "", shipping_address: "" });
+  const [fulfillment, setFulfillment] = useState<"TAKEAWAY" | "DELIVERY">(
+    "TAKEAWAY",
+  );
+  const [delivery, setDelivery] = useState<DeliveryDetails>({
+    shipping_recipient: "",
+    shipping_phone: "",
+    shipping_address: "",
+  });
   const checkoutKey = useRef<string | null>(null);
   const pendingPayload = useRef<Record<string, unknown> | null>(null);
   const [retryPending, setRetryPending] = useState(false);
   const submitLock = useRef(false);
   const [notes, setNotes] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
   const [cart, setCart] = useState<WalkInCartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK_TRANSFER" | "CARD">("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "CASH" | "BANK_TRANSFER" | "CARD"
+  >("CASH");
   const [paymentType, setPaymentType] = useState("");
+  const [paymentTypeTouched, setPaymentTypeTouched] = useState(false);
   const [enteredTenderedInput, setAmountTenderedInput] = useState<string>("");
   const [tenderedManuallyEdited, setTenderedManuallyEdited] = useState(false);
+  const [tenderedTouched, setTenderedTouched] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [completedSale, setCompletedSale] = useState<WalkInSaleResult | null>(null);
+  const [completedSale, setCompletedSale] = useState<WalkInSaleResult | null>(
+    null,
+  );
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
+
+  const errorBannerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const tenderedInputRef = useRef<HTMLInputElement>(null);
 
   const warehousesQuery = useQuery({
     queryKey: ["walk_in_warehouses"],
@@ -134,7 +149,11 @@ export function WalkInSaleDialog({
     enabled: open && buyerMode === "REGISTERED",
   });
 
-  const warehouseId = isStaff ? assignedWarehouse?.id ?? -1 : selectedWarehouseId > 0 ? selectedWarehouseId : warehousesQuery.data?.rows[0]?.id ?? -1;
+  const warehouseId = isStaff
+    ? (assignedWarehouse?.id ?? -1)
+    : selectedWarehouseId > 0
+      ? selectedWarehouseId
+      : (warehousesQuery.data?.rows[0]?.id ?? -1);
 
   const catalogQuery = useQuery({
     queryKey: ["walk_in_catalog", warehouseId, catalogSearch],
@@ -160,18 +179,65 @@ export function WalkInSaleDialog({
     return Math.round(sum * 100) / 100;
   }, [cart]);
 
-  const amountTenderedInput = paymentMethod !== "CASH" || !tenderedManuallyEdited
-    ? cartTotal > 0 ? cartTotal.toFixed(2) : ""
-    : enteredTenderedInput;
+  const totalUnits = useMemo(
+    () => cart.reduce((sum, item) => sum + item.quantity, 0),
+    [cart],
+  );
+
+  const amountTenderedInput =
+    paymentMethod !== "CASH" || !tenderedManuallyEdited
+      ? cartTotal > 0
+        ? cartTotal.toFixed(2)
+        : ""
+      : enteredTenderedInput;
 
   const parsedTendered = useMemo(() => {
     const num = Number(amountTenderedInput);
     return Number.isFinite(num) && num >= 0 ? Math.round(num * 100) / 100 : 0;
   }, [amountTenderedInput]);
 
-  const changeDue = useMemo(() => {
-    return Math.round((parsedTendered - cartTotal) * 100) / 100;
-  }, [parsedTendered, cartTotal]);
+  const changeDue = useMemo(
+    () => Math.round((parsedTendered - cartTotal) * 100) / 100,
+    [parsedTendered, cartTotal],
+  );
+
+  const deliveryErrors = useMemo<DeliveryFieldErrors>(() => {
+    if (fulfillment !== "DELIVERY") return {};
+    const next: DeliveryFieldErrors = {};
+    if (!delivery.shipping_recipient.trim()) {
+      next.shipping_recipient = "Enter recipient name.";
+    }
+    if (!delivery.shipping_phone.trim()) {
+      next.shipping_phone = "Enter phone number.";
+    } else if (
+      !/^[+()\d\s.-]{7,20}$/.test(delivery.shipping_phone.trim()) ||
+      delivery.shipping_phone.replace(/\D/g, "").length < 7
+    ) {
+      next.shipping_phone = "Enter a valid phone number.";
+    }
+    if (!delivery.shipping_address.trim()) {
+      next.shipping_address = "Enter delivery address.";
+    }
+    if (
+      delivery.shipping_latitude === undefined ||
+      delivery.shipping_longitude === undefined ||
+      (delivery.shipping_latitude === 0 && delivery.shipping_longitude === 0)
+    ) {
+      next.shipping_latitude = "Pin destination on the map or enter coordinates.";
+    }
+    return next;
+  }, [fulfillment, delivery]);
+
+  const showPaymentTypeError =
+    paymentMethod !== "CASH" &&
+    (submitted || paymentTypeTouched) &&
+    !paymentType.trim();
+
+  const showTenderedShort =
+    paymentMethod === "CASH" &&
+    cartTotal > 0 &&
+    (submitted || tenderedTouched) &&
+    changeDue < 0;
 
   function changeFulfillment(next: "TAKEAWAY" | "DELIVERY") {
     if (next === fulfillment) return;
@@ -180,7 +246,11 @@ export function WalkInSaleDialog({
         setWalkInName(delivery.shipping_recipient);
         setWalkInPhone(delivery.shipping_phone);
       } else {
-        setDelivery(current => ({ ...current, shipping_recipient: walkInName, shipping_phone: walkInPhone }));
+        setDelivery((current) => ({
+          ...current,
+          shipping_recipient: walkInName,
+          shipping_phone: walkInPhone,
+        }));
       }
     }
     setFormError(null);
@@ -196,7 +266,11 @@ export function WalkInSaleDialog({
     setBuyerMode(next);
     setCustomerId(undefined);
     setFormError(null);
-    setDelivery({ shipping_recipient: next === "GUEST" ? walkInName : "", shipping_phone: next === "GUEST" ? walkInPhone : "", shipping_address: "" });
+    setDelivery({
+      shipping_recipient: next === "GUEST" ? walkInName : "",
+      shipping_phone: next === "GUEST" ? walkInPhone : "",
+      shipping_address: "",
+    });
   }
 
   function resetSaleState() {
@@ -204,18 +278,26 @@ export function WalkInSaleDialog({
     pendingPayload.current = null;
     setRetryPending(false);
     setFulfillment("TAKEAWAY");
-    setDelivery({ shipping_recipient: "", shipping_phone: "", shipping_address: "" });
+    setDelivery({
+      shipping_recipient: "",
+      shipping_phone: "",
+      shipping_address: "",
+    });
     setCatalogSearch("");
     setBuyerMode("GUEST");
     setCustomerId(undefined);
     setWalkInName("");
     setWalkInPhone("");
     setNotes("");
+    setNotesOpen(false);
     setCart([]);
     setPaymentMethod("CASH");
     setPaymentType("");
+    setPaymentTypeTouched(false);
     setAmountTenderedInput("");
     setTenderedManuallyEdited(false);
+    setTenderedTouched(false);
+    setSubmitted(false);
     setFormError(null);
     setCompletedSale(null);
     setShowInvoicePreview(false);
@@ -225,7 +307,7 @@ export function WalkInSaleDialog({
     const available = Math.max(0, row.quantity - row.reserved);
     const price = Number(row.price ?? 0);
     if (available <= 0) {
-      toast.error(`${row.sku ?? "Item"} is out of stock in this warehouse.`);
+      toast.error(`${row.sku ?? "Item"} is out of stock.`);
       return;
     }
 
@@ -235,11 +317,13 @@ export function WalkInSaleDialog({
       if (existingIndex >= 0) {
         const existing = prev[existingIndex]!;
         if (existing.quantity + 1 > available) {
-          toast.error(`Only ${available} units of ${existing.sku} available.`);
+          toast.error(`Only ${available} of ${existing.sku} available.`);
           return prev;
         }
         return prev.map((item, idx) =>
-          idx === existingIndex ? { ...item, quantity: item.quantity + 1, available } : item,
+          idx === existingIndex
+            ? { ...item, quantity: item.quantity + 1, available }
+            : item,
         );
       }
       return [
@@ -262,7 +346,10 @@ export function WalkInSaleDialog({
     setCart((prev) =>
       prev.map((item) => {
         if (item.inventory_id !== inventoryId) return item;
-        const clamped = Math.max(1, Math.min(item.available, Math.floor(nextQuantity || 1)));
+        const clamped = Math.max(
+          1,
+          Math.min(item.available, Math.floor(nextQuantity || 1)),
+        );
         return { ...item, quantity: clamped };
       }),
     );
@@ -270,28 +357,58 @@ export function WalkInSaleDialog({
 
   function removeItemFromCart(inventoryId: number) {
     setFormError(null);
-    setCart((prev) => prev.filter((item) => item.inventory_id !== inventoryId));
+    setCart((prev) =>
+      prev.filter((item) => item.inventory_id !== inventoryId),
+    );
   }
 
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
     e.preventDefault();
+    // Do not hijack Enter while an IME composition is active (Safari reports keyCode 229).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     const rows = catalogQuery.data ?? [];
     if (!rows.length) return;
     const normalized = catalogSearch.trim().toLowerCase();
-    const exactSku = rows.find((r) => (r.sku ?? "").toLowerCase() === normalized);
-    const candidate = exactSku ?? rows.find((r) => r.quantity - r.reserved > 0) ?? rows[0];
+    const exactSku = rows.find(
+      (r) => (r.sku ?? "").toLowerCase() === normalized,
+    );
+    const candidate =
+      exactSku ?? rows.find((r) => r.quantity - r.reserved > 0) ?? rows[0];
     if (candidate) {
       addItemToCart(candidate);
     }
   }
 
+  function focusFirstInvalid(pathKey?: string | number) {
+    requestAnimationFrame(() => {
+      if (pathKey === "items") {
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (pathKey === "amount_tendered") {
+        tenderedInputRef.current?.focus();
+        return;
+      }
+      if (typeof pathKey === "string" && pathKey.startsWith("shipping_")) {
+        const el = document.getElementById(`delivery-${pathKey}`);
+        if (el) {
+          el.focus();
+          return;
+        }
+      }
+      errorBannerRef.current?.focus();
+    });
+  }
+
   async function handleCompleteSale(e: React.FormEvent) {
     e.preventDefault();
     if (submitLock.current) return;
+    setSubmitted(true);
     setFormError(null);
 
-    const effectiveTendered = paymentMethod === "CASH" ? parsedTendered : cartTotal;
+    const effectiveTendered =
+      paymentMethod === "CASH" ? parsedTendered : cartTotal;
 
     const validation = walkInOrderFormSchema.safeParse({
       fulfillment,
@@ -303,14 +420,16 @@ export function WalkInSaleDialog({
       walk_in_phone: buyerMode === "GUEST" ? walkInPhone : undefined,
       notes,
       payment_method: paymentMethod,
-      payment_type: paymentMethod === "CASH" ? undefined : paymentType.trim(),
+      payment_type:
+        paymentMethod === "CASH" ? undefined : paymentType.trim(),
       amount_tendered: effectiveTendered,
       items: cart,
     });
 
     if (!validation.success) {
       const firstIssue = validation.error.issues[0];
-      setFormError(firstIssue?.message ?? "Please review the counter sale details.");
+      setFormError(firstIssue?.message ?? "Review the highlighted fields.");
+      focusFirstInvalid(firstIssue?.path[0]);
       return;
     }
 
@@ -328,11 +447,13 @@ export function WalkInSaleDialog({
             ? validation.data.customer_id
             : undefined,
         walk_in_name:
-          validation.data.buyer_mode === "GUEST" && validation.data.walk_in_name?.trim()
+          validation.data.buyer_mode === "GUEST" &&
+          validation.data.walk_in_name?.trim()
             ? validation.data.walk_in_name.trim()
             : undefined,
         walk_in_phone:
-          validation.data.buyer_mode === "GUEST" && validation.data.walk_in_phone?.trim()
+          validation.data.buyer_mode === "GUEST" &&
+          validation.data.walk_in_phone?.trim()
             ? validation.data.walk_in_phone.trim()
             : undefined,
         notes: validation.data.notes?.trim() || undefined,
@@ -358,7 +479,8 @@ export function WalkInSaleDialog({
           pendingPayload.current = null;
           setRetryPending(false);
         }
-        setFormError(body?.message || "Unable to complete walk-in sale.");
+        setFormError(body?.message || "Unable to complete sale.");
+        focusFirstInvalid();
         return;
       }
 
@@ -375,9 +497,15 @@ export function WalkInSaleDialog({
       void queryClient.invalidateQueries({ queryKey: ["dashboard_query"] });
       void queryClient.invalidateQueries({ queryKey: ["walk_in_catalog"] });
 
-      toast.success(saleResult.message || `Walk-in order ${saleResult.order_number} completed.`);
+      toast.success(
+        saleResult.message ||
+          `Order ${saleResult.order_number} completed.`,
+      );
     } catch {
-      setFormError("Unable to confirm checkout. Retry this same sale to recover its payment result safely.");
+      setFormError(
+        "Unable to confirm checkout. Retry this same sale to recover the payment result.",
+      );
+      focusFirstInvalid();
     } finally {
       submitLock.current = false;
       setSubmitting(false);
@@ -385,6 +513,9 @@ export function WalkInSaleDialog({
   }
 
   const warehouses = warehousesQuery.data?.rows ?? [];
+  const registeredCustomer = customersQuery.data?.rows.find(
+    (c) => c.id === customerId,
+  );
 
   return (
     <Dialog
@@ -395,48 +526,59 @@ export function WalkInSaleDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="max-h-[92vh] scroll-pb-20 overflow-y-auto sm:max-w-5xl">
+      <DialogContent className="max-h-[92dvh] gap-0 overflow-hidden p-0 sm:max-w-5xl">
         {completedSale ? (
-          <div className="space-y-6 py-2">
-            <DialogHeader>
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="size-6" />
+          <div className="max-h-[92dvh] overflow-y-auto p-6 space-y-5">
+            <DialogHeader className="space-y-1.5 pr-8">
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="inline-flex size-5 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                >
+                  <Check className="size-3.5" />
                 </span>
-                <div>
-                  <DialogTitle className="text-xl">
-                    {completedSale.delivery_type === "INTERNAL" ? "Paid - awaiting delivery scheduling" : "Counter Sale Completed"} - {completedSale.order_number || completedSale.product_number}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {completedSale.delivery_type === "INTERNAL" ? "Payment is recorded and stock is reserved. Assign a vehicle and driver in delivery scheduling." : "Stock has been deducted immediately, payment is recorded as Paid, and the invoice is Issued."}
-                  </DialogDescription>
-                </div>
+                <DialogTitle className="text-lg font-semibold">
+                  {completedSale.order_number || completedSale.product_number}
+                </DialogTitle>
               </div>
+              <DialogDescription className="text-xs">
+                {completedSale.delivery_type === "INTERNAL"
+                  ? "Paid and stock reserved. Assign a driver in delivery scheduling."
+                  : `Paid · ${completedSale.customer_name || "Walk-in customer"}`}
+              </DialogDescription>
             </DialogHeader>
 
-            {completedSale.delivery_type === "INTERNAL" && <Link className="inline-flex text-sm font-medium underline" href="/panel/delivery-schedules" onClick={() => { resetSaleState(); onOpenChange(false); }}>Open delivery scheduling</Link>}
-            <div className="grid gap-4 rounded-xl border bg-muted/25 p-5 sm:grid-cols-3">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Total Paid
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums">
+            {completedSale.delivery_type === "INTERNAL" && (
+              <Link
+                href="/panel/delivery-schedules"
+                onClick={() => {
+                  resetSaleState();
+                  onOpenChange(false);
+                }}
+                className="inline-flex text-xs font-medium text-foreground underline underline-offset-4 hover:text-primary"
+              >
+                Open delivery scheduling →
+              </Link>
+            )}
+
+            <div className="grid overflow-hidden rounded-xl border bg-card sm:grid-cols-3 sm:divide-x">
+              <div className="border-b px-4 py-3.5 sm:border-b-0">
+                <p className="text-xs text-muted-foreground">Total paid</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
                   {formatCurrency(completedSale.total)}
                 </p>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Amount Tendered
-                </p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums">
+              <div className="border-b px-4 py-3.5 sm:border-b-0">
+                <p className="text-xs text-muted-foreground">Tendered</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
                   {formatCurrency(completedSale.amount_tendered)}
                 </p>
               </div>
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                  Change Due
+              <div className="bg-emerald-500/[0.08] px-4 py-3.5">
+                <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+                  Change
                 </p>
-                <p className="mt-0.5 text-2xl font-extrabold tabular-nums text-emerald-700 dark:text-emerald-300">
+                <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-emerald-700 dark:text-emerald-300">
                   {formatCurrency(completedSale.change_due)}
                 </p>
               </div>
@@ -447,33 +589,25 @@ export function WalkInSaleDialog({
                 <Invoice orderId={completedSale.id} />
               </div>
             ) : (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
-                <div className="flex items-center gap-3">
-                  <ReceiptText className="size-5 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      Official Receipt & Invoice Ready
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Buyer: {completedSale.customer_name || "Walk-in Customer"}
-                    </p>
-                  </div>
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
+                <span className="text-sm font-medium">Receipt ready</span>
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   onClick={() => setShowInvoicePreview(true)}
                 >
-                  <Printer className="mr-1.5 size-4" />
-                  Print / Download Receipt
+                  <Printer className="size-3.5" aria-hidden="true" />
+                  Print / view receipt
                 </Button>
               </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
+            <div className="flex items-center justify-end gap-2 border-t pt-4">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => {
                   resetSaleState();
                   onOpenChange(false);
@@ -481,75 +615,85 @@ export function WalkInSaleDialog({
               >
                 Close
               </Button>
-              <Button type="button" onClick={resetSaleState}>
-                <RotateCcw className="mr-1.5 size-4" />
-                New Walk-in Sale
+              <Button type="button" size="sm" onClick={resetSaleState}>
+                New sale
               </Button>
             </div>
           </div>
         ) : (
-          <form onSubmit={handleCompleteSale} className="min-w-0 space-y-5">
-            <DialogHeader>
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Store className="size-5" />
-                </span>
-                <div>
-                  <DialogTitle className="text-lg sm:text-xl">
-                    Walk-in Counter Sale
+          <form
+            noValidate
+            onSubmit={handleCompleteSale}
+            aria-labelledby="walkin-dialog-title"
+            className="flex max-h-[92dvh] min-w-0 flex-col"
+          >
+            {/* Compact Top Bar: Title + Fulfillment + Warehouse */}
+            <DialogHeader className="shrink-0 border-b px-5 py-3.5 pr-12">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <DialogTitle
+                    id="walkin-dialog-title"
+                    className="text-base font-semibold tracking-tight"
+                  >
+                    Walk-in sale
                   </DialogTitle>
-                  <DialogDescription>
-                    Take full payment at the counter. Choose immediate takeaway or delivery using a company vehicle.
+                  <DialogDescription className="sr-only">
+                    Add warehouse stock, choose takeaway or delivery, and record
+                    full payment.
                   </DialogDescription>
+
+                  {/* Native radio group styled as compact switch */}
+                  <fieldset
+                    disabled={submitting || retryPending}
+                    className="inline-flex rounded-lg bg-muted p-0.5"
+                  >
+                    <legend className="sr-only">Fulfillment type</legend>
+                    {(
+                      [
+                        { value: "TAKEAWAY", label: "Takeaway" },
+                        { value: "DELIVERY", label: "Delivery" },
+                      ] as const
+                    ).map((opt) => {
+                      const active = fulfillment === opt.value;
+                      return (
+                        <label
+                          key={opt.value}
+                          className={cn(
+                            "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-ring",
+                            active
+                              ? "bg-background text-foreground shadow-2xs"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="walkin-fulfillment"
+                            value={opt.value}
+                            checked={active}
+                            onChange={() => changeFulfillment(opt.value)}
+                            className="sr-only"
+                          />
+                          {opt.label}
+                        </label>
+                      );
+                    })}
+                  </fieldset>
                 </div>
-              </div>
-            </DialogHeader>
 
-            {formError && (
-              <div
-                role="alert"
-                className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-              >
-                {formError}
-              </div>
-            )}
-
-            {retryPending && <p role="status" className="text-sm">Checkout details are held while payment is being confirmed. Use Retry checkout to recover the same sale.</p>}
-            <fieldset disabled={submitting || retryPending} className={submitting || retryPending ? "contents pointer-events-none" : "contents"}>
-            <section className="space-y-3" aria-labelledby="walkin-fulfillment-label">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 id="walkin-fulfillment-label" className="text-sm font-semibold">How will the customer receive this order?</h3>
-                <span className="text-xs text-muted-foreground">{cart.reduce((sum, item) => sum + item.quantity, 0)} total units</span>
-              </div>
-              <div role="radiogroup" aria-labelledby="walkin-fulfillment-label" className="grid gap-3 sm:grid-cols-2">
-                {([
-                  { value: "TAKEAWAY", title: "Take away now", description: "Pay at the counter and take the items home.", icon: Store },
-                  { value: "DELIVERY", title: "Company vehicle delivery", description: "Pay now. Assign a vehicle and driver after checkout.", icon: Truck },
-                ] as const).map(option => <label key={option.value}
-                  className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-ring ${fulfillment === option.value ? "border-primary bg-primary/5" : "bg-card hover:bg-muted/40"}`}>
-                  <input type="radio" name="walkin-fulfillment" aria-label={option.title} value={option.value}
-                    checked={fulfillment === option.value} onChange={() => changeFulfillment(option.value)} className="mt-1 accent-primary" />
-                  <option.icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
-                  <span className="space-y-1">
-                    <span className="block text-sm font-semibold">{option.title}</span>
-                    <span className="block text-xs leading-relaxed text-muted-foreground">{option.description}</span>
-                  </span>
-                </label>)}
-              </div>
-            </section>
-            <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[1.15fr_1fr]">
-              {/* Left Pane: Warehouse, Catalog Picker, Buyer */}
-              <div className="min-w-0 space-y-4">
-                {/* Warehouse & Buyer Mode */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {isStaff && <div><QueryFeedback query={warehouseQuery} label="assigned warehouse" />{warehouseQuery.isError && <p role="alert" className="mt-2 text-sm text-destructive">{warehouseQuery.error.message}</p>}{assignedWarehouse && <p className="text-sm">Assigned warehouse: {assignedWarehouse.name}</p>}</div>}
-                  {!isStaff && <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Warehouse <span className="text-destructive">*</span>
-                    </label>
+                {/* Warehouse picker in header */}
+                <div className="flex items-center gap-2">
+                  {isStaff ? (
+                    assignedWarehouse ? (
+                      <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                        {assignedWarehouse.name}
+                      </span>
+                    ) : null
+                  ) : (
                     <Select
                       value={warehouseId > 0 ? String(warehouseId) : ""}
-                      disabled={warehouses.length <= 1 || submitting}
+                      disabled={
+                        warehouses.length <= 1 || submitting || retryPending
+                      }
                       onValueChange={(val) => {
                         const nextId = Number(val);
                         if (nextId && nextId !== warehouseId) {
@@ -558,9 +702,13 @@ export function WalkInSaleDialog({
                         }
                       }}
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select warehouse">
-                          {warehouses.find((w) => w.id === warehouseId)?.name ?? "Select warehouse"}
+                      <SelectTrigger
+                        aria-label="Warehouse"
+                        className="h-8 w-auto min-w-[160px] text-xs"
+                      >
+                        <SelectValue placeholder="Warehouse">
+                          {warehouses.find((w) => w.id === warehouseId)?.name ??
+                            "Select warehouse"}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
@@ -573,187 +721,160 @@ export function WalkInSaleDialog({
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </div>}
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Buyer Type
-                    </label>
-                    <div className="grid h-9 grid-cols-2 rounded-lg border bg-muted/40 p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => changeBuyerMode("GUEST")}
-                        aria-pressed={buyerMode === "GUEST"}
-                        className={`inline-flex items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors ${
-                          buyerMode === "GUEST"
-                            ? "bg-background text-foreground shadow-2xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <UserRound className="size-3.5" />
-                        Walk-in Guest
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => changeBuyerMode("REGISTERED")}
-                        aria-pressed={buyerMode === "REGISTERED"}
-                        className={`inline-flex items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors ${
-                          buyerMode === "REGISTERED"
-                            ? "bg-background text-foreground shadow-2xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <UserCheck className="size-3.5" />
-                        Registered
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
+              </div>
+            </DialogHeader>
 
-                {/* Buyer Details */}
-                {buyerMode === "GUEST" && fulfillment === "TAKEAWAY" && (
-                  <div className="grid gap-3 rounded-xl border bg-muted/15 p-3.5 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label htmlFor="walkin-name" className="text-xs font-medium">
-                        Buyer Name <span className="text-muted-foreground">(optional)</span>
-                      </label>
-                      <Input
-                        id="walkin-name"
-                        value={walkInName}
-                        onChange={(e) => { setWalkInName(e.target.value); setDelivery(current => ({ ...current, shipping_recipient: e.target.value })); }}
-                        placeholder="Defaults to Walk-in Customer"
-                        maxLength={60}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label htmlFor="walkin-phone" className="text-xs font-medium">
-                        Contact Phone <span className="text-muted-foreground">(optional)</span>
-                      </label>
-                      <Input
-                        id="walkin-phone"
-                        value={walkInPhone}
-                        onChange={(e) => { setWalkInPhone(e.target.value); setDelivery(current => ({ ...current, shipping_phone: e.target.value })); }}
-                        placeholder="e.g. 0917-000-0000"
-                        maxLength={20}
-                        className="h-8 text-xs"
-                      />
-                    </div>
+            {/* Alerts */}
+            {(formError || retryPending || (isStaff && warehouseQuery.isError)) && (
+              <div className="shrink-0 space-y-2 border-b bg-muted/20 px-5 py-2.5">
+                {isStaff && (
+                  <QueryFeedback
+                    query={warehouseQuery}
+                    label="assigned warehouse"
+                  />
+                )}
+                {formError && (
+                  <div
+                    ref={errorBannerRef}
+                    tabIndex={-1}
+                    role="alert"
+                    className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive outline-none"
+                  >
+                    {formError}
                   </div>
                 )}
-                {buyerMode === "REGISTERED" && (
-                  <div className="space-y-1.5 rounded-xl border bg-muted/15 p-3.5">
-                    <label className="text-xs font-medium">
-                      Registered Customer <span className="text-destructive">*</span>
-                    </label>
-                    <Select
-                      value={customerId ? String(customerId) : ""}
-                      onValueChange={(val) => {
-                        if (Number(val) === customerId) return;
-                        const buyer = customersQuery.data?.rows.find(customer => customer.id === Number(val));
-                        setCustomerId(Number(val));
-                        setDelivery({ shipping_recipient: buyer?.name ?? "", shipping_phone: buyer?.phone_number ?? "", shipping_address: "" });
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Choose a registered customer">
-                          {customersQuery.data?.rows.find((c) => c.id === customerId)?.name ??
-                            "Choose a registered customer"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {(customersQuery.data?.rows ?? []).map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>
-                              {c.name} ({c.company_name})
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                {retryPending && (
+                  <p
+                    role="status"
+                    className="text-xs text-amber-800 dark:text-amber-300"
+                  >
+                    Checkout held while confirming payment. Use Retry checkout to
+                    recover safely.
+                  </p>
                 )}
+              </div>
+            )}
 
-                {/* Product / SKU Search & Catalog List */}
-                <div className="space-y-2.5 rounded-xl border bg-card p-3.5">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="walkin-sku-search" className="text-xs font-semibold">
-                      Add Products from Warehouse Stock
-                    </label>
-                    <span className="text-[11px] text-muted-foreground">
-                      Press Enter to quick-add SKU
-                    </span>
-                  </div>
-
+            {/* Main 2-column POS Body */}
+            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1.2fr)_370px] lg:overflow-hidden">
+              {/* Left Column: Products first, then Customer & Delivery */}
+              <fieldset
+                disabled={submitting || retryPending}
+                className="min-w-0 space-y-4 p-5 lg:overflow-y-auto"
+              >
+                <legend className="sr-only">Products and customer details</legend>
+                {/* Product Picker */}
+                <search className="space-y-2.5">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <label htmlFor="walkin-sku-search" className="sr-only">
+                      Search products or scan SKU
+                    </label>
+                    <Search
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                    />
                     <Input
+                      ref={searchInputRef}
                       id="walkin-sku-search"
+                      name="catalog_search"
+                      type="search"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      enterKeyHint="search"
                       value={catalogSearch}
                       onChange={(e) => setCatalogSearch(e.target.value)}
                       onKeyDown={handleSearchKeyDown}
-                      placeholder="Search or scan SKU / product name..."
-                      className="pl-8 text-sm"
+                      placeholder="Search product or scan SKU (Enter to add)"
+                      className="h-10 pr-8 pl-9 text-base sm:text-sm"
                     />
+                    {catalogSearch && (
+                      <button
+                        type="button"
+                        aria-label="Clear search"
+                        onClick={() => setCatalogSearch("")}
+                        className="absolute top-1/2 right-2.5 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
                   </div>
 
-                  <div className="max-h-60 divide-y overflow-y-auto rounded-lg border bg-background">
+                  <div className="max-h-64 divide-y overflow-y-auto rounded-xl border bg-background">
                     {catalogQuery.isPending ? (
-                      <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                        Loading warehouse stock...
+                      <div
+                        role="status"
+                        className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground"
+                      >
+                        <Loader2 className="size-4 animate-spin" />
+                        Loading stock...
                       </div>
                     ) : !(catalogQuery.data ?? []).length ? (
-                      <div className="py-8 text-center text-xs text-muted-foreground">
-                        No matching products found in this warehouse.
-                      </div>
+                      <p className="py-8 text-center text-xs text-muted-foreground">
+                        No matching items in stock.
+                      </p>
                     ) : (
                       (catalogQuery.data ?? []).map((row) => {
-                        const available = Math.max(0, row.quantity - row.reserved);
-                        const inCart = cart.find((c) => c.inventory_id === row.id);
+                        const available = Math.max(
+                          0,
+                          row.quantity - row.reserved,
+                        );
+                        const inCart = cart.find(
+                          (c) => c.inventory_id === row.id,
+                        );
                         const price = Number(row.price ?? 0);
+                        const maxed = inCart
+                          ? inCart.quantity >= available
+                          : false;
+
                         return (
                           <div
                             key={row.id}
-                            className="flex items-center justify-between gap-3 px-3 py-2.5 text-xs hover:bg-muted/40"
+                            className="flex items-center justify-between gap-3 px-3.5 py-2.5 transition-colors hover:bg-muted/35"
                           >
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="truncate font-semibold text-foreground">
+                              <div className="flex items-baseline gap-2">
+                                <span className="truncate text-sm font-medium text-foreground">
                                   {row.product_name || row.sku}
                                 </span>
-                                <Badge variant="outline" className="font-mono text-[10px]">
-                                  {row.sku}
-                                </Badge>
+                                {row.sku && (
+                                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                                    {row.sku}
+                                  </span>
+                                )}
                               </div>
-                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                                {row.description || "Standard variant"} ·{" "}
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {row.description ? `${row.description} · ` : ""}
                                 <span
                                   className={
                                     available > 0
-                                      ? "font-medium text-emerald-600 dark:text-emerald-400"
+                                      ? "text-muted-foreground"
                                       : "font-medium text-destructive"
                                   }
                                 >
-                                  {available} available
+                                  {available > 0
+                                    ? `${available} left`
+                                    : "Out of stock"}
                                 </span>
                               </p>
                             </div>
 
-                            <div className="flex shrink-0 items-center gap-2.5">
-                              <span className="font-semibold tabular-nums">
+                            <div className="flex shrink-0 items-center gap-3">
+                              <span className="text-sm font-medium tabular-nums">
                                 {formatCurrency(price)}
                               </span>
                               <Button
                                 type="button"
-                                size="sm"
-                                variant={inCart ? "secondary" : "default"}
-                                className="h-7 px-2.5 text-xs"
-                                disabled={available <= 0 || (inCart ? inCart.quantity >= available : false)}
+                                size="xs"
+                                variant={inCart ? "secondary" : "outline"}
+                                className="h-8 min-w-[64px] px-2.5 text-xs"
+                                disabled={available <= 0 || maxed}
                                 onClick={() => addItemToCart(row)}
                               >
-                                <Plus className="mr-1 size-3" />
-                                {inCart ? `In Cart (${inCart.quantity})` : "Add"}
+                                <Plus className="size-3" aria-hidden="true" />
+                                {inCart ? inCart.quantity : "Add"}
                               </Button>
                             </div>
                           </div>
@@ -761,199 +882,459 @@ export function WalkInSaleDialog({
                       })
                     )}
                   </div>
-                </div>
+                </search>
 
-                {fulfillment === "DELIVERY" && <DeliveryFields value={delivery} onChange={setDelivery}
-                  addresses={buyerMode === "REGISTERED" ? customersQuery.data?.rows.find(customer => customer.id === customerId)?.addresses : []} />}
+                {/* Customer Row */}
+                <fieldset className="space-y-3 rounded-xl border bg-card p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <legend className="text-xs font-semibold text-foreground">
+                      Customer
+                    </legend>
 
-                {/* Optional Notes */}
-                <div className="space-y-1">
-                  <label htmlFor="walkin-notes" className="text-xs font-medium text-muted-foreground">
-                    Order notes (optional)
-                  </label>
-                  <Textarea
-                    id="walkin-notes"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Add receipt remarks or serial numbers..."
-                    rows={2}
-                    maxLength={2000}
-                    className="text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Right Pane: Cart & Counter Payment */}
-              <div className="flex h-fit min-w-0 flex-col rounded-2xl border bg-muted/15 p-4 lg:sticky lg:top-0">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between border-b pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <ShoppingBag className="size-4 text-primary" />
-                      <h3 className="text-sm font-semibold">Order summary</h3>
-                    </div>
-                    <Badge variant="secondary">
-                      {cart.reduce((sum, i) => sum + i.quantity, 0)} units
-                    </Badge>
-                  </div>
-
-                  {!cart.length ? (
-                    <div className="flex min-h-44 flex-col items-center justify-center rounded-xl border border-dashed bg-background/60 p-6 text-center">
-                      <Package className="mb-2 size-7 text-muted-foreground/50" />
-                      <p className="text-xs font-medium">Cart is empty</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Select products from the left panel to start the sale.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="max-h-56 divide-y overflow-y-auto rounded-xl border bg-background px-3">
-                      {cart.map((item) => (
-                        <div
-                          key={item.inventory_id}
-                          className="flex items-center justify-between gap-2 py-2.5 text-xs"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-semibold">{item.product_name}</p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {item.sku} · {formatCurrency(item.price)} each
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="size-6"
-                              aria-label={`Decrease quantity for ${item.sku}`}
-                              onClick={() => updateItemQuantity(item.inventory_id, item.quantity - 1)}
-                            >
-                              <Minus className="size-3" />
-                            </Button>
-                            <Input
-                              type="number"
-                              min={1}
-                              max={item.available}
-                              value={item.quantity}
-                              aria-label={`Quantity for ${item.sku}`}
-                              onChange={(e) =>
-                                updateItemQuantity(item.inventory_id, e.target.valueAsNumber)
-                              }
-                              className="h-6 w-12 px-1 text-center text-xs tabular-nums"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="size-6"
-                              disabled={item.quantity >= item.available}
-                              aria-label={`Increase quantity for ${item.sku}`}
-                              onClick={() => updateItemQuantity(item.inventory_id, item.quantity + 1)}
-                            >
-                              <Plus className="size-3" />
-                            </Button>
-                          </div>
-
-                          <div className="w-20 text-right font-semibold tabular-nums">
-                            {formatCurrency(item.price * item.quantity)}
-                          </div>
-
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-6 text-muted-foreground hover:text-destructive"
-                            aria-label={`Remove ${item.sku}`}
-                            onClick={() => removeItemFromCart(item.inventory_id)}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Payment & Totals Footer */}
-                <div className="mt-4 space-y-3.5 border-t pt-3.5">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Total Due (Fully Paid)
-                    </span>
-                    <span className="text-2xl font-extrabold tracking-tight tabular-nums">
-                      {formatCurrency(cartTotal)}
-                    </span>
-                  </div>
-
-                  <p className="rounded-lg bg-background p-3 text-xs leading-relaxed text-muted-foreground">
-                    {fulfillment === "DELIVERY" ? "Full payment is collected now. Stock stays reserved until the vehicle is dispatched." : "Full payment completes the sale and deducts the items from stock."}
-                  </p>
-                  {/* Payment Method Selector */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Payment Method
-                    </label>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div
+                      role="group"
+                      aria-label="Buyer type"
+                      className="inline-flex rounded-lg bg-muted p-0.5"
+                    >
                       {(
                         [
-                          { id: "CASH", label: "Cash" },
-                          { id: "BANK_TRANSFER", label: "Bank / E-Wallet" },
-                          { id: "CARD", label: "Card" },
+                          { id: "GUEST", label: "Guest" },
+                          { id: "REGISTERED", label: "Registered" },
                         ] as const
-                      ).map((method) => (
+                      ).map((mode) => (
                         <button
-                          key={method.id}
+                          key={mode.id}
                           type="button"
-                          onClick={() => {
-                            setPaymentMethod(method.id);
-                            setPaymentType("");
-                            if (method.id !== "CASH") {
-                              setAmountTenderedInput(cartTotal > 0 ? cartTotal.toFixed(2) : "0.00");
-                              setTenderedManuallyEdited(false);
-                            }
-                          }}
-                          className={`rounded-lg border px-2.5 py-2 text-xs font-medium transition-all ${
-                            paymentMethod === method.id
-                              ? "border-primary bg-primary text-primary-foreground shadow-2xs"
-                              : "bg-background text-foreground hover:bg-muted"
-                          }`}
+                          aria-pressed={buyerMode === mode.id}
+                          onClick={() => changeBuyerMode(mode.id)}
+                          className={cn(
+                            "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                            buyerMode === mode.id
+                              ? "bg-background text-foreground shadow-2xs"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
                         >
-                          {method.label}
+                          {mode.label}
                         </button>
                       ))}
                     </div>
                   </div>
 
+                  {buyerMode === "GUEST" && fulfillment === "TAKEAWAY" && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="walkin-name"
+                          className="block text-xs text-muted-foreground"
+                        >
+                          Name (optional)
+                        </label>
+                        <Input
+                          id="walkin-name"
+                          name="walk_in_name"
+                          type="text"
+                          autoComplete="name"
+                          enterKeyHint="next"
+                          value={walkInName}
+                          onChange={(e) => {
+                            setWalkInName(e.target.value);
+                            setDelivery((current) => ({
+                              ...current,
+                              shipping_recipient: e.target.value,
+                            }));
+                          }}
+                          placeholder="Walk-in customer"
+                          maxLength={60}
+                          className="h-9 text-base sm:text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="walkin-phone"
+                          className="block text-xs text-muted-foreground"
+                        >
+                          Phone (optional)
+                        </label>
+                        <Input
+                          id="walkin-phone"
+                          name="walk_in_phone"
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
+                          enterKeyHint="done"
+                          value={walkInPhone}
+                          onChange={(e) => {
+                            setWalkInPhone(e.target.value);
+                            setDelivery((current) => ({
+                              ...current,
+                              shipping_phone: e.target.value,
+                            }));
+                          }}
+                          placeholder="0917-000-0000"
+                          maxLength={20}
+                          className="h-9 text-base sm:text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {buyerMode === "REGISTERED" && (
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="walkin-registered-customer"
+                        className="block text-xs text-muted-foreground"
+                      >
+                        Account{" "}
+                        <span aria-hidden="true" className="text-destructive">
+                          *
+                        </span>
+                      </label>
+                      <Select
+                        value={customerId ? String(customerId) : ""}
+                        onValueChange={(val) => {
+                          if (Number(val) === customerId) return;
+                          const buyer = customersQuery.data?.rows.find(
+                            (customer) => customer.id === Number(val),
+                          );
+                          setCustomerId(Number(val));
+                          setFormError(null);
+                          setDelivery({
+                            shipping_recipient: buyer?.name ?? "",
+                            shipping_phone: buyer?.phone_number ?? "",
+                            shipping_address: "",
+                          });
+                        }}
+                      >
+                        <SelectTrigger
+                          id="walkin-registered-customer"
+                          aria-invalid={
+                            submitted && !customerId ? "true" : "false"
+                          }
+                          aria-describedby={
+                            submitted && !customerId
+                              ? "walkin-customer-error"
+                              : undefined
+                          }
+                          className={cn(
+                            "h-9 w-full text-sm",
+                            submitted && !customerId && "border-destructive",
+                          )}
+                        >
+                          <SelectValue placeholder="Select customer">
+                            {registeredCustomer
+                              ? `${registeredCustomer.name}${
+                                  registeredCustomer.company_name
+                                    ? ` (${registeredCustomer.company_name})`
+                                    : ""
+                                }`
+                              : "Select customer"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {(customersQuery.data?.rows ?? []).map((c) => (
+                              <SelectItem key={c.id} value={String(c.id)}>
+                                {c.name}
+                                {c.company_name ? ` (${c.company_name})` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {submitted && !customerId && (
+                        <p
+                          id="walkin-customer-error"
+                          className="text-xs text-destructive"
+                        >
+                          Select a registered customer or switch to Guest.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </fieldset>
+
+                {/* Delivery Fields */}
+                {fulfillment === "DELIVERY" && (
+                  <DeliveryFields
+                    value={delivery}
+                    onChange={(next) => {
+                      setFormError(null);
+                      setDelivery(next);
+                    }}
+                    addresses={
+                      buyerMode === "REGISTERED"
+                        ? registeredCustomer?.addresses
+                        : []
+                    }
+                    errors={deliveryErrors}
+                    submitted={submitted}
+                  />
+                )}
+
+                {/* Collapsible Note */}
+                <div>
+                  {notesOpen || notes ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label
+                          htmlFor="walkin-notes"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          Note
+                        </label>
+                        {!notes && (
+                          <button
+                            type="button"
+                            onClick={() => setNotesOpen(false)}
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            Hide
+                          </button>
+                        )}
+                      </div>
+                      <Textarea
+                        id="walkin-notes"
+                        name="notes"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Receipt remarks or serial numbers..."
+                        rows={2}
+                        maxLength={2000}
+                        className="text-base sm:text-sm"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setNotesOpen(true)}
+                      className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      + Add note
+                    </button>
+                  )}
+                </div>
+              </fieldset>
+
+              {/* Right Column: Cart + Payment + Submit */}
+              <div className="flex min-w-0 flex-col border-t bg-muted/20 lg:overflow-hidden lg:border-t-0 lg:border-l">
+                {/* Cart Header */}
+                <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold">Cart</h3>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {totalUnits} {totalUnits === 1 ? "unit" : "units"}
+                    </span>
+                  </div>
+                  {cart.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={submitting || retryPending}
+                      onClick={() => setCart([])}
+                      className="text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Cart Items */}
+                <fieldset
+                  disabled={submitting || retryPending}
+                  className="min-h-32 flex-1 overflow-y-auto px-5 py-2"
+                >
+                  <legend className="sr-only">Cart items</legend>
+                  {!cart.length ? (
+                    <div className="flex h-full min-h-32 items-center justify-center text-center">
+                      <p className="text-xs text-muted-foreground">
+                        Add items from stock to start.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y">
+                      {cart.map((item) => (
+                        <li
+                          key={item.inventory_id}
+                          className="space-y-2 py-3 text-xs"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-foreground">
+                                {item.product_name}
+                              </p>
+                              <p className="text-xs text-muted-foreground tabular-nums">
+                                {item.sku} · {formatCurrency(item.price)}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              aria-label={`Remove ${item.sku}`}
+                              onClick={() =>
+                                removeItemFromCart(item.inventory_id)
+                              }
+                              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon-xs"
+                                aria-label={`Decrease quantity for ${item.sku}`}
+                                onClick={() =>
+                                  updateItemQuantity(
+                                    item.inventory_id,
+                                    item.quantity - 1,
+                                  )
+                                }
+                              >
+                                <Minus className="size-3" />
+                              </Button>
+                              <Input
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                max={item.available}
+                                value={item.quantity}
+                                aria-label={`Quantity for ${item.sku}`}
+                                onChange={(e) =>
+                                  updateItemQuantity(
+                                    item.inventory_id,
+                                    e.target.valueAsNumber,
+                                  )
+                                }
+                                className="h-6 w-12 bg-background px-1 text-center text-xs tabular-nums"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon-xs"
+                                disabled={item.quantity >= item.available}
+                                aria-label={`Increase quantity for ${item.sku}`}
+                                onClick={() =>
+                                  updateItemQuantity(
+                                    item.inventory_id,
+                                    item.quantity + 1,
+                                  )
+                                }
+                              >
+                                <Plus className="size-3" />
+                              </Button>
+                            </div>
+
+                            <span className="text-sm font-medium tabular-nums">
+                              {formatCurrency(item.price * item.quantity)}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </fieldset>
+
+                {/* Payment & Submit Footer */}
+                <div className="shrink-0 space-y-3.5 border-t bg-card p-5">
+                  <fieldset
+                    disabled={submitting || retryPending}
+                    className="space-y-3.5"
+                  >
+                    <legend className="sr-only">Payment details</legend>
+                    <fieldset className="space-y-2">
+                    <legend className="text-xs font-medium text-muted-foreground">
+                      Payment
+                    </legend>
+                    <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-0.5">
+                      {(
+                        [
+                          { id: "CASH", label: "Cash" },
+                          { id: "BANK_TRANSFER", label: "Bank / Wallet" },
+                          { id: "CARD", label: "Card" },
+                        ] as const
+                      ).map((method) => {
+                        const active = paymentMethod === method.id;
+                        return (
+                          <label
+                            key={method.id}
+                            className={cn(
+                              "cursor-pointer rounded-md px-2 py-1.5 text-center text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-ring",
+                              active
+                                ? "bg-background text-foreground shadow-2xs"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name="walkin-payment-method"
+                              value={method.id}
+                              checked={active}
+                              onChange={() => {
+                                setPaymentMethod(method.id);
+                                setPaymentType("");
+                                setPaymentTypeTouched(false);
+                                setFormError(null);
+                                if (method.id !== "CASH") {
+                                  setAmountTenderedInput(
+                                    cartTotal > 0
+                                      ? cartTotal.toFixed(2)
+                                      : "0.00",
+                                  );
+                                  setTenderedManuallyEdited(false);
+                                }
+                              }}
+                              className="sr-only"
+                            />
+                            {method.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+
                   {paymentMethod !== "CASH" && (
                     <div className="space-y-1">
-                      <label className="text-xs font-medium">
-                        {paymentMethod === "BANK_TRANSFER" ? "Bank / E-Wallet Provider" : "Card Network"}{" "}
-                        <span className="text-destructive">*</span>
+                      <label className="block text-xs font-medium text-muted-foreground">
+                        {paymentMethod === "BANK_TRANSFER"
+                          ? "Provider"
+                          : "Card network"}{" "}
+                        <span aria-hidden="true" className="text-destructive">
+                          *
+                        </span>
                       </label>
                       <PaymentTypeCombobox
                         key={paymentMethod}
                         method={paymentMethod}
                         value={paymentType}
-                        onChange={setPaymentType}
-                        onBlur={() => {}}
-                        invalid={false}
+                        onChange={(val) => {
+                          setPaymentType(val);
+                          setFormError(null);
+                        }}
+                        onBlur={() => setPaymentTypeTouched(true)}
+                        invalid={showPaymentTypeError}
                       />
                     </div>
                   )}
 
                   {paymentMethod === "CASH" && (
-                    <div className="space-y-2 rounded-xl border bg-background p-3">
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <label htmlFor="walkin-tendered" className="text-xs font-medium">
-                          Cash Tendered <span className="text-destructive">*</span>
+                        <label
+                          htmlFor="walkin-tendered"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          Cash tendered
                         </label>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => {
                               setAmountTenderedInput(cartTotal.toFixed(2));
                               setTenderedManuallyEdited(false);
+                              setFormError(null);
                             }}
-                            className="rounded border bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium hover:bg-muted"
+                            className="rounded border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           >
                             Exact
                           </button>
@@ -962,11 +1343,19 @@ export function WalkInSaleDialog({
                               key={inc}
                               type="button"
                               onClick={() => {
-                                const base = Math.max(parsedTendered, cartTotal);
-                                setAmountTenderedInput((Math.ceil(base / inc) * inc || inc).toFixed(2));
+                                const base = Math.max(
+                                  parsedTendered,
+                                  cartTotal,
+                                );
+                                setAmountTenderedInput(
+                                  (Math.ceil(base / inc) * inc || inc).toFixed(
+                                    2,
+                                  ),
+                                );
                                 setTenderedManuallyEdited(true);
+                                setFormError(null);
                               }}
-                              className="rounded border bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium hover:bg-muted"
+                              className="rounded border px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                             >
                               ₱{inc}
                             </button>
@@ -975,58 +1364,95 @@ export function WalkInSaleDialog({
                       </div>
 
                       <Input
+                        ref={tenderedInputRef}
                         id="walkin-tendered"
+                        name="amount_tendered"
                         type="number"
+                        inputMode="decimal"
                         step="0.01"
                         min={0}
                         value={amountTenderedInput}
+                        aria-invalid={showTenderedShort ? "true" : "false"}
+                        aria-describedby={
+                          showTenderedShort
+                            ? "walkin-tendered-error"
+                            : undefined
+                        }
+                        onBlur={() => setTenderedTouched(true)}
                         onChange={(e) => {
                           setAmountTenderedInput(e.target.value);
                           setTenderedManuallyEdited(true);
+                          setFormError(null);
                         }}
                         placeholder="0.00"
-                        className="h-9 text-right text-base font-semibold tabular-nums"
+                        className={cn(
+                          "h-10 text-right text-base font-semibold tabular-nums",
+                          showTenderedShort && "border-destructive",
+                        )}
                       />
 
-                      <div className="flex items-center justify-between border-t pt-2 text-xs">
-                        <span className="font-medium text-muted-foreground">Change Due</span>
-                        <span
-                          className={`text-sm font-bold tabular-nums ${
-                            changeDue >= 0
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-destructive"
-                          }`}
-                        >
-                          {changeDue >= 0
-                            ? formatCurrency(changeDue)
-                            : `Short by ${formatCurrency(Math.abs(changeDue))}`}
-                        </span>
-                      </div>
+                      {cartTotal > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Change</span>
+                          <span
+                            id={
+                              showTenderedShort
+                                ? "walkin-tendered-error"
+                                : undefined
+                            }
+                            className={cn(
+                              "font-semibold tabular-nums",
+                              changeDue >= 0
+                                ? "text-emerald-700 dark:text-emerald-400"
+                                : "text-destructive",
+                            )}
+                          >
+                            {changeDue >= 0
+                              ? formatCurrency(changeDue)
+                              : `Short ${formatCurrency(Math.abs(changeDue))}`}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
+                  </fieldset>
 
+                  <div className="flex items-baseline justify-between border-t pt-3">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Total
+                    </span>
+                    <span className="text-xl font-semibold tracking-tight tabular-nums">
+                      {formatCurrency(cartTotal)}
+                    </span>
+                  </div>
 
-                </div>
-              </div>
-            </div>
-            </fieldset>
-            <Button
+                  <Button
                     type="submit"
-                    className="sticky bottom-0 z-10 h-auto min-h-10 w-full whitespace-normal py-3 shadow-lg"
-                    disabled={submitting || cart.length === 0}
+                    className="h-10 w-full"
+                    disabled={submitting}
                   >
                     {submitting ? (
                       <>
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                        Completing Counter Sale...
+                        <Loader2
+                          className="size-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                        Processing...
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 className="mr-2 size-4" />
-                        {retryPending ? "Retry checkout" : fulfillment === "DELIVERY" ? "Pay and send to scheduling" : "Complete Sale"} ({formatCurrency(cartTotal)})
+                        {retryPending
+                          ? "Retry checkout"
+                          : fulfillment === "DELIVERY"
+                            ? "Pay & schedule"
+                            : "Complete sale"}
+                        {cartTotal > 0 && ` · ${formatCurrency(cartTotal)}`}
                       </>
                     )}
                   </Button>
+                </div>
+              </div>
+            </div>
           </form>
         )}
       </DialogContent>

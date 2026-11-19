@@ -8,7 +8,6 @@ import type {
 
 type Ok = { ok: true };
 
-/** Thin wrappers over the real backend REST routes. */
 export const fleetApi = {
   getOverview: (signal?: AbortSignal) =>
     http.get<FleetOverview>("/fleet", signal),

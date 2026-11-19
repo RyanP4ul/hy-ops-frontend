@@ -19,10 +19,6 @@ export function isValidLiveFix(
   return Boolean(live && isValidCoordinate(live.coordinates));
 }
 
-/**
- * Enforces monotonic device timestamps so out-of-order responses never move a
- * vehicle marker backward in time.
- */
 export function mergeMonotonicPositions(
   previous: Map<string, LivePosition>,
   incoming: LivePosition[],
@@ -50,10 +46,6 @@ export function mergeMonotonicPositions(
   return next;
 }
 
-/**
- * Resolves where a vehicle should be rendered and classifies GPS health
- * independently from vehicle operational state and WebSocket connection state.
- */
 export function resolveVehiclePosition(
   vehicle: Vehicle,
   warehouses: WarehouseLocation[],
@@ -136,9 +128,6 @@ export function needsGpsAttention(
   if (!position) return true;
   if (position.health === "simulated") return false;
   if (position.health === "stale") return true;
-  // An active vehicle with no GPS signal at all needs immediate dispatcher attention;
-  // idle/maintenance vehicles without GPS are flagged clearly without cluttering active warnings,
-  // or also counted when GPS attention filter is used if signal is none/stale.
   if (position.health === "none") {
     return vehicle.status !== "available" || Boolean(vehicle.blockedReason);
   }

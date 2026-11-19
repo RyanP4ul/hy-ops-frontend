@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, Eye, EyeOff, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, Download, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { type FormSchema, formSchema } from "@/schema/login";
@@ -68,7 +69,7 @@ export default function Page() {
         <Image src="/login-left-panel.webp" alt="" fill priority sizes="(min-width: 1280px) 50vw, 45vw" className="object-cover object-center" />
         <div className="absolute inset-0 bg-gradient-to-t from-emerald-950 via-emerald-950/35 to-black/30" />
         <div className="relative flex items-center gap-3 p-9 xl:p-12">
-          <div className="rounded-xl bg-white p-2"><Image src="/logo.png" alt="" width={36} height={36} className="size-9 object-contain" /></div>
+          <div className="rounded-xl bg-white p-2"><Image src="/hy-ops-logo.png" alt="" width={36} height={36} className="size-9 object-contain" /></div>
           <span className="text-xl font-semibold tracking-tight text-white">HYOps</span>
         </div>
         <div className="relative space-y-6 p-9 xl:p-12">
@@ -80,9 +81,24 @@ export default function Page() {
       </aside>
 
       <section className="flex min-w-0 flex-col px-6 py-8 sm:px-12 lg:px-16 lg:py-10">
-        <header className="flex items-center gap-3 lg:invisible" aria-label="HYOps">
-          <Image src="/logo.png" alt="HYOps logo" width={40} height={40} priority className="size-10 object-contain" />
-          <span className="text-xl font-semibold tracking-tight">HYOps</span>
+        <header className="flex flex-wrap items-center justify-between gap-2" aria-label="HYOps">
+          <div className="flex items-center gap-3 lg:invisible">
+            <Image src="/hy-ops-logo.png" alt="HYOps logo" width={40} height={40} priority className="size-10 object-contain" />
+            <span className="text-xl font-semibold tracking-tight">HYOps</span>
+          </div>
+          <a
+            href="https://github.com/RyanP4ul/hy-ops-driver-mobile/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Download Mobile APK"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "h-8 gap-1.5 px-2.5 text-xs",
+            )}
+          >
+            <Download className="size-3.5" />
+            <span>Mobile APK</span>
+          </a>
         </header>
         <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-12 sm:py-16 lg:py-10">
           <div className="mb-8">

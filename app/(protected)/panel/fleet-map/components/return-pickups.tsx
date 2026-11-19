@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { MapPin, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { request } from "@/components/http";
@@ -14,7 +13,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { resourceQueryRoots } from "@/lib/realtime";
-import { EmptyState } from "./empty-state";
 
 export type ReturnPickup = {
   id: number;
@@ -43,7 +41,7 @@ type Candidates = {
 async function get<T>(path: string): Promise<T> {
   const response = await request("GET", path);
   if (!response.ok) {
-    throw new Error("Unable to load return pickups. Try again.");
+    throw new Error("Unable to load return pickups.");
   }
   return response.json();
 }
@@ -56,7 +54,7 @@ export function useReturnPickups() {
   });
 }
 
-export function ReturnPickups({
+export function ReturnPickupsList({
   tasks,
   onFocus,
 }: {
@@ -66,58 +64,52 @@ export function ReturnPickups({
   const [selected, setSelected] = useState<number | null>(null);
   const task = tasks.find((item) => item.id === selected);
 
+  if (tasks.length === 0) {
+    return (
+      <p className="px-4 py-10 text-center text-xs text-muted-foreground">
+        No pending return pickups.
+      </p>
+    );
+  }
+
   return (
     <>
-      <div className="space-y-2.5 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Return pickups ({tasks.length})
-          </h2>
-        </div>
+      <ul className="divide-y divide-border/60">
+        {tasks.map((item) => (
+          <li key={item.id}>
+            <button
+              type="button"
+              className="w-full px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              onClick={() => {
+                setSelected(item.id);
+                if (item.coordinates) onFocus(item.coordinates);
+              }}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs font-semibold text-foreground">
+                  {item.orderNumber}
+                </span>
+                <span className="shrink-0 text-[11px] font-medium text-rose-700 dark:text-rose-300">
+                  {item.status === "requested"
+                    ? "Unassigned"
+                    : item.status === "assigned"
+                      ? "Assigned"
+                      : "Collected"}
+                </span>
+              </div>
+              <p className="mt-0.5 truncate text-xs text-foreground/90">
+                {item.customer}
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {item.coordinates ? item.address : "No coordinates"}
+              </p>
+            </button>
+          </li>
+        ))}
+      </ul>
 
-        {tasks.length === 0 ? (
-          <EmptyState icon={RotateCcw} title="No pending return pickups">
-            Customer return retrieval requests will appear here when issued.
-          </EmptyState>
-        ) : (
-          <ul className="space-y-2">
-            {tasks.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className="w-full rounded-lg border bg-card p-3 text-left text-sm transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => {
-                    setSelected(item.id);
-                    if (item.coordinates) onFocus(item.coordinates);
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <strong className="text-xs font-semibold">
-                      {item.orderNumber}
-                    </strong>
-                    <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-medium text-rose-800 dark:bg-rose-950/60 dark:text-rose-200">
-                      {item.status === "requested"
-                        ? "Awaiting assignment"
-                        : item.status === "assigned"
-                          ? "Pickup assigned"
-                          : "Collected"}
-                    </span>
-                  </div>
-                  <p className="mt-1 truncate text-xs font-medium text-foreground">
-                    {item.customer}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-muted-foreground">
-                    <MapPin className="size-3 shrink-0" aria-hidden="true" />
-                    {item.coordinates ? item.address : "No coordinates on file"}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
       {task ? (
-        <AssignPickup
+        <AssignPickupDialog
           key={task.id}
           task={task}
           onClose={() => setSelected(null)}
@@ -127,7 +119,7 @@ export function ReturnPickups({
   );
 }
 
-function AssignPickup({
+function AssignPickupDialog({
   task,
   onClose,
 }: {
@@ -171,11 +163,9 @@ function AssignPickup({
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(
-          data.message ?? "Unable to assign pickup. Refresh before retrying.",
-        );
+        throw new Error(data.message ?? "Unable to assign pickup.");
       }
-      toast.success("Pickup assigned. The driver will receive the updated trip.");
+      toast.success("Return pickup assigned.");
       await Promise.all(
         resourceQueryRoots.deliveries.map((root) =>
           cache.invalidateQueries({ queryKey: [root] }),
@@ -198,19 +188,20 @@ function AssignPickup({
         if (!open && !busy) onClose();
       }}
     >
-      <DialogContent className="max-h-[90vh] overflow-auto">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Refunded order pickup: {task.orderNumber}</DialogTitle>
+          <DialogTitle>Return pickup · {task.orderNumber}</DialogTitle>
           <DialogDescription>
-            Arrange retrieval of all goods. This does not record a financial
-            refund or add stock.
+            Assign retrieval of returned goods. Does not refund or restock.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-1 text-sm">
-          <p className="font-semibold">{task.customer}</p>
+
+        <div className="space-y-1 text-xs">
+          <p className="font-semibold text-foreground">{task.customer}</p>
           <p className="text-muted-foreground">{task.address}</p>
-          <p className="text-xs">Reason: {task.reason}</p>
+          <p className="text-muted-foreground">Reason: {task.reason}</p>
         </div>
+
         <ul className="divide-y rounded-md border bg-muted/20 text-xs">
           {task.items.map((item, index) => (
             <li key={index} className="px-3 py-1.5">
@@ -220,33 +211,35 @@ function AssignPickup({
         </ul>
 
         {task.status !== "requested" ? (
-          <p className="rounded-md border bg-muted/30 p-3 text-sm">
+          <p className="rounded-md border bg-muted/25 p-3 text-xs">
             {task.status === "assigned"
               ? "Assigned for collection"
-              : "Collected; awaiting warehouse receipt"}{" "}
+              : "Collected · awaiting warehouse receipt"}{" "}
             · Delivery #{task.deliveryId}
           </p>
         ) : (
-          <>
+          <div className="space-y-3">
             {candidates.isPending ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                Loading eligible vehicles…
+              <p role="status" className="text-xs text-muted-foreground">
+                Loading vehicles…
               </p>
             ) : null}
+
             {candidates.isError ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => void candidates.refetch()}
               >
-                Retry vehicles
+                Retry
               </Button>
             ) : null}
-            <label className="grid gap-1.5 text-sm">
-              <span className="font-medium">Vehicle (same warehouse)</span>
+
+            <label className="grid gap-1 text-xs">
+              <span className="font-medium">Vehicle</span>
               <select
                 disabled={busy}
-                className="min-h-10 rounded-md border bg-background px-2.5 text-sm"
+                className="h-9 rounded-md border bg-background px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={vehicleId}
                 onChange={(event) => {
                   setVehicleId(event.target.value);
@@ -259,29 +252,31 @@ function AssignPickup({
                   <option key={item.id} value={item.id}>
                     {item.plate} ·{" "}
                     {item.distanceKm === null
-                      ? "No recent GPS"
-                      : `approx. ${item.distanceKm.toFixed(1)} km`}{" "}
+                      ? "No GPS"
+                      : `${item.distanceKm.toFixed(1)} km`}{" "}
                     · {item.driverName ?? "Available"}
                   </option>
                 ))}
               </select>
             </label>
+
             {candidates.data?.vehicles.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 No eligible vehicles in this warehouse.
               </p>
             ) : null}
+
             {vehicle && !vehicle.driverId ? (
-              <label className="grid gap-1.5 text-sm">
+              <label className="grid gap-1 text-xs">
                 <span className="font-medium">Driver</span>
                 <select
                   aria-label="Driver"
                   disabled={busy}
-                  className="min-h-10 rounded-md border bg-background px-2.5 text-sm"
+                  className="h-9 rounded-md border bg-background px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={driverId}
                   onChange={(event) => setDriverId(event.target.value)}
                 >
-                  <option value="">Select available driver</option>
+                  <option value="">Select driver</option>
                   {candidates.data?.drivers.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
@@ -290,13 +285,14 @@ function AssignPickup({
                 </select>
               </label>
             ) : null}
+
             {vehicle?.driverId ? (
-              <p className="text-xs text-muted-foreground">
-                Current driver: {vehicle.driverName}. Pickup is added to this
-                active trip.
+              <p className="text-[11px] text-muted-foreground">
+                Driver: {vehicle.driverName}. Added to active trip.
               </p>
             ) : null}
-            <label className="flex items-start gap-2.5 text-xs leading-relaxed">
+
+            <label className="flex items-start gap-2 text-xs leading-relaxed">
               <input
                 type="checkbox"
                 className="mt-0.5"
@@ -304,10 +300,12 @@ function AssignPickup({
                 disabled={busy}
                 onChange={(event) => setConfirmed(event.target.checked)}
               />
-              Confirm this vehicle and driver should retrieve all goods from
-              the customer.
+              Confirm pickup assignment for all listed goods.
             </label>
+
             <Button
+              size="sm"
+              className="w-full"
               disabled={
                 busy ||
                 !vehicle ||
@@ -316,9 +314,9 @@ function AssignPickup({
               }
               onClick={() => void assign()}
             >
-              {busy ? "Assigning…" : "Confirm pickup assignment"}
+              {busy ? "Assigning…" : "Assign pickup"}
             </Button>
-          </>
+          </div>
         )}
       </DialogContent>
     </Dialog>

@@ -21,9 +21,11 @@ function installGoogleMapsFixture() {
   }
   class Map extends Events {
     markers = new Set<AdvancedMarkerElement>();
+    overlays = new Set<OverlayView>();
     center: Position; zoom: number; heading: number; tilt: number;
     constructor(public div: HTMLElement, options: { center: Position; zoom: number; heading: number; tilt: number }) {
       super(); Object.assign(this, options);
+      mapOptions.push(options);
       this.center = options.center; this.zoom = options.zoom; this.heading = options.heading; this.tilt = options.tilt;
       div.classList.add("gm-style"); div.style.background = "#e8edf0";
       div.addEventListener("click", event => {
@@ -37,7 +39,7 @@ function installGoogleMapsFixture() {
     getZoom() { return this.zoom; } getHeading() { return this.heading; } getTilt() { return this.tilt; }
     getDiv() { return this.div; }
     get scale() { return 256 * 2 ** this.zoom / 360; }
-    draw() { this.markers.forEach(marker => marker.draw()); }
+    draw() { this.markers.forEach(marker => marker.draw()); this.overlays.forEach(overlay => overlay.draw()); }
     moveCamera(options: { center?: Position; zoom?: number; heading?: number; tilt?: number }) {
       Object.assign(this, options); this.draw();
       this.emit("bounds_changed"); this.emit("heading_changed"); this.emit("tilt_changed");
@@ -48,6 +50,27 @@ function installGoogleMapsFixture() {
     fitBounds(bounds: LatLngBounds) {
       const span = Math.max(Math.abs(bounds.ne.lng - bounds.sw.lng), Math.abs(bounds.ne.lat - bounds.sw.lat), 0.01);
       this.moveCamera({ center: { lng: (bounds.sw.lng + bounds.ne.lng) / 2, lat: (bounds.sw.lat + bounds.ne.lat) / 2 }, zoom: Math.min(14, Math.log2(500 * 360 / (256 * span))) });
+    }
+  }
+  const mapOptions: object[] = [];
+  class OverlayView {
+    map: Map | null = null;
+    onAdd() {} draw() {} onRemove() {}
+    setMap(map: Map | null) {
+      this.map?.overlays.delete(this);
+      if (this.map) this.onRemove();
+      this.map = map;
+      if (map) { map.overlays.add(this); this.onAdd(); this.draw(); }
+    }
+    getPanes() { return this.map ? { overlayMouseTarget: this.map.div } : null; }
+    getProjection() {
+      return { fromLatLngToDivPixel: (position: Position) => {
+        const map = this.map!;
+        return { x: map.div.clientWidth / 2 + (position.lng - map.center.lng) * map.scale, y: map.div.clientHeight / 2 - (position.lat - map.center.lat) * map.scale };
+      } };
+    }
+    static preventMapHitsAndGesturesFrom(element: HTMLElement) {
+      element.addEventListener("click", event => event.stopPropagation());
     }
   }
   class AdvancedMarkerElement extends HTMLElement {
@@ -87,8 +110,8 @@ function installGoogleMapsFixture() {
     setMap(map: Map | null) { this.options.map = map; }
   }
   const sdk = {
-    Map, LatLngBounds, InfoWindow, Polyline, Size: class {},
-    marker: { AdvancedMarkerElement }, RenderingType: { VECTOR: "VECTOR" }, ColorScheme: { DARK: "DARK", LIGHT: "LIGHT" },
+    Map, OverlayView, LatLngBounds, InfoWindow, Polyline, Size: class {},
+    marker: { AdvancedMarkerElement }, RenderingType: { VECTOR: "VECTOR", RASTER: "RASTER" }, ColorScheme: { DARK: "DARK", LIGHT: "LIGHT" },
     event: {
       trigger(instance: Events, name: string) { instance.emit(name); },
       clearInstanceListeners(instance: Events) { instance.listeners?.clear(); },
@@ -97,6 +120,6 @@ function installGoogleMapsFixture() {
       },
     },
   };
-  Object.assign(window, { google: { maps: sdk }, __googleMapsFixtureLines: lines });
+  Object.assign(window, { google: { maps: sdk }, __googleMapsFixtureLines: lines, __googleMapsFixtureOptions: mapOptions });
   (window as Window & { __hyopsGoogleMapsReady?: () => void }).__hyopsGoogleMapsReady?.();
 }

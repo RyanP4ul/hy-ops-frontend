@@ -48,12 +48,12 @@ export default function DataTable() {
 
   useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
-  const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
+  const [disconnectingId, setDisconnectingId] = useState<string | number | null>(null);
   const [sessionToDisconnect, setSessionToDisconnect] =
     useState<SessionsAndLogsTableSchemaType | null>(null);
   const queryClient = useQueryClient();
 
-  const disconnectSession = async (sessionId: number): Promise<boolean> => {
+  const disconnectSession = async (sessionId: string | number): Promise<boolean> => {
     setDisconnectingId(sessionId);
     setDisconnectError("");
 
@@ -106,7 +106,11 @@ export default function DataTable() {
       header: "Current Page",
       cell: ({ row }) => (
         <div className="flex items-center">
-          <span>/panel/{row.original.page}</span>
+          <span>
+            {row.original.page === "mobile" || row.original.user.role === "driver"
+              ? "Mobile App"
+              : `/panel/${row.original.page}`}
+          </span>
         </div>
       ),
     },

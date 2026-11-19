@@ -17,29 +17,28 @@ async function findOrder(page: Page, number: string) {
 
 async function openWizard(page: Page) {
   await page.goto("/panel/orders");
-  await page.getByRole("button", { name: "Add Order", exact: true }).click();
+  await page.getByRole("button", { name: "Add order", exact: true }).click();
   const main = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Create Order", exact: true }) });
-  await main.getByPlaceholder("Select warehouse name...").click();
+  await main.getByPlaceholder("Select warehouse", { exact: true }).click();
   await page.getByRole("option").filter({ hasText: "Live warehouse" }).click();
-  await main.getByPlaceholder("Select customer name...").click();
+  await main.getByPlaceholder("Select customer", { exact: true }).click();
   await page.getByRole("option").filter({ hasText: "Live Customer" }).click();
-  await main.getByLabel("Saved shipping address", { exact: false }).click();
+  await main.getByLabel("Shipping address", { exact: false }).click();
   await page.getByRole("option").filter({ hasText: "Fixture street" }).click();
   return main;
 }
 
 async function addItem(page: Page, quantity = 1) {
   const main = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Create Order", exact: true }) });
-  await main.getByRole("button", { name: "Add Item", exact: true }).click();
-  const item = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Add Item", exact: true }) });
-  await item.getByPlaceholder("Select inventory name...").click();
-  await page.getByRole("option").filter({ hasText: "LIVE-SKU" }).click();
+  await main.getByRole("button", { name: "Add item", exact: true }).click();
+  const item = page.getByRole("dialog", { name: "Add item", exact: true });
+  await item.getByRole("button", { name: /LIVE-SKU/ }).click();
   await item.getByLabel("Quantity", { exact: false }).fill(String(quantity));
-  await item.getByRole("button", { name: "Add Item", exact: true }).click();
+  await item.getByRole("button", { name: "Add item", exact: true }).click();
   await expect(item).toHaveCount(0);
 }
 
-test("Orders View, Edit, Process, Ready for Delivery and Invoice PDF work through rendered controls", async ({ page }) => {
+test("Orders View, Edit, Process, Ready for Scheduling and Invoice PDF work through rendered controls", async ({ page }) => {
   const created = await json(page.request, "POST", "/orders", { ...order, notes: "Original order note" });
   const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
   const row = await findOrder(page, created.product_number);
@@ -58,8 +57,8 @@ test("Orders View, Edit, Process, Ready for Delivery and Invoice PDF work throug
   await row.getByRole("button", { name: "Process order", exact: true }).click();
   await dialog.getByRole("button", { name: "Process Order", exact: true }).click();
   await expect(dialog).toHaveCount(0); await expect(row).toContainText("Processing");
-  await row.getByRole("button", { name: "Mark ready for delivery", exact: true }).click();
-  await dialog.getByRole("button", { name: "Mark ready for delivery", exact: true }).click();
+  await row.getByRole("button", { name: "Ready for scheduling", exact: true }).click();
+  await dialog.getByRole("button", { name: "Ready for scheduling", exact: true }).click();
   await expect(dialog).toHaveCount(0); await expect(row).toContainText("Scheduling");
   await row.getByRole("button", { name: "Invoice", exact: true }).click();
   await expect(dialog.getByText("24.68").first()).toBeVisible();
@@ -92,38 +91,56 @@ test("Orders Cancel releases reserved stock and stale edits retain notes", async
 
 test("Orders create wizard adds, edits, deletes draft items and checks out with a saved address", async ({ page }) => {
   const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/panel/orders");
-  await page.getByRole("button", { name: "Add Order", exact: true }).click();
-  const main = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Create Order", exact: true }) });
-  await main.getByPlaceholder("Select warehouse name...").click();
-  await page.getByRole("option").filter({ hasText: "Live warehouse" }).click();
-  await main.getByPlaceholder("Select customer name...").click();
-  await page.getByRole("option").filter({ hasText: "Live Customer" }).click();
-  await main.getByRole("button", { name: /^Continue to / }).click();
-  await main.getByRole("button", { name: "Add Item", exact: true }).click();
-  let itemDialog = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Add Item", exact: true }) });
-  await itemDialog.getByPlaceholder("Select inventory name...").click();
-  await page.getByRole("option").filter({ hasText: "LIVE-SKU" }).click();
-  await itemDialog.getByLabel("Quantity", { exact: false }).fill("2");
-  await itemDialog.getByRole("button", { name: "Add Item", exact: true }).click();
-  await expect(itemDialog).toHaveCount(0);
+  const main = await openWizard(page);
+  await main.getByRole("button", { name: "Next: Order items", exact: true }).click();
+  const addButton = main.getByRole("button", { name: "Add item", exact: true });
+  await addButton.click();
+  const drawer = page.getByRole("dialog", { name: "Add item", exact: true });
+  await expect(drawer).toHaveAttribute("data-swipe-direction", "right");
+  await expect(page.locator('[data-slot="drawer-overlay"]')).toBeVisible();
+  const compactWidth = (await drawer.boundingBox())!.width;
+  const details = drawer.getByRole("region", { name: "Selected item details" });
+  await expect(details).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Add item", exact: true })).toBeDisabled();
+  await drawer.getByRole("searchbox", { name: "Search warehouse stock" }).fill("Live variant");
+  await drawer.getByRole("button", { name: /LIVE-SKU/ }).click();
+  await expect.poll(async () => (await drawer.boundingBox())?.width ?? 0).toBeGreaterThan(compactWidth);
+  await expect(details).toContainText("Live warehouse");
+  await expect(details).toContainText("Unit of measure");
+  await expect(details).toContainText("Available to add");
+  await drawer.getByLabel("Quantity", { exact: true }).fill("2");
+  await expect(drawer.getByText("₱24.68", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "Add item", exact: true }).click();
+  await expect(drawer).toBeHidden();
+  await expect(addButton).toBeFocused();
+  const catalogItem = drawer.getByRole("button", { name: /LIVE-SKU/ });
+  await addButton.click();
+  await drawer.getByRole("button", { name: "Selected", exact: true }).click();
+  await expect(catalogItem.getByText("2 in this order", { exact: true })).toBeVisible();
+  await drawer.getByRole("searchbox", { name: "Search warehouse stock" }).fill("LIVE-SKU");
+  await drawer.getByRole("button", { name: "Unselected", exact: true }).click();
+  await expect(drawer.getByText("No matches for this search and filter.")).toBeVisible();
+  await drawer.getByRole("button", { name: "All", exact: true }).click();
+  await expect(catalogItem.getByText("2 in this order", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(drawer).toBeHidden();
   await main.getByRole("button", { name: "Edit item LIVE-SKU", exact: true }).click();
-  itemDialog = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Edit Item", exact: true }) });
+  const itemDialog = page.getByRole("dialog", { name: "Edit item", exact: true });
   await itemDialog.getByLabel("Quantity", { exact: false }).fill("3");
-  await itemDialog.getByRole("button", { name: "Save Changes", exact: true }).click();
+  await itemDialog.getByRole("button", { name: "Save quantity", exact: true }).click();
   await expect(itemDialog).toHaveCount(0); await expect(main).toContainText("37.02");
+  await addButton.click();
+  await expect(catalogItem.getByText("3 in this order", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(drawer).toBeHidden();
   await main.getByRole("button", { name: "Remove item LIVE-SKU", exact: true }).click();
-  await page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Delete Item", exact: true }) }).getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog", { name: "Remove item", exact: true }).getByRole("button", { name: "Remove", exact: true }).click();
   await expect(main.getByText("LIVE-SKU", { exact: true })).toHaveCount(0);
-  await main.getByRole("button", { name: "Add Item", exact: true }).click();
-  itemDialog = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Add Item", exact: true }) });
-  await itemDialog.getByPlaceholder("Select inventory name...").click(); await page.getByRole("option").filter({ hasText: "LIVE-SKU" }).click();
-  await itemDialog.getByRole("button", { name: "Add Item", exact: true }).click();
-  await main.getByRole("button", { name: /^Continue to / }).click();
-  await main.getByLabel("Payment Method", { exact: false }).click();
+  await addItem(page);
+  await main.getByRole("button", { name: "Next: Payment", exact: true }).click();
+  await main.getByLabel("Method", { exact: false }).click();
   await page.getByRole("option", { name: "Cash", exact: true }).click();
-  await main.getByLabel("Amount Paid", { exact: false }).fill("0");
-  await main.getByRole("button", { name: /^Continue to / }).click();
+  await main.getByRole("button", { name: "Next: Review & create", exact: true }).click();
   await expect(main).toContainText("Fixture street");
   const posted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/orders" && response.request().method() === "POST");
   await main.getByRole("button", { name: "Create order", exact: true }).click();
@@ -409,10 +426,12 @@ test("Combined payments preserve separate entries, allocate one receipt, and sho
   await invoice.getByRole("button", { name: "Generate PDF", exact: true }).click();
   expect(await (await pending).failure()).toBeNull();
   await page.goto("/panel/payments");
-  await page.getByPlaceholder("Search payments...").fill(first.combined_payment.payment_number);
+  await page.getByPlaceholder(/Search payments/).fill(created[0].product_number);
   const records = page.getByRole("row").filter({ hasText: first.combined_payment.payment_number });
-  await expect(records).toHaveCount(2);
-  await records.first().getByRole("button", { name: "Details", exact: true }).click();
+  await expect(records).toHaveCount(1);
+  await records.getByRole("button", { name: first.combined_payment.payment_number }).click();
+  await page.getByRole("region", { name: `Orders for ${first.combined_payment.payment_number}` })
+    .getByRole("button", { name: created[0].product_number, exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Original combined receipt");
 });
 
