@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Check, Layers, Loader2, X, XCircle } from "lucide-react";
+import { Check, Layers, Link2, Loader2, X, XCircle } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -290,19 +291,38 @@ export function OrderDetailsDrawer({
                   .join(" · ") || "Order overview and item breakdown."}
               </DrawerDescription>
             </div>
-            <DrawerClose
-              render={
+            <div className="flex items-center gap-1.5 shrink-0">
+              {order?.tracking_token && (
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Close"
-                  className="shrink-0"
-                />
-              }
-            >
-              <X className="size-4" aria-hidden="true" />
-            </DrawerClose>
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const url = `${window.location.origin}/track/${order.tracking_token}`;
+                    void navigator.clipboard
+                      ?.writeText(url)
+                      .then(() => toast.success("Customer tracking link copied"))
+                      .catch(() => toast.info(url));
+                  }}
+                >
+                  <Link2 className="mr-1.5 size-3.5" aria-hidden="true" />
+                  Copy tracking link
+                </Button>
+              )}
+              <DrawerClose
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Close"
+                    className="shrink-0"
+                  />
+                }
+              >
+                <X className="size-4" aria-hidden="true" />
+              </DrawerClose>
+            </div>
           </div>
         </DrawerHeader>
 
@@ -784,6 +804,69 @@ export function ViewOrderDetails({
             </ul>
           </section>
         )}
+
+      {/* Split Shipments / Staging */}
+      {(order.staging_bay ||
+        order.staged_at ||
+        order.parent_order_number ||
+        (order.split_children && order.split_children.length > 0)) && (
+        <section className="space-y-2.5 rounded-lg border p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Warehouse Staging &amp; Shipments
+          </h3>
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {order.staging_bay && (
+              <ViewOrderItem label="Staging Bay" value={order.staging_bay} />
+            )}
+            {order.staged_at && (
+              <ViewOrderItem
+                label="Verified Staged"
+                value={formatDateTime(order.staged_at)}
+              />
+            )}
+            {order.parent_order_number && (
+              <ViewOrderItem
+                label="Split From"
+                value={order.parent_order_number}
+              />
+            )}
+          </dl>
+          {order.split_reason && (
+            <p className="text-xs text-muted-foreground">
+              Split note: {order.split_reason}
+            </p>
+          )}
+          {order.split_children && order.split_children.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Split Shipments ({order.split_children.length})
+              </p>
+              <ul className="divide-y rounded-md border">
+                {order.split_children.map((child) => (
+                  <li
+                    key={child.id}
+                    className="flex items-center justify-between gap-2 px-3 py-2 text-xs"
+                  >
+                    <button
+                      type="button"
+                      disabled={!onSelectOrder}
+                      onClick={() => onSelectOrder?.(child.id)}
+                      className="font-medium text-foreground hover:underline disabled:no-underline"
+                    >
+                      {child.order_number} ({child.total_quantity} units)
+                    </button>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getOrderStatusBadgeClass(child.status)}`}
+                    >
+                      {formatOrderLabel(child.status)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Notes */}
       {order.notes?.trim() && (

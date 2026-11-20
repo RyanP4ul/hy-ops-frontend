@@ -9,6 +9,9 @@ export const warehouseSchema = z.object({
   zip_code: z.string().min(1, "ZIP code is required"),
   latitude: z.number().min(-90).max(90).nullish(),
   longitude: z.number().min(-180).max(180).nullish(),
+  daily_order_limit: z.number().int().min(1).nullish(),
+  arrival_radius_m: z.number().int().min(25).max(5000).nullish(),
+  operating_days: z.array(z.number().int().min(0).max(6)).nullish(),
   search_address: z.string().optional(),
 }).refine(value => (value.latitude == null) === (value.longitude == null), { path: ["longitude"], message: "Enter both latitude and longitude, or leave both blank." });
 

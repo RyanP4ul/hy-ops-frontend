@@ -50,6 +50,9 @@ export default function Form() {
         city: warehouseDetailQuery.data?.city ?? "",
         state: warehouseDetailQuery.data?.state ?? "",
         zip_code: warehouseDetailQuery.data?.zip_code ?? "",
+        daily_order_limit: warehouseDetailQuery.data?.daily_order_limit ?? null,
+        arrival_radius_m: warehouseDetailQuery.data?.arrival_radius_m ?? null,
+        operating_days: warehouseDetailQuery.data?.operating_days ?? null,
       });
     } else {
       form.reset({
@@ -61,6 +64,9 @@ export default function Form() {
         city: "",
         state: "",
         zip_code: "",
+        daily_order_limit: null,
+        arrival_radius_m: null,
+        operating_days: [1, 2, 3, 4, 5, 6],
       });
     }
   }, [state.isOpen, state.mode, selected.id, selected.version, warehouseDetailQuery.isFetching, warehouseDetailQuery.data, form, mapRef, setLatitude, setLongitude]);
@@ -307,6 +313,109 @@ export default function Form() {
             )}
           />
         </div>
+
+        <div className="grid grid-cols-1 gap-4 border-t pt-4 sm:grid-cols-2">
+          <Controller
+            name="daily_order_limit"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="daily_order_limit">
+                  Daily dispatch slot limit (optional)
+                </FieldLabel>
+                <Input
+                  id="daily_order_limit"
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="Uses global limit if blank"
+                  value={field.value ?? ""}
+                  onChange={(e) =>
+                    field.onChange(
+                      e.target.value === "" ? null : Math.max(1, Math.floor(Number(e.target.value))),
+                    )
+                  }
+                />
+                {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+              </Field>
+            )}
+          />
+          <Controller
+            name="arrival_radius_m"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="arrival_radius_m">
+                  GPS arrival radius in meters (optional)
+                </FieldLabel>
+                <Input
+                  id="arrival_radius_m"
+                  type="number"
+                  min={25}
+                  max={5000}
+                  step={10}
+                  placeholder="Default 100 m"
+                  value={field.value ?? ""}
+                  onChange={(e) =>
+                    field.onChange(
+                      e.target.value === "" ? null : Math.floor(Number(e.target.value)),
+                    )
+                  }
+                />
+                {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+              </Field>
+            )}
+          />
+        </div>
+
+        <Controller
+          name="operating_days"
+          control={form.control}
+          render={({ field }) => {
+            const selectedDays = new Set(field.value ?? [1, 2, 3, 4, 5, 6]);
+            const dayLabels = [
+              { id: 0, label: "Sun" },
+              { id: 1, label: "Mon" },
+              { id: 2, label: "Tue" },
+              { id: 3, label: "Wed" },
+              { id: 4, label: "Thu" },
+              { id: 5, label: "Fri" },
+              { id: 6, label: "Sat" },
+            ];
+            return (
+              <Field>
+                <FieldLabel>Operating delivery days</FieldLabel>
+                <div className="flex flex-wrap gap-2">
+                  {dayLabels.map((day) => {
+                    const active = selectedDays.has(day.id);
+                    return (
+                      <button
+                        key={day.id}
+                        type="button"
+                        onClick={() => {
+                          const next = new Set(selectedDays);
+                          if (next.has(day.id)) {
+                            if (next.size > 1) next.delete(day.id);
+                          } else {
+                            next.add(day.id);
+                          }
+                          field.onChange([...next].sort((a, b) => a - b));
+                        }}
+                        className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          active
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "bg-background text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+            );
+          }}
+        />
       </form>
     </>
   );

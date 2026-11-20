@@ -1,6 +1,7 @@
 "use client";
 
 import { LifecycleActions } from "@/components/lifecycle-actions";
+import { WarehouseOverviewAction } from "./warehouse-overview-action";
 
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableState } from "@/components/management-list";
@@ -107,6 +108,10 @@ export default function DataTable() {
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex gap-2">
+            <WarehouseOverviewAction
+              warehouseId={row.original.id}
+              warehouseName={row.original.name}
+            />
             <LifecycleActions resource="warehouses" record={row.original} />
             <Button
               variant="ghost"

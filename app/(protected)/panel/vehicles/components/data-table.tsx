@@ -25,6 +25,7 @@ import { REQUESTS } from "@/constant/request";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { resourceQueryRoots } from "@/lib/realtime";
+import { VehicleMaintenanceAction } from "./vehicle-maintenance-action";
 
 type VehicleQueryData = {
   rows: VehicleRow[];
@@ -112,10 +113,30 @@ export default function DataTable() {
       },
       { accessorKey: "warehouse_name", header: "Assigned Warehouse" },
       {
+        id: "odometer",
+        header: "Odometer / PMS",
+        cell: ({ row }) => {
+          const odo = row.original.current_odometer_km ?? 0;
+          const nextPms = row.original.next_service_odometer_km;
+          const due = nextPms != null && odo >= nextPms - 500;
+          return (
+            <div className="text-xs tabular-nums">
+              <p className="font-medium">{odo.toLocaleString()} km</p>
+              {nextPms != null ? (
+                <p className={due ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground"}>
+                  {due ? "Service due" : `PMS @ ${nextPms.toLocaleString()} km`}
+                </p>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
+            <VehicleMaintenanceAction vehicle={row.original} />
             <MaintenanceAction vehicle={row.original} />
             <LifecycleActions resource="vehicles" record={row.original} archive />
             <Button

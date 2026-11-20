@@ -49,7 +49,7 @@ import { DirectoryRail, type DirectoryTab } from "./directory-rail";
 import { FleetMapError, FleetMapLoading } from "./fleet-map-status";
 import { FleetTable } from "./fleet-table";
 import { FleetMapCanvas } from "./map-canvas";
-import { useReturnPickups } from "./return-pickups";
+import { AssignPickupDialog, useReturnPickups } from "./return-pickups";
 import { SimulationControls } from "./simulation-controls";
 import { Topbar } from "./topbar";
 import { VehicleInspector, type InspectorTab } from "./vehicle-inspector";
@@ -115,6 +115,7 @@ export function FleetWorkspace() {
   const [railOpen, setRailOpen] = useState(true);
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
   const [directoryTab, setDirectoryTab] = useState<DirectoryTab>("vehicles");
+  const [selectedReturnId, setSelectedReturnId] = useState<number | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("trip");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusedStopId, setFocusedStopId] = useState<string | null>(null);
@@ -761,6 +762,11 @@ export function FleetWorkspace() {
         >
           <FleetMapCanvas
             returnPickups={simulationOn ? [] : (returns.data ?? [])}
+            onSelectReturn={(taskId) => {
+              setDirectoryTab("returns");
+              setRailOpen(true);
+              setSelectedReturnId(taskId);
+            }}
             mapRef={mapRef}
             mode={mode}
             fullscreen={fullscreen}
@@ -973,6 +979,20 @@ export function FleetWorkspace() {
           </div>
         ) : null}
       </div>
+
+      {selectedReturnId !== null &&
+        (() => {
+          const picked = (returns.data ?? []).find(
+            (item) => item.id === selectedReturnId,
+          );
+          return picked ? (
+            <AssignPickupDialog
+              key={`map-return-${picked.id}`}
+              task={picked}
+              onClose={() => setSelectedReturnId(null)}
+            />
+          ) : null;
+        })()}
     </div>
   );
 }

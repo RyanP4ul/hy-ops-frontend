@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { resourceQueryRoots } from "@/lib/realtime";
+import { ReturnProofsGallery } from "@/components/return-proofs-gallery";
 
 export type ReturnPickup = {
   id: number;
@@ -20,6 +21,7 @@ export type ReturnPickup = {
   customer: string;
   address: string;
   reason: string;
+  failureReason?: string | null;
   status: string;
   version: number;
   deliveryId: number | null;
@@ -94,7 +96,9 @@ export function ReturnPickupsList({
                     ? "Unassigned"
                     : item.status === "assigned"
                       ? "Assigned"
-                      : "Collected"}
+                      : item.status === "failed"
+                        ? "Failed"
+                        : "Collected"}
                 </span>
               </div>
               <p className="mt-0.5 truncate text-xs text-foreground/90">
@@ -119,7 +123,7 @@ export function ReturnPickupsList({
   );
 }
 
-function AssignPickupDialog({
+export function AssignPickupDialog({
   task,
   onClose,
 }: {
@@ -130,6 +134,8 @@ function AssignPickupDialog({
   const [vehicleId, setVehicleId] = useState("");
   const [driverId, setDriverId] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [cancelMode, setCancelMode] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [key] = useState(() => crypto.randomUUID());
 
@@ -143,6 +149,70 @@ function AssignPickupDialog({
   const vehicle = candidates.data?.vehicles.find(
     (item) => String(item.id) === vehicleId,
   );
+
+  async function invalidateDeliveries() {
+    await Promise.all(
+      resourceQueryRoots.deliveries.map((root) =>
+        cache.invalidateQueries({ queryKey: [root] }),
+      ),
+    );
+  }
+
+  async function unassign() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const response = await request(
+        "POST",
+        `/api/deliveries/returns/${task.id}/unassign`,
+        { version: task.version },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message ?? "Unable to unassign pickup.");
+      }
+      toast.success("Pickup returned to unassigned queue.");
+      await invalidateDeliveries();
+      onClose();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to unassign pickup.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelRequest() {
+    if (busy || !cancelReason.trim()) return;
+    setBusy(true);
+    try {
+      const response = await request(
+        "POST",
+        `/api/deliveries/returns/${task.id}/cancel`,
+        {
+          version: task.version,
+          reason: cancelReason.trim(),
+          confirmed: true,
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message ?? "Unable to cancel pickup request.");
+      }
+      toast.success("Return pickup request cancelled.");
+      await invalidateDeliveries();
+      onClose();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to cancel pickup request.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function assign() {
     if (!vehicle || !confirmed || busy || !(vehicle.driverId || driverId)) {
@@ -211,12 +281,90 @@ function AssignPickupDialog({
         </ul>
 
         {task.status !== "requested" ? (
-          <p className="rounded-md border bg-muted/25 p-3 text-xs">
-            {task.status === "assigned"
-              ? "Assigned for collection"
-              : "Collected · awaiting warehouse receipt"}{" "}
-            · Delivery #{task.deliveryId}
-          </p>
+          <div className="space-y-3">
+            <div className="rounded-md border bg-muted/25 p-3 text-xs space-y-1">
+              <p>
+                {task.status === "assigned"
+                  ? "Assigned for collection"
+                  : task.status === "failed"
+                    ? "Collection attempt failed"
+                    : "Collected · awaiting warehouse receipt"}{" "}
+                · Delivery #{task.deliveryId}
+              </p>
+              {task.failureReason ? (
+                <p className="text-rose-700 dark:text-rose-300">
+                  Driver note: {task.failureReason}
+                </p>
+              ) : null}
+            </div>
+
+            {task.status === "collected" || task.status === "received" ? (
+              <ReturnProofsGallery returnId={task.id} />
+            ) : null}
+
+            {task.status === "assigned" || task.status === "failed" ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={busy}
+                onClick={() => void unassign()}
+              >
+                {busy
+                  ? "Updating…"
+                  : task.status === "failed"
+                    ? "Return to queue for reassignment"
+                    : "Unassign pickup"}
+              </Button>
+            ) : null}
+
+            {task.status === "failed" ? (
+              cancelMode ? (
+                <div className="space-y-2 rounded-md border p-3 text-xs">
+                  <label className="grid gap-1">
+                    <span className="font-medium">Cancellation reason</span>
+                    <input
+                      type="text"
+                      disabled={busy}
+                      className="h-9 rounded-md border bg-background px-2.5 text-xs"
+                      value={cancelReason}
+                      placeholder="Explain why retrieval is cancelled"
+                      onChange={(e) => setCancelReason(e.target.value)}
+                    />
+                  </label>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="flex-1"
+                      disabled={busy || !cancelReason.trim()}
+                      onClick={() => void cancelRequest()}
+                    >
+                      Confirm cancellation
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setCancelMode(false)}
+                    >
+                      Back
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-rose-700 hover:text-rose-700 dark:text-rose-300"
+                  disabled={busy}
+                  onClick={() => setCancelMode(true)}
+                >
+                  Cancel return request
+                </Button>
+              )
+            ) : null}
+          </div>
         ) : (
           <div className="space-y-3">
             {candidates.isPending ? (
@@ -316,6 +464,51 @@ function AssignPickupDialog({
             >
               {busy ? "Assigning…" : "Assign pickup"}
             </Button>
+
+            {cancelMode ? (
+              <div className="space-y-2 rounded-md border p-3 text-xs">
+                <label className="grid gap-1">
+                  <span className="font-medium">Cancellation reason</span>
+                  <input
+                    type="text"
+                    disabled={busy}
+                    className="h-9 rounded-md border bg-background px-2.5 text-xs"
+                    value={cancelReason}
+                    placeholder="Explain why retrieval is cancelled"
+                    onChange={(e) => setCancelReason(e.target.value)}
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="flex-1"
+                    disabled={busy || !cancelReason.trim()}
+                    onClick={() => void cancelRequest()}
+                  >
+                    Confirm cancellation
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setCancelMode(false)}
+                  >
+                    Back
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-rose-700 hover:text-rose-700 dark:text-rose-300"
+                disabled={busy}
+                onClick={() => setCancelMode(true)}
+              >
+                Cancel return request
+              </Button>
+            )}
           </div>
         )}
       </DialogContent>

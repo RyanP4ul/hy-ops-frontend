@@ -6,6 +6,11 @@ export const productVariantSchema = z.object({
   sku: z.string().nonempty({ message: "SKU is required" }),
   description: z.string().max(255),
   price: z.string().regex(/^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$/, "Enter a nonnegative price with up to two decimal places"),
+  cost_price: z
+    .string()
+    .regex(/^$|^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$/, "Enter a nonnegative cost price with up to two decimal places")
+    .nullable()
+    .optional(),
   unit: z.string().nonempty({ message: "Unit is required" }),
   weight_kg: z.string().nonempty({ message: "Weight is required" }),
   width_value: z.string().nonempty({ message: "Width is required" }),

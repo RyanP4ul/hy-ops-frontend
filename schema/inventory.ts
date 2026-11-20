@@ -19,6 +19,10 @@ export const inventorySchema = z.object({
   product_variant_id: z.number().int().positive("Select a product variant"),
   quantity: z.number().int().nonnegative(),
   reserved: z.number().int().nonnegative().optional(),
+  reorder_point: z.number().int().nonnegative().nullable().optional(),
+  movement_kind: z
+    .enum(["adjustment", "inbound_receipt", "damage", "cycle_count"])
+    .optional(),
   reason: z.string().max(500).optional(),
 });
 

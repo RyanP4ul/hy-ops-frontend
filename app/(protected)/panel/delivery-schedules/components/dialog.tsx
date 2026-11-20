@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +14,6 @@ import { useWebSocket } from "@/components/providers/websocket-provider";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronDownIcon,
   ClipboardCheck,
   Plus,
   Trash2,
@@ -26,13 +24,11 @@ import {
   DollarSign,
   Loader2,
   Move,
-  CheckCircle2Icon,
 } from "lucide-react";
 import { PaginatedCombobox } from "@/components/paginated-combobox";
 import {
   sumKnownMoney,
   isFutureManilaDeparture,
-  manilaCalendarNow,
   formatCurrency,
 } from "@/utils/date-util";
 import {
@@ -51,24 +47,9 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { useQueryClient } from "@tanstack/react-query";
-import { format, startOfDay } from "date-fns";
-import { Input } from "@/components/ui/input";
-import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
 import { Controller } from "react-hook-form";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Combobox,
   ComboboxContent,
@@ -85,11 +66,12 @@ import {
 } from "@/components/ui/item";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { REQUESTS } from "@/constant/request";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useState } from "react";
 import { QueryFeedback } from "@/components/query-feedback";
 import { WorkflowSummary, type WorkflowStep } from "@/components/workflow-stepper";
+import { formatTime12h } from "@/lib/departure-recommendations";
 
+import { DepartureStep } from "./departure-step";
 import { ExpensesStep } from "./expenses-step";
 import { ScheduleWorkspace } from "./schedule-workspace";
 
@@ -114,14 +96,30 @@ export default function DeliveryScheduleDialog() {
     driverQuery,
     vehicleQuery,
     sortDistanceMutation,
+    optimizeRouteMutation,
     driverExpensesMutation,
   } = useDeliverySchedule();
   const queryClient = useQueryClient();
   const reviewOrders = orderDetailQuery.data ?? [];
+  const selectedVehicleId = form.watch("vehicle_id");
+  const selectedVehicle = vehicleQuery.data?.rows?.find(
+    (v) => v.id === selectedVehicleId,
+  );
+  const totalLoadWeightKg = reviewOrders.reduce(
+    (sum, order) => sum + (Number(order.total_weight_kg) || 0),
+    0,
+  );
+  const maxVehicleWeightKg =
+    selectedVehicle?.max_weight_kg != null
+      ? Number(selectedVehicle.max_weight_kg)
+      : null;
+  const loadRatio =
+    maxVehicleWeightKg && maxVehicleWeightKg > 0
+      ? totalLoadWeightKg / maxVehicleWeightKg
+      : null;
 
   const reviewScheduledDate = form.watch("scheduled_date");
   const reviewScheduledTime = form.watch("scheduled_time");
-  const reviewDeliveryType = form.watch("delivery_type");
   const delivery_allowance = form.watch("delivery_allowance");
   const fuel = form.watch("fuel");
   const toll = form.watch("toll");
@@ -171,7 +169,7 @@ export default function DeliveryScheduleDialog() {
       details: ["All departure times use Manila time (UTC+8).", "Choose a future departure on a date with available delivery slots."] },
     { title: "Orders & stops", description: "Select the orders and arrange the delivery stops.", icon: ClipboardCheck,
       details: ["Check each customer's destination and map coordinates.", "Arrange stops in the order the driver should visit them."] },
-    { title: "Driver & vehicle", description: "Choose a delivery type and assign the people and vehicle needed.", icon: Truck,
+    { title: "Driver & vehicle", description: "Assign the driver and vehicle for this company delivery run.", icon: Truck,
       details: ["Confirm the assigned driver and vehicle before continuing.", "Review availability for the selected departure before continuing."] },
     { title: "Expenses", description: "", icon: DollarSign,
       details: ["Calculate expenses after confirming the route and vehicle.", "Review the amounts before continuing. Estimates are separate from order totals."] },
@@ -185,12 +183,12 @@ export default function DeliveryScheduleDialog() {
     ["warehouse_id"],
     ["scheduled_date", "scheduled_time"],
     ["order_ids"],
-    ["delivery_type", "driver_id", "vehicle_id"],
+    ["driver_id", "vehicle_id"],
     ["delivery_allowance", "fuel", "toll"],
   ];
 
   async function handleNext() {
-    if (nextPending || form.formState.isSubmitting || (step === 3 && reviewDeliveryType === "LALAMOVE")) return;
+    if (nextPending || form.formState.isSubmitting) return;
     setNextPending(true);
     try {
       const fields = fieldsByStep[step] ?? [];
@@ -238,9 +236,14 @@ export default function DeliveryScheduleDialog() {
   }
 
   async function onSubmit(data: DeliveryScheduleFormData) {
+    const estimatedDuration = driverExpensesMutation.data?.route?.durationMinutes;
     const response = await request("POST", `/api/deliveries`, {
       ...data,
+      delivery_type: "INTERNAL",
       scheduled_date: format(data.scheduled_date, "yyyy-MM-dd"),
+      ...(estimatedDuration && estimatedDuration >= 15
+        ? { estimated_duration_minutes: Math.min(1440, Math.round(estimatedDuration)) }
+        : {}),
     });
 
     await requestWithErrorHandling(response, form, (result) => {
@@ -357,124 +360,7 @@ export default function DeliveryScheduleDialog() {
           </>
         )}
 
-        {step === 1 && (
-          <>
-            <p className="text-sm text-muted-foreground">
-              Departure dates and times use Asia/Manila.
-            </p>
-            <QueryFeedback
-              query={availableDateQuery}
-              label="available schedule dates"
-            />
-            {form.getValues("scheduled_date") && (
-              <Alert>
-                <CheckCircle2Icon />
-                <AlertTitle>Order Available</AlertTitle>
-                <AlertDescription>
-                  Available slots for{" "}
-                  {format(form.getValues("scheduled_date"), "PPP")} is{" "}
-                  <span className="font-semibold text-green-500 text-lg">
-                    {availableStopSlots}{" "}
-                  </span>
-                  slot(s) left
-                </AlertDescription>
-              </Alert>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <Controller
-                control={form.control}
-                name="scheduled_date"
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <div className="flex items-center justify-between">
-                      <FieldLabel htmlFor="scheduledDate">
-                        Delivery Date{" "}
-                        <span className="text-destructive">*</span>
-                      </FieldLabel>
-
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          field.onChange(startOfDay(manilaCalendarNow()))
-                        }
-                      >
-                        now
-                      </Button>
-                    </div>
-                    <Popover>
-                      <PopoverTrigger
-                        render={
-                          <Button
-                            id="scheduledDate"
-                            type="button"
-                            variant="outline"
-                            aria-invalid={fieldState.invalid}
-                            className="w-48 justify-between font-normal"
-                          >
-                            {field.value
-                              ? format(field.value, "PPP")
-                              : "Select date"}
-                            <ChevronDownIcon className="size-4" />
-                          </Button>
-                        }
-                      />
-
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={[
-                            { before: startOfDay(manilaCalendarNow()) },
-                            { dayOfWeek: [0] },
-                            (date) => {
-                              const dateKey = format(date, "yyyy-MM-dd");
-
-                              const day = availableDateQuery.data?.find(
-                                (item) => item.date === dateKey,
-                              );
-
-                              return !day || day.available_slots < 1;
-                            },
-                          ]}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    {fieldState.invalid && (
-                      <FieldError errors={[fieldState.error]} />
-                    )}
-                  </Field>
-                )}
-              />
-
-              <Controller
-                control={form.control}
-                name="scheduled_time"
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="scheduled_time">
-                      Departure Time <span className="text-destructive">*</span>
-                    </FieldLabel>
-
-                    <Input
-                      {...field}
-                      id="scheduled_time"
-                      type="time"
-                      step="60"
-                      aria-invalid={fieldState.invalid}
-                    />
-
-                    {fieldState.invalid && (
-                      <FieldError errors={[fieldState.error]} />
-                    )}
-                  </Field>
-                )}
-              />
-            </div>
-          </>
-        )}
+        {step === 1 && <DepartureStep />}
 
         {step === 2 && (
           <>
@@ -491,6 +377,24 @@ export default function DeliveryScheduleDialog() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => optimizeRouteMutation.mutate()}
+                    disabled={
+                      optimizeRouteMutation.isPending ||
+                      form.getValues("order_ids").length < 2
+                    }
+                  >
+                    {optimizeRouteMutation.isPending ? (
+                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    ) : (
+                      <Move className="mr-1.5 size-3.5" />
+                    )}
+                    Optimize Stop Order
+                  </Button>
+                  <Button
+                    type="button"
                     size="sm"
                     variant="outline"
                     onClick={() => sortDistanceMutation.mutate()}
@@ -504,7 +408,7 @@ export default function DeliveryScheduleDialog() {
                     ) : (
                       <Move className="mr-1.5 size-3.5" />
                     )}
-                    Sort Order By Distance
+                    Sort By Distance
                   </Button>
                   <Button
                     type="button"
@@ -562,33 +466,6 @@ export default function DeliveryScheduleDialog() {
           <>
             <QueryFeedback query={driverQuery} label="drivers" />
             <QueryFeedback query={vehicleQuery} label="vehicles" />
-            <Controller
-              name="delivery_type"
-              control={form.control}
-              render={({ field }) => (
-                <Field>
-                  <FieldLabel htmlFor="delivery_type">
-                    Delivery Type <span className="text-destructive">*</span>
-                  </FieldLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="LALAMOVE">Lalamove</SelectItem>
-                        <SelectItem value="PICKUP">Customer pickup</SelectItem>
-                        <SelectItem value="INTERNAL">
-                          Company delivery
-                        </SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            />
-
-            {reviewDeliveryType === "LALAMOVE" ? <section className="space-y-3 rounded-lg border p-4"><h3 className="font-medium">Book each order with Lalamove</h3><p className="text-sm text-muted-foreground">Continue to select Lalamove for the order, review its quotation, and confirm the courier booking. Each order is booked separately; no company driver or vehicle is assigned. The departure selected here does not schedule a Lalamove pickup.</p>{draftOrderIds.map(id => <p key={id}><Link className="text-sm underline" href={`/panel/lalamove?orderId=${id}`}>Review Lalamove delivery for order #{id}</Link></p>)}</section> : <>
             <Controller
               name="driver_id"
               control={form.control}
@@ -734,6 +611,9 @@ export default function DeliveryScheduleDialog() {
                                 </ItemTitle>
                                 <ItemDescription>
                                   {order.plate_number}
+                                  {order.max_weight_kg
+                                    ? ` · Max ${Number(order.max_weight_kg).toLocaleString()} kg`
+                                    : ""}
                                 </ItemDescription>
                               </ItemContent>
                             </Item>
@@ -793,7 +673,38 @@ export default function DeliveryScheduleDialog() {
                 </Combobox>
               )}
             />
-            </>}
+            {reviewOrders.length > 0 && (
+              <div className="rounded-lg border bg-muted/20 p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">Estimated cargo load</span>
+                  <span className="font-semibold tabular-nums">
+                    {totalLoadWeightKg.toFixed(1)} kg
+                    {maxVehicleWeightKg !== null
+                      ? ` / ${maxVehicleWeightKg.toFixed(1)} kg (${Math.round((loadRatio ?? 0) * 100)}%)`
+                      : " (vehicle capacity not set)"}
+                  </span>
+                </div>
+                {loadRatio !== null && (
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={
+                        loadRatio > 1
+                          ? "h-full bg-destructive transition-all"
+                          : loadRatio >= 0.85
+                            ? "h-full bg-amber-500 transition-all"
+                            : "h-full bg-emerald-600 transition-all"
+                      }
+                      style={{ width: `${Math.min(100, Math.round(loadRatio * 100))}%` }}
+                    />
+                  </div>
+                )}
+                {loadRatio !== null && loadRatio > 1 && (
+                  <p role="alert" className="text-destructive font-medium">
+                    Cargo weight exceeds {selectedVehicle?.plate_number}&apos;s configured payload limit. Choose a larger vehicle or split orders.
+                  </p>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -808,7 +719,7 @@ export default function DeliveryScheduleDialog() {
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground">Delivery date</p>
                 <p className="mt-1 font-medium">
@@ -819,18 +730,8 @@ export default function DeliveryScheduleDialog() {
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground">Departure time (Manila)</p>
-                <p className="mt-1 font-medium">
-                  {reviewScheduledTime || "Not selected"}
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Delivery type</p>
-                <p className="mt-1 font-medium">
-                  {reviewDeliveryType === "LALAMOVE"
-                    ? "Lalamove"
-                    : reviewDeliveryType === "PICKUP"
-                      ? "Customer pickup"
-                      : "Company delivery"}
+                <p className="mt-1 font-medium tabular-nums">
+                  {reviewScheduledTime ? formatTime12h(reviewScheduledTime) : "Not selected"}
                 </p>
               </div>
               <div className="rounded-lg border p-3">
@@ -971,7 +872,7 @@ export default function DeliveryScheduleDialog() {
               className="h-auto min-h-10 min-w-0 whitespace-normal text-left"
               aria-label={nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}
               onClick={handleNext}
-              disabled={nextPending || driverExpensesMutation.isPending || form.formState.isSubmitting || (step === 3 && reviewDeliveryType === "LALAMOVE")}
+              disabled={nextPending || driverExpensesMutation.isPending || form.formState.isSubmitting}
             >
               <span className="sm:hidden">{nextPending ? "Checking..." : "Continue"}</span>
               <span className="hidden sm:inline">{nextPending ? "Checking details..." : `Continue to ${steps[step + 1].title.toLowerCase()}`}</span>

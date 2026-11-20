@@ -45,11 +45,34 @@ export default function Form() {
     if (state.mode === DialogMode.EDIT && (vehicleDetailQuery.isFetching || !vehicleDetailQuery.data)) return;
     initialized.current = key;
     if (state.mode === DialogMode.EDIT && vehicleDetailQuery.data) {
-      const { warehouse_id, plate_number, warehouse_name } = vehicleDetailQuery.data;
-      form.reset({ warehouse_id, plate_number });
+      const {
+        warehouse_id,
+        plate_number,
+        warehouse_name,
+        max_weight_kg,
+        max_volume_cbm,
+        current_odometer_km,
+        next_service_odometer_km,
+      } = vehicleDetailQuery.data;
+      form.reset({
+        warehouse_id,
+        plate_number,
+        max_weight_kg: max_weight_kg != null ? Number(max_weight_kg) : null,
+        max_volume_cbm: max_volume_cbm != null ? Number(max_volume_cbm) : null,
+        current_odometer_km: current_odometer_km != null ? Number(current_odometer_km) : 0,
+        next_service_odometer_km:
+          next_service_odometer_km != null ? Number(next_service_odometer_km) : null,
+      });
       warehouseCB.setInputValue(warehouse_name);
     } else if (state.mode === DialogMode.INSERT) {
-      form.reset({ warehouse_id: -1, plate_number: "" });
+      form.reset({
+        warehouse_id: -1,
+        plate_number: "",
+        max_weight_kg: null,
+        max_volume_cbm: null,
+        current_odometer_km: 0,
+        next_service_odometer_km: null,
+      });
       warehouseCB.setInputValue("");
     }
   }, [form, state.isOpen, state.mode, selected.id, selected.version, vehicleDetailQuery.isFetching, vehicleDetailQuery.data, warehouseCB]);
@@ -189,6 +212,92 @@ export default function Form() {
           <Field data-invalid={fieldState.invalid}>
             <FieldLabel htmlFor="plate-number">Plate number</FieldLabel>
             <Input id="plate-number" {...field} placeholder="ABC-1234" />
+            {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+          </Field>
+        )}
+      />
+      <Controller
+        name="max_weight_kg"
+        control={form.control}
+        render={({ field, fieldState }) => (
+          <Field data-invalid={fieldState.invalid}>
+            <FieldLabel htmlFor="max-weight-kg">Max payload (kg)</FieldLabel>
+            <Input
+              id="max-weight-kg"
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="e.g. 2000"
+              value={field.value ?? ""}
+              onChange={(e) =>
+                field.onChange(e.target.value === "" ? null : Number(e.target.value))
+              }
+            />
+            {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+          </Field>
+        )}
+      />
+      <Controller
+        name="max_volume_cbm"
+        control={form.control}
+        render={({ field, fieldState }) => (
+          <Field data-invalid={fieldState.invalid}>
+            <FieldLabel htmlFor="max-volume-cbm">Cargo volume (m³)</FieldLabel>
+            <Input
+              id="max-volume-cbm"
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="e.g. 12.5"
+              value={field.value ?? ""}
+              onChange={(e) =>
+                field.onChange(e.target.value === "" ? null : Number(e.target.value))
+              }
+            />
+            {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+          </Field>
+        )}
+      />
+      <Controller
+        name="current_odometer_km"
+        control={form.control}
+        render={({ field, fieldState }) => (
+          <Field data-invalid={fieldState.invalid}>
+            <FieldLabel htmlFor="current-odometer-km">Current odometer (km)</FieldLabel>
+            <Input
+              id="current-odometer-km"
+              type="number"
+              min={0}
+              step="1"
+              placeholder="e.g. 42500"
+              value={field.value ?? 0}
+              onChange={(e) =>
+                field.onChange(e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value))))
+              }
+            />
+            {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+          </Field>
+        )}
+      />
+      <Controller
+        name="next_service_odometer_km"
+        control={form.control}
+        render={({ field, fieldState }) => (
+          <Field data-invalid={fieldState.invalid}>
+            <FieldLabel htmlFor="next-service-odometer-km">Next service due (km)</FieldLabel>
+            <Input
+              id="next-service-odometer-km"
+              type="number"
+              min={0}
+              step="1"
+              placeholder="e.g. 50000"
+              value={field.value ?? ""}
+              onChange={(e) =>
+                field.onChange(
+                  e.target.value === "" ? null : Math.max(0, Math.floor(Number(e.target.value))),
+                )
+              }
+            />
             {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
           </Field>
         )}

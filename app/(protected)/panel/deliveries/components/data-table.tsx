@@ -4,6 +4,7 @@ import { OrderDetailsAction } from "./order-details-action";
 import { DeliveryExpensesAction } from "./delivery-expenses-action";
 import { ProofOfDeliveryAction } from "./proof-of-delivery-action";
 import { RefundPickupAction } from "./refund-pickup-action";
+import { ReturnDispositionAction } from "./return-disposition-action";
 import { RunActions } from "./run-actions";
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
@@ -114,7 +115,15 @@ export default function DataTable() {
         header: () => "Items",
         cell: ({ row }) => (
           <div className="flex flex-col gap-1">
-            {row.original.pickups?.map(pickup => <p key={`pickup-${pickup.id}`} className="text-sm text-rose-600">Pickup: {pickup.orderNumber} / {pickup.status}</p>)}
+            {row.original.pickups?.map(pickup => (
+              <div key={`pickup-${pickup.id}`} className="flex flex-wrap items-center gap-2">
+                <p className="text-sm text-rose-600">
+                  Pickup: {pickup.orderNumber} / {pickup.status}
+                  {pickup.disposition ? ` (${pickup.disposition})` : ""}
+                </p>
+                <ReturnDispositionAction pickup={pickup} />
+              </div>
+            ))}
             {row.original.orders.map((order) => (
               <div key={order.order_id} className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">

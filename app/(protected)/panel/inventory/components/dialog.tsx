@@ -83,6 +83,11 @@ export default function DialogPage() {
         product_variant_id: inventoryDetailQuery.data?.product_variant_id ?? 0,
         quantity: inventoryDetailQuery.data?.quantity ?? 0,
         reserved: inventoryDetailQuery.data?.reserved ?? 0,
+        reorder_point:
+          (inventoryDetailQuery.data as { reorder_point?: number | null })
+            ?.reorder_point ?? null,
+        movement_kind: "adjustment",
+        reason: "",
       });
 
       if (warehouseQuery.data) {
@@ -100,6 +105,7 @@ export default function DialogPage() {
         warehouse_id: 0,
         product_variant_id: 0,
         quantity: 0,
+        reorder_point: null,
       });
 
       warehouseCB.setInputValue("");
@@ -304,11 +310,74 @@ export default function DialogPage() {
                 />
               )}
             />
-            {state.mode === DialogMode.EDIT && <Controller name="reason" control={form.control} render={({ field, fieldState }) => <Field>
-              <FieldLabel htmlFor="stock-adjustment-reason">Reason for stock adjustment</FieldLabel>
-              <Input {...field} value={field.value ?? ""} id="stock-adjustment-reason" placeholder="For example: received delivery or corrected count" />
-              <FieldError errors={[fieldState.error]} />
-            </Field>} />}
+            {state.mode === DialogMode.EDIT && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Controller
+                  name="movement_kind"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Field>
+                      <FieldLabel htmlFor="stock-movement-kind">
+                        Movement type
+                      </FieldLabel>
+                      <select
+                        id="stock-movement-kind"
+                        className="h-9 rounded-md border bg-background px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        value={field.value ?? "adjustment"}
+                        onChange={(e) => field.onChange(e.target.value)}
+                      >
+                        <option value="inbound_receipt">Inbound receipt (+)</option>
+                        <option value="adjustment">Manual adjustment</option>
+                        <option value="cycle_count">Cycle count correction</option>
+                        <option value="damage">Damage / write-off (-)</option>
+                      </select>
+                    </Field>
+                  )}
+                />
+                <Controller
+                  name="reason"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <Field>
+                      <FieldLabel htmlFor="stock-adjustment-reason">
+                        Reason for stock change
+                      </FieldLabel>
+                      <Input
+                        {...field}
+                        value={field.value ?? ""}
+                        id="stock-adjustment-reason"
+                        placeholder="e.g., Supplier DR #420 or physical count"
+                      />
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
+                  )}
+                />
+              </div>
+            )}
+            <Controller
+              name="reorder_point"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="reorder-point">
+                    Per-SKU reorder point (optional)
+                  </FieldLabel>
+                  <Input
+                    id="reorder-point"
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="Leave blank to use global low-stock threshold"
+                    value={field.value ?? ""}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      field.onChange(raw === "" ? null : Math.max(0, Math.floor(Number(raw))));
+                    }}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
             <Controller
               name="quantity"
               control={form.control}

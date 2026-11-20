@@ -46,6 +46,7 @@ export default function VariantDialog() {
       sku: "HY-",
       description: "",
       price: "0.00",
+      cost_price: "",
       unit: "box",
       weight_kg: "0.00",
       width_value: "0",
@@ -80,12 +81,16 @@ export default function VariantDialog() {
   });
 
   async function onSubmit(data: ProductVariantType) {
+    const normalized: ProductVariantType = {
+      ...data,
+      cost_price: data.cost_price?.trim() ? data.cost_price.trim() : null,
+    };
     const variants = form.getValues("variants");
-    if (variants.some((item, index) => item.sku.trim().toLowerCase() === data.sku.trim().toLowerCase() && !(variant.mode === DialogMode.EDIT && index === variant.id))) {
+    if (variants.some((item, index) => item.sku.trim().toLowerCase() === normalized.sku.trim().toLowerCase() && !(variant.mode === DialogMode.EDIT && index === variant.id))) {
       variant_form.setError("sku", { type: "manual", message: "Duplicate SKU found. Please use a unique SKU." }); return;
     }
-    if (variant.mode === DialogMode.EDIT && variant.id !== undefined) fieldArray.update(variant.id, { ...variants[variant.id], ...data });
-    else fieldArray.append(data);
+    if (variant.mode === DialogMode.EDIT && variant.id !== undefined) fieldArray.update(variant.id, { ...variants[variant.id], ...normalized });
+    else fieldArray.append(normalized);
     variant_form.reset();
     setVariant({ is_open: false, mode: DialogMode.DEFAULT });
   }
@@ -160,14 +165,14 @@ export default function VariantDialog() {
               />
             </div>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-3">
             <Controller
               name="price"
               control={variant_form.control}
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="price">
-                    Price<span className="text-destructive">*</span>
+                    Selling Price<span className="text-destructive">*</span>
                   </FieldLabel>
                   <Input
                     {...field}
@@ -176,6 +181,31 @@ export default function VariantDialog() {
                     aria-invalid={fieldState.invalid}
                     type="number"
                     placeholder="Enter price"
+                    autoComplete="off"
+                  />
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
+                </Field>
+              )}
+            />
+
+            <Controller
+              name="cost_price"
+              control={variant_form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="cost_price">
+                    Cost Price (COGS)
+                  </FieldLabel>
+                  <Input
+                    {...field}
+                    value={field.value ?? ""}
+                    id="cost_price"
+                    min="0" step="0.01"
+                    aria-invalid={fieldState.invalid}
+                    type="number"
+                    placeholder="Optional unit cost"
                     autoComplete="off"
                   />
                   {fieldState.invalid && (
@@ -387,21 +417,10 @@ export default function VariantDialog() {
     setVariant({ is_open: false, mode: DialogMode.DEFAULT });
   }
 
-  function DeleteConfirmation() {
-    return (
-      <div className="grid gap-3">
-        <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete this variant? This action cannot be
-          undone.
-        </p>
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (!variant.is_open) return;
     const current = variant.mode === DialogMode.EDIT && variant.id !== undefined ? form.getValues("variants")[variant.id] : undefined;
-    variant_form.reset(current ?? { name: "", sku: "HY-", description: "", price: "0.00", unit: "box", weight_kg: "0.00", width_value: "0", width_unit: "m", length_value: "0.00", length_unit: "m" });
+    variant_form.reset(current ?? { name: "", sku: "HY-", description: "", price: "0.00", cost_price: "0.00", unit: "box", weight_kg: "0.00", width_value: "0", width_unit: "m", length_value: "0.00", length_unit: "m" });
   }, [variant.is_open, variant.mode, variant.id, form, variant_form]);
 
   return (
@@ -432,7 +451,12 @@ export default function VariantDialog() {
           variant.mode === DialogMode.EDIT ? (
             renderForm()
           ) : (
-            <DeleteConfirmation />
+            <div className="grid gap-3">
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to delete this variant? This action cannot
+                be undone.
+              </p>
+            </div>
           )}
 
           <DialogFooter>

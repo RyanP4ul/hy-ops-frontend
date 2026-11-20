@@ -7,7 +7,7 @@ export const deliveryScheduleSchema = z.object({
     error: "Scheduled date is required",
   }),
   scheduled_time: z.string().min(1, "Scheduled time is required"),
-  delivery_type: z.string().min(1, "Delivery type is required"),
+  delivery_type: z.literal("INTERNAL"),
   driver_id: z.number().min(1, "Driver is required"),
   vehicle_id: z.number().min(1, "Vehicle is required"),
   delivery_allowance: z
@@ -46,6 +46,7 @@ export type DeliveryScheduleOrderDetail = OrderGroupFields & {
   shipping_latitude: string | null;
   shipping_longitude: string | null;
   item_count: number;
+  total_weight_kg?: number;
   total: number | null;
 };
 

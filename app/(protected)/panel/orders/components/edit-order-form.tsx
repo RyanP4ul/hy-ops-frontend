@@ -56,7 +56,7 @@ import { SavedAddressForm } from "./saved-address-form";
 export type EditOrderPayload = {
   version: number;
   notes: string;
-  delivery_type?: "INTERNAL" | "LALAMOVE" | "PICKUP";
+  delivery_type?: "INTERNAL" | "LALAMOVE";
   customer_address_id?: number;
   items?: { inventory_id: number; quantity: number }[];
 };
@@ -129,9 +129,8 @@ function formatAddress(address: SavedAddressOption): string {
 
 function normalizeDeliveryMethod(
   value?: string | null,
-): "INTERNAL" | "LALAMOVE" | "PICKUP" {
+): "INTERNAL" | "LALAMOVE" {
   if (value === "LALAMOVE") return "LALAMOVE";
-  if (value === "PICKUP") return "PICKUP";
   return "INTERNAL";
 }
 
@@ -163,7 +162,7 @@ export function EditOrderForm({
 
   const [items, setItems] = useState<EditOrderLine[]>([]);
   const [deliveryType, setDeliveryType] = useState<
-    "INTERNAL" | "LALAMOVE" | "PICKUP"
+    "INTERNAL" | "LALAMOVE"
   >("INTERNAL");
   const [customerAddressId, setCustomerAddressId] = useState<
     number | undefined
@@ -370,17 +369,7 @@ export function EditOrderForm({
     ? formatAddress(selectedSavedAddress)
     : order?.shipping_address || "Address unavailable";
 
-  const deliveryOptions =
-    originalDeliveryType === "PICKUP"
-      ? [
-          ...DELIVERY_METHOD_OPTIONS,
-          {
-            value: "PICKUP" as const,
-            label: "Customer pickup",
-            description: "Customer collects the prepared order from the warehouse.",
-          },
-        ]
-      : DELIVERY_METHOD_OPTIONS;
+  const deliveryOptions = DELIVERY_METHOD_OPTIONS;
 
   function updateQuantityInput(inventoryId: number, raw: string) {
     if (raw !== "" && !/^\d+$/.test(raw)) return;

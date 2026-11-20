@@ -34,8 +34,16 @@ import { format } from "date-fns";
 
 type WarehouseOption = { id: number; name: string; latitude?: string | null; longitude?: string | null };
 type DriverOption = { id: number; name: string; phone_number: string | null };
-type VehicleOption = { id: number; plate_number: string; type: string };
+type VehicleOption = { id: number; plate_number: string; type: string; max_weight_kg?: string | null; max_volume_cbm?: string | null };
 type SortedRoute = { locations: { id: string; name: string }[] };
+type OptimizedRoute = {
+  optimizedOrderIds: number[];
+  originalDistanceKm: number;
+  optimizedDistanceKm: number;
+  savedDistanceKm: number;
+  estimatedDurationMinutes: number | null;
+  source: string;
+};
 type AvailableDate = { date: string; available_slots: number };
 type ReadySelection = { groupId: string; label?: string } | { order: SchedulingEntry };
 const readyOrdersPageSize = 10;
@@ -109,6 +117,7 @@ type DeliveryScheduleType = {
   setSub: Dispatch<SetStateAction<SubType>>;
 
   sortDistanceMutation: ReturnType<typeof useMutation<SortedRoute>>;
+  optimizeRouteMutation: ReturnType<typeof useMutation<OptimizedRoute>>;
 
   expenseSettings: ReturnType<typeof useExpenseSettings>;
   driverExpensesMutation: ReturnType<typeof useMutation<EstimateResponse>>;
@@ -526,6 +535,60 @@ export function DeliveryScheduleProvider({
     },
   });
 
+  const optimizeRouteMutation = useMutation({
+    mutationFn: async () => {
+      const warehouse_id = form.getValues("warehouse_id");
+      const warehouse_data = warehouseQuery.data?.rows.find(
+        (warehouse: WarehouseOption) => warehouse.id === warehouse_id,
+      );
+      const origin = parseDeliveryCoordinates(
+        warehouse_data?.latitude,
+        warehouse_data?.longitude,
+      );
+      if (!origin) {
+        throw new Error("Warehouse coordinates are required before optimizing the route.");
+      }
+      const stops: { orderId: number; latitude: number; longitude: number }[] = [];
+      for (const order_id of order_ids) {
+        const detail = orderDetailQuery.data?.find(
+          (order: DeliveryScheduleOrderDetail) => order.id === order_id,
+        );
+        const point = parseDeliveryCoordinates(
+          detail?.shipping_latitude,
+          detail?.shipping_longitude,
+        );
+        if (!detail || !point) {
+          throw new Error(
+            `Confirm destination coordinates for ${detail?.order_number ?? `order #${order_id}`} before optimizing.`,
+          );
+        }
+        stops.push({ orderId: detail.id, longitude: point[0], latitude: point[1] });
+      }
+      const response = await request("POST", "/api/delivery-estimates/optimize-route", {
+        origin: { longitude: origin[0], latitude: origin[1] },
+        stops,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result?.message || "Unable to optimize route.");
+      }
+      return result as OptimizedRoute;
+    },
+    onError: (error) => toast.error(error.message),
+    onSuccess: (result: OptimizedRoute) => {
+      form.setValue("order_ids", result.optimizedOrderIds, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      toast.success(
+        result.savedDistanceKm > 0
+          ? `Route optimized via ${result.source} — saved ~${result.savedDistanceKm.toFixed(1)} km`
+          : `Stop order optimized via ${result.source} (${result.optimizedDistanceKm.toFixed(1)} km)`,
+        { duration: 4000 },
+      );
+    },
+  });
+
   const driverExpensesMutation = useMutation({
     mutationFn: async () => {
       const warehouse = warehouseQuery.data?.rows.find((row: WarehouseOption) => row.id === form.getValues("warehouse_id"));
@@ -612,6 +675,7 @@ export function DeliveryScheduleProvider({
         sub,
         setSub,
         sortDistanceMutation,
+        optimizeRouteMutation,
         driverExpensesMutation,
         expenseSettings,
       }}

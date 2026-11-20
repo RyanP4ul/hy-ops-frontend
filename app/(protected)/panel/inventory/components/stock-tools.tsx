@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { QueryFeedback } from "@/components/query-feedback";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useInventory } from "../provider";
+import { StockTransfersPanel } from "./stock-transfers-panel";
 type Plan = { token: string; legacyOrders: number; issues: string[]; rows: { id: number; sku: string; warehouse: string; quantity: number; current_reserved: number; expected_reserved: number }[] };
 export function StockTools() {
   const { warehouseId } = useInventory();
@@ -38,6 +39,7 @@ export function StockTools() {
       {suggestions.data?.rows.length === 0 && <p className="text-sm">No replenishment needed for this warehouse scope.</p>}
       <ul className="max-h-64 overflow-auto text-sm">{suggestions.data?.rows.map((row) => <li className="border-b py-2" key={row.id}>{row.sku} · {row.warehouse}: {row.available} available; suggested {row.suggested} {row.unit}</li>)}</ul>
     </details>
+    <StockTransfersPanel />
     {role === "admin" && <details onToggle={(event) => setOpen(event.currentTarget.open)}><summary className="cursor-pointer font-medium">Review legacy reservations</summary>
       <p className="py-2 text-xs text-muted-foreground">Across all warehouses. Review discrepancies, then confirm rebuilding reservations from active, undispatched orders. On-hand counts stay the same.</p>
       <QueryFeedback query={preview} label="reconciliation preview" />

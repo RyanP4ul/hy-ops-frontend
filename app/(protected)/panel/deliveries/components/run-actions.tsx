@@ -15,7 +15,7 @@ import {
 import { request } from "@/components/http";
 import { resourceQueryRoots } from "@/lib/realtime";
 import { toast } from "sonner";
-import { WarehouseReturnDialog } from "@/components/warehouse-return-dialog";
+import { WarehouseReturnDialog, type CodCollectionInput } from "@/components/warehouse-return-dialog";
 
 export function RunActions({ id, status, overdue, warehouseName }: { id: number; status: string; overdue?: boolean; warehouseName?: string }) {
   const [busy, setBusy] = useState(false);
@@ -23,13 +23,17 @@ export function RunActions({ id, status, overdue, warehouseName }: { id: number;
   const [actionError, setActionError] = useState<string | null>(null);
   const cache = useQueryClient();
   if (status !== "scheduled" && status !== "returning") return null;
-  async function act() {
+  async function act(codCollections?: CodCollectionInput[]) {
     if (busy || (status === "scheduled" && overdue)) return;
     const completing = status === "returning";
     setActionError(null);
     setBusy(true);
     try {
-      const response = await request("POST", `/api/deliveries/${id}/${completing ? "complete" : "dispatch"}`);
+      const response = await request(
+        "POST",
+        `/api/deliveries/${id}/${completing ? "complete" : "dispatch"}`,
+        completing && codCollections?.length ? { codCollections } : undefined,
+      );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message ?? "Unable to confirm delivery action. Refresh before retrying.");
       toast.success(completing ? "Warehouse return confirmed" : "Delivery dispatched");
@@ -40,7 +44,10 @@ export function RunActions({ id, status, overdue, warehouseName }: { id: number;
       toast.error(message);
     }
     finally {
-      await Promise.all(resourceQueryRoots.deliveries.map(root => cache.invalidateQueries({ queryKey: [root] })));
+      await Promise.all([
+        ...resourceQueryRoots.deliveries.map(root => cache.invalidateQueries({ queryKey: [root] })),
+        ...resourceQueryRoots.payments.map(root => cache.invalidateQueries({ queryKey: [root] })),
+      ]);
       setBusy(false);
     }
   }
@@ -56,6 +63,7 @@ export function RunActions({ id, status, overdue, warehouseName }: { id: number;
         onConfirm={act}
         error={actionError}
         warehouseName={warehouseName}
+        deliveryId={id}
       />
     );
   }
@@ -82,7 +90,7 @@ export function RunActions({ id, status, overdue, warehouseName }: { id: number;
           <Button type="button" variant="outline" disabled={busy} onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button type="button" disabled={busy || overdue} onClick={act}>
+          <Button type="button" disabled={busy || overdue} onClick={() => void act()}>
             {busy ? "Dispatching…" : "Dispatch delivery"}
           </Button>
         </DialogFooter>

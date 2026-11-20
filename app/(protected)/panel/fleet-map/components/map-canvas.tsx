@@ -152,6 +152,7 @@ function FollowInteractionGuard({
 
 type FleetMapCanvasProps = {
   returnPickups?: ReturnPickup[];
+  onSelectReturn?: (taskId: number) => void;
   mapRef: RefObject<MapRef | null>;
   mode: WorkspaceMode;
   fullscreen: boolean;
@@ -180,6 +181,7 @@ type FleetMapCanvasProps = {
 
 export function FleetMapCanvas({
   returnPickups = [],
+  onSelectReturn,
   mapRef,
   mode,
   fullscreen,
@@ -349,11 +351,13 @@ export function FleetMapCanvas({
                   longitude={task.coordinates![0]}
                   latitude={task.coordinates![1]}
                   anchor="bottom"
+                  onClick={() => onSelectReturn?.(task.id)}
                 >
                   <FleetMarker
                     name={`Return pickup ${task.orderNumber}`}
                     title={`Return pickup · ${task.orderNumber}`}
                     details={task.customer}
+                    interactive
                     pinned
                     priority="location"
                   >

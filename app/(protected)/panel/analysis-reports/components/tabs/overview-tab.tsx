@@ -26,8 +26,10 @@ export function OverviewTab({ filters, refreshKey }: TabProps) {
   return (
     <div className="space-y-4">
       <Basis>Sales by order date, receipts and refunds by their transaction dates, deliveries by scheduled date. Totals become Unverified when an included order lacks saved prices; amount charts exclude those orders. Period: {periodLabel(filters)}.</Basis>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi loading={loading} label="Sales revenue" value={peso(kp.revenue)} delta={kp.revenueDelta} hint="vs previous period" icon={CircleDollarSign} />
+        <Kpi loading={loading} label="Gross profit" value={kp.grossProfit !== undefined ? peso(kp.grossProfit) : "—"} hint={kp.grossMarginPct != null ? `${kp.grossMarginPct.toFixed(1)}% gross margin` : "requires variant COGS"} icon={CircleDollarSign} />
+        <Kpi loading={loading} label="Delivery expenses" value={peso(kp.deliveryExpenses ?? 0)} hint="settled actuals + estimates" icon={Truck} />
         <Kpi loading={loading} label="Orders" value={String(kp.orders)} delta={kp.ordersDelta} hint="non-cancelled" icon={ShoppingCart} />
         <Kpi loading={loading} label="Net cashflow" value={peso(kp.cash)} delta={kp.cashDelta} hint="cash basis" icon={Wallet} />
         <Kpi loading={loading} label="Outstanding balance" value={peso(kp.outstanding)} hint="on filtered orders" icon={Scale} />

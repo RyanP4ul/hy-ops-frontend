@@ -5,6 +5,12 @@ export type DeliveryExpense = {
   delivery_allowance: string;
   fuel: string;
   toll: string;
+  actual_delivery_allowance?: string | null;
+  actual_fuel?: string | null;
+  actual_toll?: string | null;
+  settlement_notes?: string | null;
+  settled_at?: string | null;
+  version?: number;
   status: "pending" | "approved" | "rejected";
 };
 
@@ -22,6 +28,8 @@ export type DeliveriesRow = {
     stop_id?: number;
     return_id?: number | null;
     return_status?: string | null;
+    return_disposition?: string | null;
+    return_version?: number | null;
     order_id: number;
     order_number: string;
     status: string;
@@ -29,7 +37,14 @@ export type DeliveriesRow = {
     shipping_address: string | null;
     customer_address: string | null;
   }[];
-  pickups?: { id: number; orderNumber: string; status: string }[];
+  pickups?: {
+    id: number;
+    orderNumber: string;
+    status: string;
+    version?: number;
+    disposition?: string | null;
+    items?: { inventoryId?: number; name: string; qty: number }[];
+  }[];
   warehouse: {
     id: number;
     name: string;

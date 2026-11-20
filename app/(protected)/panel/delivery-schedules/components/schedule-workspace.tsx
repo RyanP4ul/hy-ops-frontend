@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { Check, MapPin, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QueryFeedback } from "@/components/query-feedback";
+import { formatTime12h } from "@/lib/departure-recommendations";
 import { formatCurrency } from "@/utils/date-util";
 import { useDeliverySchedule } from "../provider";
 
@@ -35,7 +36,18 @@ export function ScheduleWorkspace({ children, disabled, title, description }: {
         <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Delivery run</h3><span className="rounded-full border px-2 py-0.5 text-xs">{ids.length} stops</span></div>
         <dl className="hidden space-y-3 text-sm lg:block">
           <div><dt className="text-xs text-muted-foreground">Warehouse</dt><dd className="mt-1 font-medium">{warehouseCB.inputValue || (values.warehouse_id && values.warehouse_id > 0 ? `Warehouse #${values.warehouse_id}` : "Choose a warehouse")}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Departure (Manila)</dt><dd className="mt-1">{values.scheduled_date ? format(values.scheduled_date, "MMM d, yyyy") : "Choose a date"}<br />{values.scheduled_time || "Choose a time"}</dd></div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Departure (Manila)</dt>
+            <dd className="mt-1 tabular-nums">
+              <span className={values.scheduled_date ? "font-medium" : "text-muted-foreground"}>
+                {values.scheduled_date ? format(values.scheduled_date, "EEE, MMM d, yyyy") : "Choose a date"}
+              </span>
+              <br />
+              <span className={values.scheduled_time ? "font-medium" : "text-muted-foreground"}>
+                {values.scheduled_time ? formatTime12h(values.scheduled_time) : "Choose a time"}
+              </span>
+            </dd>
+          </div>
           <div><dt className="text-xs text-muted-foreground">Vehicle</dt><dd className="mt-1">{vehicleCB.inputValue || "Not assigned"}</dd></div>
           <div><dt className="text-xs text-muted-foreground">Delivery expenses</dt><dd className="mt-1 font-semibold">{formatCurrency(expense)}</dd></div>
         </dl>
@@ -59,12 +71,45 @@ export function ScheduleWorkspace({ children, disabled, title, description }: {
       </div>
     </aside>
     <main ref={editor} className="min-w-0 px-4 py-5 sm:px-7 lg:min-h-0 lg:overflow-y-auto">
-      <nav aria-label="Delivery schedule progress" className="mb-6 grid grid-cols-3 gap-1 rounded-xl border bg-muted/30 p-1 sm:grid-cols-6">
-        {labels.map((label, index) => <Button key={label} type="button" variant="ghost" aria-current={step === index ? "step" : undefined}
-          disabled={disabled || index > step} onClick={() => setStep(index)}
-          className={`h-auto min-w-0 flex-col gap-1 rounded-lg px-1 py-2 text-[11px] ${step === index ? "bg-foreground text-background hover:bg-foreground hover:text-background" : ""}`}>
-          <span className="flex size-5 items-center justify-center rounded-full border text-[10px]">{index < step ? <Check className="size-3" /> : index + 1}</span>{label}
-        </Button>)}
+      <nav aria-label="Delivery schedule progress" className="mb-6 rounded-xl border bg-muted/30 p-1">
+        <ol className="grid grid-cols-3 gap-1 sm:grid-cols-6">
+          {labels.map((label, index) => {
+            const isCompleted = index < step;
+            const isActive = step === index;
+            return (
+              <li key={label} className="min-w-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-current={isActive ? "step" : undefined}
+                  disabled={disabled || index > step}
+                  onClick={() => setStep(index)}
+                  className={`h-auto w-full min-w-0 flex-col gap-1 rounded-lg px-1 py-2 text-[11px] transition-colors ${
+                    isActive
+                      ? "bg-foreground text-background shadow-xs hover:bg-foreground hover:text-background"
+                      : isCompleted
+                        ? "text-foreground hover:bg-background/80"
+                        : "text-muted-foreground"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`flex size-5 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                      isActive
+                        ? "border-background/30 bg-background/15 text-background"
+                        : isCompleted
+                          ? "border-primary/30 bg-primary/10 text-primary"
+                          : "border-border bg-background"
+                    }`}
+                  >
+                    {isCompleted ? <Check className="size-3" /> : index + 1}
+                  </span>
+                  <span className="truncate">{label}</span>
+                </Button>
+              </li>
+            );
+          })}
+        </ol>
       </nav>
       <div className={description ? "mb-6" : "mb-4"}><p className="mb-1 text-xs font-medium text-muted-foreground">STEP {step + 1} OF 6</p><h2 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none">{title}</h2>{description && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>}</div>
       <div className="min-w-0 space-y-5">{children}</div>

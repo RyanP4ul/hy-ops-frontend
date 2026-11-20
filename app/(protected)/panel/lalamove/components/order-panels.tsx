@@ -19,7 +19,6 @@ import {
 
 const DELIVERY_METHODS = [
   { value: "INTERNAL", label: "Company" },
-  { value: "PICKUP", label: "Pickup" },
   { value: "LALAMOVE", label: "Lalamove" },
 ] as const;
 
