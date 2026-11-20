@@ -805,69 +805,6 @@ export function ViewOrderDetails({
           </section>
         )}
 
-      {/* Split Shipments / Staging */}
-      {(order.staging_bay ||
-        order.staged_at ||
-        order.parent_order_number ||
-        (order.split_children && order.split_children.length > 0)) && (
-        <section className="space-y-2.5 rounded-lg border p-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Warehouse Staging &amp; Shipments
-          </h3>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {order.staging_bay && (
-              <ViewOrderItem label="Staging Bay" value={order.staging_bay} />
-            )}
-            {order.staged_at && (
-              <ViewOrderItem
-                label="Verified Staged"
-                value={formatDateTime(order.staged_at)}
-              />
-            )}
-            {order.parent_order_number && (
-              <ViewOrderItem
-                label="Split From"
-                value={order.parent_order_number}
-              />
-            )}
-          </dl>
-          {order.split_reason && (
-            <p className="text-xs text-muted-foreground">
-              Split note: {order.split_reason}
-            </p>
-          )}
-          {order.split_children && order.split_children.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">
-                Split Shipments ({order.split_children.length})
-              </p>
-              <ul className="divide-y rounded-md border">
-                {order.split_children.map((child) => (
-                  <li
-                    key={child.id}
-                    className="flex items-center justify-between gap-2 px-3 py-2 text-xs"
-                  >
-                    <button
-                      type="button"
-                      disabled={!onSelectOrder}
-                      onClick={() => onSelectOrder?.(child.id)}
-                      className="font-medium text-foreground hover:underline disabled:no-underline"
-                    >
-                      {child.order_number} ({child.total_quantity} units)
-                    </button>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getOrderStatusBadgeClass(child.status)}`}
-                    >
-                      {formatOrderLabel(child.status)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
-      )}
-
       {/* Notes */}
       {order.notes?.trim() && (
         <section className="space-y-1.5 rounded-lg border p-4">

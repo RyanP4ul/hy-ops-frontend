@@ -158,22 +158,8 @@ export function formatOrderGroupCode(groupNumber?: string | null): string {
 export type OrderForm = z.infer<typeof orderSchema>;
 
 export type OrderItemDetailView = Omit<OrderItemDetail, "price"> & {
-  id: number;
   product_name?: string | null;
-  picked_qty?: number;
-  packed_qty?: number;
-  weight_kg?: number | null;
-  unit?: string | null;
   price: number | null;
-};
-
-export type SplitShipmentSummary = {
-  id: number;
-  order_number: string;
-  status: string;
-  split_sequence: number | null;
-  split_reason: string | null;
-  total_quantity: number;
 };
 
 export type CombinedPaymentInfo = { payment_number: string; amount: number; allocated_amount: number; reference_number?: string | null };
@@ -210,13 +196,6 @@ export type OrderDetail = Omit<OrderForm, "items" | "payment_method" | "payment_
   customer_phone?: string | null;
   status?: string;
   tracking_token?: string | null;
-  staging_bay?: string | null;
-  staged_at?: string | null;
-  parent_order_id?: number | null;
-  parent_order_number?: string | null;
-  split_sequence?: number | null;
-  split_reason?: string | null;
-  split_children?: SplitShipmentSummary[];
   created_at?: string | null;
   updated_at?: string | null;
   items: OrderItemDetailView[];

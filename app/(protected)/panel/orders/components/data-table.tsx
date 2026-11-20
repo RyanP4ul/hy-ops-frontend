@@ -43,8 +43,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { PickPackAction } from "./pick-pack-dialog";
-import { SplitOrderAction } from "./split-order-dialog";
 import { debounce } from "@/utils/debounce";
 import { formatOrderGroupCode, type OrderTableRow } from "@/schema/order";
 import { useOrders } from "../provider";
@@ -693,27 +691,36 @@ export default function DataTable() {
                 </Tooltip>
               )}
 
-              {/* Pick, Pack & Stage -> Ready for Scheduling: PROCESSING */}
-              {item.status === "PROCESSING" && item.delivery_type !== "WALK_IN" && (
-                <PickPackAction
-                  orderId={item.id}
-                  orderNumber={item.product_number}
-                  disabled={ordersQuery.isFetching}
-                />
-              )}
+              {/* Ready for Scheduling: PROCESSING */}
+              {item.status === "PROCESSING" && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Ready for scheduling"
+                        disabled={ordersQuery.isFetching}
+                        className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                        onClick={() => {
+                          setSelected(item);
 
-              {/* Split Shipment across multiple trucks: PENDING / PROCESSING / SCHEDULING */}
-              {(item.status === "PENDING" ||
-                item.status === "PROCESSING" ||
-                item.status === "SCHEDULING") &&
-                item.delivery_type !== "WALK_IN" &&
-                (item.total_quantity ?? 0) >= 2 && (
-                  <SplitOrderAction
-                    orderId={item.id}
-                    orderNumber={item.product_number}
-                    disabled={ordersQuery.isFetching}
+                          openModal(DialogMode.CUSTOM, {
+                            title: "Ready for Scheduling",
+                            description: `Verify prepared items and move ${item.product_number || `order #${item.id}`} to delivery scheduling.`,
+                            action: "Ready for scheduling",
+                          });
+                        }}
+                      >
+                        <CalendarCheck className="size-4" aria-hidden="true" />
+                      </Button>
+                    }
                   />
-                )}
+                  <TooltipContent>
+                    <p>Ready for scheduling</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
               {(item.status === "SCHEDULING" ||
                 item.status === "SCHEDULED" ||
