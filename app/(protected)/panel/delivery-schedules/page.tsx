@@ -19,8 +19,8 @@ export default function Page() {
             <DeliveryScheduleDialog />
             <DeliverySchedulePage />
           </section>
+          <SubDialog />
         </ModalProvider>
-        <SubDialog />
       </DeliveryScheduleProvider>
     </MotionPage>
   );

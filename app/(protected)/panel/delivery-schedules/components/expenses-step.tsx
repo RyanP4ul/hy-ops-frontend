@@ -24,27 +24,9 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { parseDeliveryCoordinates } from "@/schema/delivery-schedule";
 import { formatCurrency } from "@/utils/date-util";
 import { useDeliverySchedule } from "../provider";
-
-function parseCoordinate(
-  lat: string | null | undefined,
-  lng: string | null | undefined,
-): [number, number] | null {
-  if (!lat?.trim() || !lng?.trim()) return null;
-  const latitude = Number(lat);
-  const longitude = Number(lng);
-  if (
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude) ||
-    Math.abs(latitude) > 90 ||
-    Math.abs(longitude) > 180 ||
-    (latitude === 0 && longitude === 0)
-  ) {
-    return null;
-  }
-  return [longitude, latitude];
-}
 
 function formatDuration(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes <= 0) return "0 min";
@@ -84,7 +66,7 @@ export function ExpensesStep() {
     const warehouse = warehouseQuery.data?.rows.find(
       (row) => row.id === warehouseId,
     );
-    const warehouseCoords = parseCoordinate(
+    const warehouseCoords = parseDeliveryCoordinates(
       warehouse?.latitude,
       warehouse?.longitude,
     );
@@ -99,7 +81,7 @@ export function ExpensesStep() {
     const orders = orderDetailQuery.data ?? [];
     (orderIds ?? []).forEach((orderId, idx) => {
       const order = orders.find((row) => row.id === orderId);
-      const coords = parseCoordinate(
+      const coords = parseDeliveryCoordinates(
         order?.shipping_latitude,
         order?.shipping_longitude,
       );
@@ -118,16 +100,17 @@ export function ExpensesStep() {
 
   const estimate = driverExpensesMutation.data;
   const isPending = driverExpensesMutation.isPending;
+  const routeMatchesTrip = estimate &&
+    estimate.route.isRoundTrip === expenseSettings.values.isRoundTrip &&
+    estimate.route.inputPointCount === mapStops.length;
 
   const isStale = Boolean(
     estimate &&
-      (estimate.route.isRoundTrip !== expenseSettings.values.isRoundTrip ||
+      (!routeMatchesTrip ||
         Number(expenseSettings.values.fuelConsumptionKmPerLiter) !==
           estimate.expenses.fuelConsumptionKmPerLiter ||
         Number(expenseSettings.values.fuelPricePerLiter) !==
-          estimate.expenses.fuelPricePerLiter ||
-        (mapStops.length > 0 &&
-          estimate.route.inputPointCount !== mapStops.length)),
+          estimate.expenses.fuelPricePerLiter),
   );
 
   const tollUnknown =
@@ -150,15 +133,14 @@ export function ExpensesStep() {
       <div className="overflow-hidden rounded-xl border bg-card">
         <DeliveryEstimateMap
           clean
-          coordinates={estimate?.route.geometry.coordinates ?? []}
+          coordinates={routeMatchesTrip ? estimate.route.geometry.coordinates : undefined}
           stops={mapStops}
-          isRoundTrip={expenseSettings.values.isRoundTrip}
           className="h-52 rounded-none border-0 sm:h-60"
         />
 
         {/* Route Metrics + Calculate Action Strip */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 border-t bg-background px-3.5 py-2.5">
-          {estimate ? (
+          {routeMatchesTrip ? (
             <div
               role="status"
               className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1.5 text-xs font-medium"
@@ -232,6 +214,12 @@ export function ExpensesStep() {
                 : "Calculate"}
           </Button>
         </div>
+
+        {!routeMatchesTrip && !isPending && !driverExpensesMutation.error && (
+          <p className="border-t px-3.5 py-2 text-xs text-muted-foreground">
+            {estimate ? "Recalculate" : "Calculate"} to show the driving route.
+          </p>
+        )}
 
         {driverExpensesMutation.error && (
           <div

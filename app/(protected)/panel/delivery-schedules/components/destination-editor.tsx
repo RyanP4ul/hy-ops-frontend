@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { request } from "@/components/http";
-import type { DeliveryScheduleRow } from "@/schema/delivery-schedule";
+import { parseDeliveryCoordinates, type DeliveryScheduleRow } from "@/schema/delivery-schedule";
 
 export function DestinationEditor({ order }: { order: DeliveryScheduleRow }) {
   const [open, setOpen] = useState(false);
@@ -16,8 +16,7 @@ export function DestinationEditor({ order }: { order: DeliveryScheduleRow }) {
   const [saving, setSaving] = useState(false);
   const client = useQueryClient();
   const [version, setVersion] = useState(order.version);
-  const lat = Number(order.shipping_latitude), lon = Number(order.shipping_longitude);
-  const ready = order.shipping_latitude != null && order.shipping_longitude != null && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && (lat !== 0 || lon !== 0);
+  const ready = Boolean(parseDeliveryCoordinates(order.shipping_latitude, order.shipping_longitude));
   async function save() {
     if (saving) return;
     if (!latitude.trim() || !longitude.trim()) { setError("Enter both latitude and longitude."); return; }

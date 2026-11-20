@@ -39,6 +39,7 @@ import { formatCurrency } from "@/utils/date-util";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { REQUESTS } from "@/constant/request";
 import { cn } from "@/lib/utils";
+import { orderPaymentMethodLabels, orderPaymentMethodSchema, type OrderPaymentMethod } from "@/schema/order-payment-method";
 import {
   walkInOrderFormSchema,
   type WalkInCartItem,
@@ -109,9 +110,7 @@ export function WalkInSaleDialog({
   const [notes, setNotes] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   const [cart, setCart] = useState<WalkInCartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<
-    "CASH" | "BANK_TRANSFER" | "CARD"
-  >("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<OrderPaymentMethod>("CASH");
   const [paymentType, setPaymentType] = useState("");
   const [paymentTypeTouched, setPaymentTypeTouched] = useState(false);
   const [enteredTenderedInput, setAmountTenderedInput] = useState<string>("");
@@ -1246,18 +1245,12 @@ export function WalkInSaleDialog({
                     <legend className="text-xs font-medium text-muted-foreground">
                       Payment
                     </legend>
-                    <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-0.5">
-                      {(
-                        [
-                          { id: "CASH", label: "Cash" },
-                          { id: "BANK_TRANSFER", label: "Bank / Wallet" },
-                          { id: "CARD", label: "Card" },
-                        ] as const
-                      ).map((method) => {
-                        const active = paymentMethod === method.id;
+                    <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-0.5">
+                      {orderPaymentMethodSchema.options.map((method) => {
+                        const active = paymentMethod === method;
                         return (
                           <label
-                            key={method.id}
+                            key={method}
                             className={cn(
                               "cursor-pointer rounded-md px-2 py-1.5 text-center text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-ring",
                               active
@@ -1268,14 +1261,14 @@ export function WalkInSaleDialog({
                             <input
                               type="radio"
                               name="walkin-payment-method"
-                              value={method.id}
+                              value={method}
                               checked={active}
                               onChange={() => {
-                                setPaymentMethod(method.id);
+                                setPaymentMethod(method);
                                 setPaymentType("");
                                 setPaymentTypeTouched(false);
                                 setFormError(null);
-                                if (method.id !== "CASH") {
+                                if (method === "BANK_TRANSFER") {
                                   setAmountTenderedInput(
                                     cartTotal > 0
                                       ? cartTotal.toFixed(2)
@@ -1286,24 +1279,23 @@ export function WalkInSaleDialog({
                               }}
                               className="sr-only"
                             />
-                            {method.label}
+                            {orderPaymentMethodLabels[method]}
                           </label>
                         );
                       })}
                     </div>
                   </fieldset>
 
-                  {paymentMethod !== "CASH" && (
+                  {paymentMethod === "BANK_TRANSFER" && (
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-muted-foreground">
-                        {paymentMethod === "BANK_TRANSFER"
-                          ? "Provider"
-                          : "Card network"}{" "}
+                      <label htmlFor="walkin-payment-provider" className="block text-xs font-medium text-muted-foreground">
+                        Bank / e-wallet{" "}
                         <span aria-hidden="true" className="text-destructive">
                           *
                         </span>
                       </label>
                       <PaymentTypeCombobox
+                        id="walkin-payment-provider"
                         key={paymentMethod}
                         method={paymentMethod}
                         value={paymentType}

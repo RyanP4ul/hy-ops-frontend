@@ -115,10 +115,10 @@ test("Orders create wizard adds, edits, deletes draft items and checks out with 
   await expect(addButton).toBeFocused();
   const catalogItem = drawer.getByRole("button", { name: /LIVE-SKU/ });
   await addButton.click();
-  await drawer.getByRole("button", { name: "Selected", exact: true }).click();
+  await drawer.getByRole("button", { name: "In order", exact: true }).click();
   await expect(catalogItem.getByText("2 in this order", { exact: true })).toBeVisible();
   await drawer.getByRole("searchbox", { name: "Search warehouse stock" }).fill("LIVE-SKU");
-  await drawer.getByRole("button", { name: "Unselected", exact: true }).click();
+  await drawer.getByRole("button", { name: "Not in order", exact: true }).click();
   await expect(drawer.getByText("No matches for this search and filter.")).toBeVisible();
   await drawer.getByRole("button", { name: "All", exact: true }).click();
   await expect(catalogItem.getByText("2 in this order", { exact: true })).toBeVisible();
@@ -146,6 +146,44 @@ test("Orders create wizard adds, edits, deletes draft items and checks out with 
   await main.getByRole("button", { name: "Create order", exact: true }).click();
   const response = await posted; expect(response.status(), await response.text()).toBe(200);
   await expect(main).toHaveCount(0); expect(errors).toEqual([]);
+});
+
+test("Create Order adds multiple warehouse items with their own quantities", async ({ page }) => {
+  const sku = `BULK-${Date.now()}`;
+  const product = await json(page.request, "POST", "/products", {
+    name: "Bulk picker fixture", version: 0, variants: [{
+      name: "Bulk picker variant", sku, price: "5.50", unit: "box", description: "Fixture",
+      width_value: "0", width_unit: "m", length_value: "0", length_unit: "m", weight_kg: "0",
+    }],
+  });
+  const inventory = await json(page.request, "POST", "/inventory", {
+    warehouse_id: 1, product_variant_id: product.variants[0].id, quantity: 8,
+  });
+
+  const main = await openWizard(page);
+  await main.getByRole("button", { name: "Next: Order items", exact: true }).click();
+  await main.getByRole("button", { name: "Add item", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Add item", exact: true });
+  const search = picker.getByRole("searchbox", { name: "Search warehouse stock" });
+  const quantity = picker.getByRole("spinbutton", { name: "Quantity", exact: true });
+  await search.fill("LIVE-SKU");
+  await picker.getByRole("button", { name: /LIVE-SKU/ }).click();
+  await quantity.fill("3");
+  await search.fill(sku);
+  await picker.getByRole("button", { name: new RegExp(sku) }).click();
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("2");
+
+  const verified = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === "/api/inventory/details" && url.searchParams.get("ids")?.split(",").includes(String(inventory.id)) === true;
+  });
+  await picker.getByRole("button", { name: "Add 2 items", exact: true }).click();
+  expect(new URL((await verified).url()).searchParams.get("ids")?.split(",")).toHaveLength(2);
+  await expect(picker).toHaveCount(0);
+  const items = main.getByRole("region", { name: "Order items" });
+  await expect(items.getByRole("row").filter({ hasText: "LIVE-SKU" }).getByRole("cell", { name: "3", exact: true })).toBeVisible();
+  await expect(items.getByRole("row").filter({ hasText: sku }).getByRole("cell", { name: "2", exact: true })).toBeVisible();
 });
 
 test("Orders column sorting and newest/oldest control return successful server results", async ({ page }) => {

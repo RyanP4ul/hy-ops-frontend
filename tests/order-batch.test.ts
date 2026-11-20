@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { orderBatchFormSchema, toOrderBatchPayload, allocateCombinedPayment, draftForPaymentMode, previewCombinedOrders } from "../schema/order-batch";
 
-const order = { warehouse_id: 1, customer_id: 7, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "CASH", amount_paid: 0, is_custom_shipping: false, customer_address_id: 1, items: [{ inventory_id: 1, product_id: 1, product_variant_name: "Variant", product_variant_sku: "SKU", price: 12.34, quantity: 1, description: "" }] };
+const order = { warehouse_id: 1, customer_id: 7, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "CASH" as const, amount_paid: 0, is_custom_shipping: false, customer_address_id: 1, items: [{ inventory_id: 1, product_id: 1, product_variant_name: "Variant", product_variant_sku: "SKU", price: 12.34, quantity: 1, description: "" }] };
 
 test("batch payload selects the customer once and preserves each order's destination, items and payment", () => {
   const batch = orderBatchFormSchema.parse({ customer_id: 7, orders: [order, { ...order, customer_address_id: 2, amount_paid: 5, payment_method: "BANK_TRANSFER", payment_type: " BDO ", items: [{ ...order.items[0], quantity: 2 }] }] });
@@ -35,7 +35,7 @@ test("a prepared order cannot bypass payment or price validation after another o
 });
 
 test("combined mode validates one payment, preserves original per-order entries, and sends one shared method", () => {
-  const original = { ...order, payment_method: "BANK_TRANSFER", payment_type: "Original bank", amount_paid: 5 };
+  const original = { ...order, payment_method: "BANK_TRANSFER" as const, payment_type: "Original bank", amount_paid: 5 };
   const normalized = draftForPaymentMode(original, "COMBINED");
   expect(normalized).toMatchObject({ payment_method: "CASH", amount_paid: 0 });
   expect(original).toMatchObject({ payment_type: "Original bank", amount_paid: 5 });
@@ -52,8 +52,8 @@ test("combined mode validates one payment, preserves original per-order entries,
   expect(allocateCombinedPayment(37.02, [12.34, 24.68])).toEqual([12.34, 24.68]);
 });
 
-test("combined mode rejects incomplete payment details, excess amounts and fractional centavos", () => {
-  for (const payment of [undefined, { payment_method: "CASH", amount_paid: 0 }, { payment_method: "CASH", amount_paid: 50 }, { payment_method: "BANK_TRANSFER", amount_paid: 5, payment_type: " " }, { payment_method: "CASH", amount_paid: 1.001 }]) {
+test("combined mode rejects card payments, incomplete details, excess amounts and fractional centavos", () => {
+  for (const payment of [undefined, { payment_method: "CASH", amount_paid: 0 }, { payment_method: "CASH", amount_paid: 50 }, { payment_method: "BANK_TRANSFER", amount_paid: 5, payment_type: " " }, { payment_method: "CASH", amount_paid: 1.001 }, { payment_method: "CARD", payment_type: "Visa", amount_paid: 5 }]) {
     expect(orderBatchFormSchema.safeParse({ customer_id: 7, payment_mode: "COMBINED", combined_payment: payment, orders: [order, order] }).success).toBe(false);
   }
 });

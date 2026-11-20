@@ -15,6 +15,7 @@ import {
 import { useModal } from "@/components/providers/modal-provider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DialogMode } from "@/types/dialog";
 import {
   getCoreRowModel,
@@ -23,6 +24,7 @@ import {
   type ColumnDef,
   type ExpandedState,
   type Row,
+  type RowSelectionState,
   type Updater,
 } from "@tanstack/react-table";
 import {
@@ -40,9 +42,11 @@ import {
   Store,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { debounce } from "@/utils/debounce";
 import { formatOrderGroupCode, type OrderTableRow } from "@/schema/order";
 import { useOrders } from "../provider";
+import { BulkOrderActions, canSelectBulkOrder } from "./bulk-order-actions";
 import {
   Select,
   SelectContent,
@@ -84,10 +88,20 @@ export default function DataTable() {
     viewOrder,
   } = useOrders();
   const { openModal } = useModal();
+  const statusFilter = useSearchParams().get("status");
+  const selectionScope = JSON.stringify([page, search, deliveryType, sortBy, statusFilter]);
 
   const [searchInput, setSearchInput] = useState(search);
   const [manualExpanded, setManualExpanded] = useState<Record<string, boolean>>({});
   const [searchCollapsed, setSearchCollapsed] = useState<Record<string, boolean>>({});
+  const [selection, setSelection] = useState<{ scope: string; rows: RowSelectionState }>({
+    scope: selectionScope,
+    rows: {},
+  });
+
+  if (selection.scope !== selectionScope) {
+    setSelection({ scope: selectionScope, rows: {} });
+  }
 
   const rows = useMemo(() => ordersQuery.data?.rows ?? [], [ordersQuery.data?.rows]);
   const groupRowIds = useMemo(
@@ -192,6 +206,42 @@ export default function DataTable() {
 
   const columns = useMemo<ColumnDef<OrderTableRow>[]>(
     () => [
+      {
+        id: "select",
+        header: ({ table }) => {
+          const visibleOrders = table.getRowModel().rows.filter((row) => row.getCanSelect());
+          const selectedCount = visibleOrders.filter((row) => row.getIsSelected()).length;
+          const allSelected = visibleOrders.length > 0 && selectedCount === visibleOrders.length;
+
+          return (
+            <Checkbox
+              aria-label="Select all visible eligible orders"
+              checked={allSelected}
+              indeterminate={selectedCount > 0 && !allSelected}
+              disabled={visibleOrders.length === 0 || ordersQuery.isFetching}
+              onCheckedChange={(checked) => {
+                table.setRowSelection((current) => {
+                  const next = { ...current };
+                  for (const row of visibleOrders) {
+                    if (checked) next[row.id] = true;
+                    else delete next[row.id];
+                  }
+                  return next;
+                });
+              }}
+            />
+          );
+        },
+        cell: ({ row }) =>
+          row.getCanSelect() && (
+            <Checkbox
+              aria-label={`Select ${row.original.product_number || `order #${row.original.id}`}`}
+              checked={row.getIsSelected()}
+              disabled={ordersQuery.isFetching}
+              onCheckedChange={(checked) => row.toggleSelected(checked)}
+            />
+          ),
+      },
       {
         accessorKey: "product_number",
         header: () => sortableHeader("product_number", "Order Number"),
@@ -758,9 +808,17 @@ export default function DataTable() {
     data: rows,
     columns,
     pageCount: Math.ceil((ordersQuery.data?.total ?? 0) / page.pageSize),
-    state: { pagination: page, expanded: expandedState },
+    state: { pagination: page, expanded: expandedState, rowSelection: selection.rows },
     onPaginationChange: setPage,
     onExpandedChange: handleExpandedChange,
+    onRowSelectionChange: (updater) => {
+      setSelection((current) => ({
+        ...current,
+        rows: typeof updater === "function" ? updater(current.rows) : updater,
+      }));
+    },
+    enableRowSelection: (row) => canSelectBulkOrder(row.original),
+    enableSubRowSelection: false,
     getRowId: (row) =>
       row.entry_type === "GROUP" && row.order_group_id
         ? `group:${row.order_group_id}`
@@ -770,6 +828,10 @@ export default function DataTable() {
     getExpandedRowModel: getExpandedRowModel(),
     manualPagination: true,
   });
+
+  const selectedOrders = table.getSelectedRowModel().flatRows
+    .filter((row) => row.getCanSelect())
+    .map((row) => row.original);
 
   useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
 
@@ -788,6 +850,9 @@ export default function DataTable() {
   }
 
   const getRowClassName = useCallback((row: Row<OrderTableRow>) => {
+    if (row.getIsSelected() && row.getCanSelect()) {
+      return "bg-primary/5 hover:bg-primary/10";
+    }
     if (row.depth > 0) {
       return "bg-muted/20 hover:bg-muted/35";
     }
@@ -944,6 +1009,18 @@ export default function DataTable() {
           and missing historical prices are marked Unverified.
         </p>
       </div>
+      <BulkOrderActions
+        orders={selectedOrders}
+        disabled={ordersQuery.isFetching || ordersQuery.isError}
+        onClear={() => table.resetRowSelection()}
+        onUpdated={(ids) => {
+          table.setRowSelection((current) => {
+            const next = { ...current };
+            for (const id of ids) delete next[`order:${id}`];
+            return next;
+          });
+        }}
+      />
       <QueryFeedback query={ordersQuery} label="orders" />
       <ManagementTableView
         table={table}

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { orderSchema, type OrderForm } from "./order";
+import { orderPaymentMethodSchema } from "./order-payment-method";
 
 export type PaymentMode = "SEPARATE" | "COMBINED";
 export const combinedPaymentSchema = z.object({
-  payment_method: z.enum(["CASH", "BANK_TRANSFER", "CARD"]),
+  payment_method: orderPaymentMethodSchema,
   payment_type: z.string().trim().max(100).optional(),
   amount_paid: z.number().positive("Enter the combined amount received").max(9999999999.99),
   reference_number: z.string().trim().max(100).optional(),

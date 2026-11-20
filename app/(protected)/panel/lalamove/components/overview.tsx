@@ -479,7 +479,7 @@ export function Overview({
                       variant="outline"
                       nativeButton={false}
                       render={
-                        <Link href={`/panel/lalamove-1?orderId=${order.id}`} />
+                        <Link href={`/panel/lalamove?orderId=${order.id}`} />
                       }
                     >
                       Review
@@ -622,7 +622,7 @@ export function Overview({
                     )}
                     <div className="min-w-0">
                       <Link
-                        href={`/panel/lalamove-1?orderId=${booking.order_id}`}
+                        href={`/panel/lalamove?orderId=${booking.order_id}`}
                         className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
                       >
                         {booking.order_number || `Order #${booking.order_id}`}
@@ -650,7 +650,7 @@ export function Overview({
 
                     <div className="md:text-right">
                       <Link
-                        href={`/panel/lalamove-1?orderId=${booking.order_id}`}
+                        href={`/panel/lalamove?orderId=${booking.order_id}`}
                         aria-label={`View ${booking.order_number || booking.order_id}`}
                         className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                       >

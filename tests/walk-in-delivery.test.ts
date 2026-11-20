@@ -28,6 +28,7 @@ describe("walk-in fulfillment validation", () => {
   test("delivery retains full payment and stock availability requirements", () => {
     expect(walkInOrderFormSchema.safeParse({ ...delivery, amount_tendered: 999 }).success).toBe(false);
     expect(walkInOrderFormSchema.safeParse({ ...delivery, items: [{ ...cart.items[0], quantity: 151 }] }).success).toBe(false);
-    expect(walkInOrderFormSchema.safeParse({ ...delivery, payment_method: "CARD" }).success).toBe(false);
+    expect(walkInOrderFormSchema.safeParse({ ...delivery, payment_method: "CARD", payment_type: "Visa" }).success).toBe(false);
+    expect(walkInOrderFormSchema.safeParse({ ...delivery, payment_method: "BANK_TRANSFER", payment_type: "BDO" }).success).toBe(true);
   });
 });

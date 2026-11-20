@@ -28,7 +28,7 @@ import type {
   Setup,
 } from "./types";
 
-const BASE_PATH = "/panel/lalamove-1";
+const BASE_PATH = "/panel/lalamove";
 
 export function LalamoveWorkspace() {
   const params = useSearchParams();

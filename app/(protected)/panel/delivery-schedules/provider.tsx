@@ -4,11 +4,11 @@ import { useComboBoxPagination } from "@/components/base-pagination";
 import { request } from "@/components/http";
 import {
   DeliveryScheduleFormData,
-  OrderGroupFields,
   DeliveryScheduleOrderDetail,
   DeliveryScheduleRow,
   SchedulingEntry,
   deliveryScheduleSchema,
+  parseDeliveryCoordinates,
 } from "@/schema/delivery-schedule";
 import {
   SessionsAndLogsTableSchemaType,
@@ -30,11 +30,15 @@ import {
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useAuth } from "@/components/providers/auth-provider";
+import { format } from "date-fns";
 
 type WarehouseOption = { id: number; name: string; latitude?: string | null; longitude?: string | null };
 type DriverOption = { id: number; name: string; phone_number: string | null };
 type VehicleOption = { id: number; plate_number: string; type: string };
 type SortedRoute = { locations: { id: string; name: string }[] };
+type AvailableDate = { date: string; available_slots: number };
+type ReadySelection = { groupId: string; label?: string } | { order: SchedulingEntry };
+const readyOrdersPageSize = 10;
 
 type SubType = {
   id?: number;
@@ -47,7 +51,9 @@ type DeliveryScheduleType = {
   removeSelection: (orderId: number) => void;
   startSchedule: (warehouseId?: number, orderIds?: number[]) => void;
   addReadyGroup: (groupId: string) => Promise<boolean>;
+  addReadyOrders: (entries: SchedulingEntry[]) => Promise<boolean>;
   groupPending: boolean;
+  availableStopSlots: number;
   deliveryScheduleQuery: ReturnType<
     typeof useQuery<{
       rows: SchedulingEntry[];
@@ -75,7 +81,7 @@ type DeliveryScheduleType = {
   orderQuery: ReturnType<
     typeof useQuery<{
       rows: SchedulingEntry[];
-      total: number;
+      totalPages: number;
     }>
   >;
 
@@ -83,14 +89,7 @@ type DeliveryScheduleType = {
     typeof useQuery<DeliveryScheduleOrderDetail[] | null>
   >;
 
-  availableDateQuery: ReturnType<
-    typeof useQuery<
-      {
-        date: string;
-        available_slots: number;
-      }[]
-    >
-  >;
+  availableDateQuery: ReturnType<typeof useQuery<AvailableDate[]>>;
 
   driverQuery: ReturnType<
     typeof useQuery<{
@@ -173,6 +172,7 @@ export function DeliveryScheduleProvider({
 
   const order_ids = form.watch("order_ids");
   const warehouseId = form.watch("warehouse_id");
+  const scheduledDate = form.watch("scheduled_date");
 
   const warehouseQuery = useQuery({
     queryKey: ["warehouses", "schedule-options", userQuery.data?.sub, warehouseCB.searchQuery],
@@ -243,11 +243,13 @@ export function DeliveryScheduleProvider({
 
   const orderQuery = useQuery({
     queryKey: ["order", "scheduling", warehouseId, orderCB.page, orderCB.searchQuery],
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === warehouseId ? previous : undefined,
     queryFn: async () => {
       const url_params = new URLSearchParams();
 
       url_params.append("page", orderCB.page.toString());
-      url_params.append("limit", "10");
+      url_params.append("limit", String(readyOrdersPageSize));
 
       if (orderCB.searchQuery.trim().length > 0) {
         url_params.append("search", orderCB.searchQuery);
@@ -264,14 +266,14 @@ export function DeliveryScheduleProvider({
         throw new Error("Unable to load ready orders. Please retry.");
       }
 
-      const result = { rows: await response.json(), total: Number(response.headers.get("X-Total-Count") ?? 0) };
-
-      orderCB.setTotalPages(Math.ceil(result.total / 10));
-
-      return result;
+      const total = Number(response.headers.get("X-Total-Count") ?? 0);
+      return {
+        rows: (await response.json()) as SchedulingEntry[],
+        totalPages: Math.max(1, Math.ceil(total / readyOrdersPageSize)),
+      };
     },
 
-    enabled: step === 2 && warehouseId > 0,
+    enabled: step === 2 && warehouseId > 0 && sub.is_open && sub.mode === DialogMode.INSERT,
   });
 
   const orderDetailQuery = useQuery({
@@ -308,11 +310,14 @@ export function DeliveryScheduleProvider({
         throw new Error("Failed to fetch");
       }
 
-      return await response.json();
+      return (await response.json()) as AvailableDate[];
     },
 
     enabled: warehouseId > 0,
   });
+
+  const dateKey = scheduledDate ? format(scheduledDate, "yyyy-MM-dd") : undefined;
+  const availableStopSlots = availableDateQuery.data?.find((day) => day.date === dateKey)?.available_slots ?? 0;
 
   function removeSelection(orderId: number) {
     const selected = orderDetailQuery.data?.find(order => order.id === orderId);
@@ -322,32 +327,60 @@ export function DeliveryScheduleProvider({
     form.setValue("order_ids", form.getValues("order_ids").filter(id => !groupIds.has(id)), { shouldDirty: true, shouldValidate: true });
   }
 
-  async function addReadyGroup(groupId: string) {
-    if (groupPending) return false;
+  async function addReadySelections(selections: ReadySelection[], stopLimit?: number) {
+    if (groupPending || selections.length === 0) return false;
     setGroupPending(true);
     try {
       const warehouse = form.getValues("warehouse_id");
-      const response = await request("GET", `/api/orders/groups/${groupId}/ready?warehouse_id=${warehouse}`);
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.message || "Unable to load this order group.");
-      const rows = result.rows as (OrderGroupFields & { id: number; shipping_latitude: string | null; shipping_longitude: string | null })[];
-      if (!rows.length) throw new Error("This group has no ready orders in this warehouse.");
-      if (rows.some(row => row.shipping_latitude == null || row.shipping_longitude == null ||
-        !Number.isFinite(Number(row.shipping_latitude)) || !Number.isFinite(Number(row.shipping_longitude)) ||
-        Math.abs(Number(row.shipping_latitude)) > 90 || Math.abs(Number(row.shipping_longitude)) > 180 ||
-        (Number(row.shipping_latitude) === 0 && Number(row.shipping_longitude) === 0))) {
-        throw new Error("Confirm destination coordinates for every order in this group before adding it.");
+      const pendingIds: number[] = [];
+      for (const selection of selections) {
+        if ("order" in selection) {
+          const { order } = selection;
+          if (order.warehouse_id !== warehouse || !order.can_schedule ||
+              !parseDeliveryCoordinates(order.shipping_latitude, order.shipping_longitude)) {
+            throw new Error(`${order.order_number} needs a confirmed destination and must be ready in this warehouse.`);
+          }
+          pendingIds.push(order.id);
+          continue;
+        }
+        const response = await request("GET", `/api/orders/groups/${selection.groupId}/ready?warehouse_id=${warehouse}`);
+        const result = await response.json().catch(() => null);
+        const label = selection.label ?? result?.group_number ?? "Order group";
+        if (!response.ok) throw new Error(`${label}. ${result?.message || "Unable to load this order group."}`);
+        const rows = result?.rows as Pick<DeliveryScheduleRow, "id" | "shipping_latitude" | "shipping_longitude">[] | undefined;
+        if (!rows?.length) throw new Error(`${label} has no ready orders in this warehouse.`);
+        if (rows.some((row) => !parseDeliveryCoordinates(row.shipping_latitude, row.shipping_longitude))) {
+          throw new Error(`Confirm every destination in ${label} before adding the group.`);
+        }
+        pendingIds.push(...rows.map((row) => row.id));
       }
       if (warehouse !== form.getValues("warehouse_id")) return false;
-      const ids = [...new Set([...form.getValues("order_ids"), ...rows.map(row => row.id)])];
+      const currentIds = form.getValues("order_ids");
+      const ids = [...new Set([...currentIds, ...pendingIds])];
+      if (stopLimit !== undefined && ids.length > stopLimit) {
+        throw new Error(`The selected date has ${stopLimit} available stops. Adjust your selection or choose another date.`);
+      }
       form.setValue("order_ids", ids, { shouldDirty: true, shouldValidate: true });
       form.clearErrors("root");
-      toast.success(`${rows.length} ready orders in ${result.group_number}. Orders already selected are included once.`);
+      const added = ids.length - currentIds.length;
+      if (added > 0) toast.success(`Added ${added} ${added === 1 ? "order" : "orders"} to the delivery.`);
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to add the order group.");
+      toast.error(error instanceof Error ? error.message : "Unable to add the selected orders.");
       return false;
-    } finally { setGroupPending(false); }
+    } finally {
+      setGroupPending(false);
+    }
+  }
+
+  function addReadyGroup(groupId: string) {
+    return addReadySelections([{ groupId }]);
+  }
+
+  function addReadyOrders(entries: SchedulingEntry[]) {
+    return addReadySelections(entries.map((order) => order.order_group_id
+      ? { groupId: order.order_group_id, label: order.order_group_number ?? undefined }
+      : { order }), availableStopSlots);
   }
 
   const driverQuery = useQuery({
@@ -490,8 +523,6 @@ export function DeliveryScheduleProvider({
       );
 
       form.setValue("order_ids", new_order_ids);
-
-      orderQuery.refetch();
     },
   });
 
@@ -499,10 +530,9 @@ export function DeliveryScheduleProvider({
     mutationFn: async () => {
       const warehouse = warehouseQuery.data?.rows.find((row: WarehouseOption) => row.id === form.getValues("warehouse_id"));
       const coordinate = (latitude: string | null | undefined, longitude: string | null | undefined, label: string) => {
-        if (!latitude?.trim() || !longitude?.trim()) throw new Error(`Missing coordinates for ${label}.`);
-        const lat = Number(latitude), lng = Number(longitude);
-        if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180) throw new Error(`Invalid coordinates for ${label}.`);
-        return { latitude: lat, longitude: lng };
+        const point = parseDeliveryCoordinates(latitude, longitude);
+        if (!point) throw new Error(`Confirm the coordinates for ${label} before calculating the driving route.`);
+        return { longitude: point[0], latitude: point[1] };
       };
       const points = [coordinate(warehouse?.latitude, warehouse?.longitude, "the warehouse")];
       if (!order_ids.length) throw new Error("Select at least one delivery order.");
@@ -546,7 +576,11 @@ export function DeliveryScheduleProvider({
     },
   });
 
-  const routeKey = `${warehouseId}:${(order_ids ?? []).join(",")}`;
+  const routeWarehouse = warehouseQuery.data?.rows.find((row: WarehouseOption) => row.id === warehouseId);
+  const routeKey = JSON.stringify([
+    warehouseId, routeWarehouse?.latitude, routeWarehouse?.longitude, order_ids,
+    orderDetailQuery.data?.map((order) => [order.shipping_latitude, order.shipping_longitude]),
+  ]);
   const resetDriverExpenses = driverExpensesMutation.reset;
   useEffect(() => {
     resetDriverExpenses();
@@ -556,7 +590,7 @@ export function DeliveryScheduleProvider({
     <DeliveryScheduleContext.Provider
       value={{
         isStaff,
-        removeSelection, startSchedule, addReadyGroup, groupPending,
+        removeSelection, startSchedule, addReadyGroup, addReadyOrders, groupPending, availableStopSlots,
         deliveryScheduleQuery,
         form,
         page,

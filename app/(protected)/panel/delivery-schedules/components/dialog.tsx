@@ -105,6 +105,7 @@ export default function DeliveryScheduleDialog() {
     setSub,
     orderDetailQuery,
     availableDateQuery,
+    availableStopSlots,
     warehouseCB,
     orderCB,
     driverCB,
@@ -218,7 +219,7 @@ export default function DeliveryScheduleDialog() {
         step === 1 &&
         (availableDateQuery.isError ||
           availableDateQuery.isPending ||
-          getAvailableSlotDate() < 1)
+          availableStopSlots < 1)
       ) {
         form.setError("scheduled_date", {
           message: "No available slots for the selected date.",
@@ -226,8 +227,8 @@ export default function DeliveryScheduleDialog() {
         return;
       }
 
-      if ((step === 1 || step === 2) && form.getValues("order_ids").length > getAvailableSlotDate()) {
-        form.setError(step === 1 ? "scheduled_date" : "order_ids", { message: `This date has ${getAvailableSlotDate()} available stops. Choose a date with enough slots or remove a complete group. Groups must be scheduled together.` });
+      if ((step === 1 || step === 2) && form.getValues("order_ids").length > availableStopSlots) {
+        form.setError(step === 1 ? "scheduled_date" : "order_ids", { message: `This date has ${availableStopSlots} available stops. Choose a date with enough slots or remove orders. Groups must be scheduled together.` });
         return;
       }
       setStep((current) => Math.min(current + 1, steps.length - 1));
@@ -278,13 +279,6 @@ export default function DeliveryScheduleDialog() {
       });
     });
   }
-
-  const getAvailableSlotDate = () => {
-    const date = form.getValues("scheduled_date") || new Date();
-    const dateKey = format(date, "yyyy-MM-dd");
-    const day = availableDateQuery.data?.find((item) => item.date === dateKey);
-    return day?.available_slots ?? 0;
-  };
 
   return (
     <>
@@ -380,7 +374,7 @@ export default function DeliveryScheduleDialog() {
                   Available slots for{" "}
                   {format(form.getValues("scheduled_date"), "PPP")} is{" "}
                   <span className="font-semibold text-green-500 text-lg">
-                    {getAvailableSlotDate()}{" "}
+                    {availableStopSlots}{" "}
                   </span>
                   slot(s) left
                 </AlertDescription>
@@ -492,7 +486,7 @@ export default function DeliveryScheduleDialog() {
                     Orders <span className="text-destructive">*</span>
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Add a single order or a complete group. Arrange each destination in delivery order.
+                    Add orders and complete groups, then arrange the delivery stops.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -513,23 +507,23 @@ export default function DeliveryScheduleDialog() {
                     Sort Order By Distance
                   </Button>
                   <Button
+                    type="button"
                     size="sm"
                     variant="default"
                     onClick={() => {
+                      orderCB.debouncedSearch.cancel();
+                      orderCB.setInputValue("");
+                      orderCB.setSearchQuery("");
+                      orderCB.setPage(0);
                       setSub({
                         is_open: true,
                         mode: DialogMode.INSERT,
                       });
                     }}
-                    disabled={
-                      getAvailableSlotDate() < 1 ||
-                      getAvailableSlotDate() -
-                        form.getValues("order_ids").length <
-                        1
-                    }
+                    disabled={draftOrderIds.length >= availableStopSlots}
                   >
                     <Plus className="mr-1.5 size-3.5" />
-                    Add Order
+                    Add orders
                   </Button>
                 </div>
               </div>
@@ -554,7 +548,7 @@ export default function DeliveryScheduleDialog() {
                   <div className="mt-3 flex flex-wrap justify-between gap-2 text-xs"><span className="text-muted-foreground">{item.item_count} {item.item_count === 1 ? "item" : "items"}</span><span className="font-semibold">{item.total === null ? "Unverified total" : formatCurrency(item.total)}</span></div>
                 </li>)}
               </ol>
-              {!reviewOrders.length && <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No orders selected yet. Add an order or a ready group to build this delivery run.</div>}
+              {!reviewOrders.length && <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No orders selected yet. Add orders to build this delivery run.</div>}
               {(orderDetailQuery.data || []).length > 0 && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   Stops are visited from top to bottom. Use the up and down arrows to change their order before continuing.

@@ -46,6 +46,18 @@ test.beforeAll(async () => {
 
 test("renders clean map at top, hides store names/icons, calculates and updates expenses cleanly", async ({ page }) => {
   const errors: string[] = [];
+  const drivingCoordinates = [
+    [120.906, 14.815],
+    [120.96, 14.792],
+    [121.0437, 14.676],
+    [121.052, 14.608],
+    [121.0244, 14.5547],
+  ];
+  const roadPath = drivingCoordinates.map(([lng, lat]) => ({ lat, lng }));
+  const visiblePaths = () => page.evaluate(() => {
+    const lines = Reflect.get(window, "__googleMapsFixtureLines") as { options: { map?: unknown; path?: unknown } }[];
+    return lines.filter(({ options }) => options.map && options.path).map(({ options }) => options.path);
+  });
   page.on("pageerror", (error) => { console.error("PAGEERROR:", error.message); errors.push(error.message); });
 
   await page.route("https://hyops.test/**", (route) => {
@@ -75,11 +87,9 @@ test("renders clean map at top, hides store names/icons, calculates and updates 
             isRoundTrip: req.isRoundTrip,
             geometry: {
               type: "LineString",
-              coordinates: [
-                [120.906, 14.815],
-                [121.0437, 14.676],
-                [121.0244, 14.5547],
-              ],
+              coordinates: req.isRoundTrip
+                ? [...drivingCoordinates, [120.981, 14.709], drivingCoordinates[0]]
+                : drivingCoordinates,
             },
           },
           tollDetection: {
@@ -122,6 +132,7 @@ test("renders clean map at top, hides store names/icons, calculates and updates 
   await expect(page.getByLabel("Warehouse: Main Warehouse")).toBeVisible();
   await expect(page.getByLabel("Stop 1: ORD-101")).toBeVisible();
   await expect(page.getByLabel("Stop 2: ORD-102")).toBeVisible();
+  await expect.poll(visiblePaths).toEqual([]);
 
   // Map sits above the Allowance input
   const mapBox = await mapRegion.boundingBox();
@@ -154,6 +165,7 @@ test("renders clean map at top, hides store names/icons, calculates and updates 
   // Calculate populates metrics, allowance, fuel, and flags unknown toll
   await page.getByRole("button", { name: "Calculate", exact: true }).click();
   await expect(page.getByText("42.6 km")).toBeVisible();
+  await expect.poll(visiblePaths).toEqual([roadPath]);
   await expect(page.getByText("1h 15m")).toBeVisible();
   await expect(page.getByText("Enter toll")).toBeVisible();
   await expect(page.getByLabel(/Allowance/)).toHaveValue("600");
@@ -163,6 +175,11 @@ test("renders clean map at top, hides store names/icons, calculates and updates 
   await page.getByLabel(/Toll/).fill("120");
   await expect(page.getByText("Enter toll")).toHaveCount(0);
   await expect(page.getByText(/\+ toll/)).toHaveCount(0);
+
+  await page.getByRole("switch", { name: "Round trip" }).press("Space");
+  await expect.poll(visiblePaths).toEqual([]);
+  await page.getByRole("button", { name: "Recalculate", exact: true }).click();
+  await expect.poll(visiblePaths).toEqual([[...roadPath, { lat: 14.709, lng: 120.981 }, roadPath[0]]]);
 
   // WCAG 2.1 AA audit
   await page.addScriptTag({ path: "node_modules/axe-core/axe.min.js" });

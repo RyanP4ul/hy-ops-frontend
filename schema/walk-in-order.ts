@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { orderPaymentMethodSchema } from "./order-payment-method";
 
 export const walkInCartItemSchema = z.object({
   inventory_id: z.number().int().positive("Select an item"),
@@ -27,7 +28,7 @@ export const walkInOrderFormSchema = z
     walk_in_name: z.string().max(60, "Name must be 60 characters or fewer").optional(),
     walk_in_phone: z.string().max(20, "Phone must be 20 characters or fewer").optional(),
     notes: z.string().max(2000, "Notes must be 2000 characters or fewer").optional(),
-    payment_method: z.enum(["CASH", "BANK_TRANSFER", "CARD"]),
+    payment_method: orderPaymentMethodSchema,
     payment_type: z.string().max(100, "Payment type must be 100 characters or fewer").optional(),
     amount_tendered: z.number().nonnegative("Amount tendered must be zero or greater"),
     items: z.array(walkInCartItemSchema).min(1, "Add at least one item to the counter sale"),
@@ -86,7 +87,7 @@ export const walkInOrderFormSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["amount_tendered"],
-        message: "Card and bank transfer payments must match the exact order total",
+        message: "Bank transfer payments must match the exact order total",
       });
     }
   });

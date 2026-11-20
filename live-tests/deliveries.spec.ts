@@ -29,20 +29,25 @@ async function openSchedule(page: Page) {
   return dialog;
 }
 
-test("Delivery schedule modal loads ready orders, selects a named driver and saves the Manila date", async ({ page }) => {
+test("Delivery scheduling adds multiple ready orders in one selection and saves the Manila date", async ({ page }) => {
   const created = await ready(page);
+  const second = await ready(page);
   const pending = await json(page.request, "POST", "/orders", order);
   const api = await json(page.request, "GET", `/orders/cb?warehouse_id=1&search=${created.product_number}`);
   expect(api.rows.map((row: { id: number }) => row.id)).toEqual([created.id]);
   expect(api.rows[0]).toMatchObject({ latitude: "14.600000", longitude: "121.200000" });
   expect((await json(page.request, "GET", `/orders/cb?warehouse_id=1&search=${pending.product_number}`)).total).toBe(0);
   const dialog = await openSchedule(page);
-  await dialog.getByRole("button", { name: "Add Order", exact: true }).click();
-  const sub = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Add Order", exact: true }) });
-  await sub.getByPlaceholder("Select order number...").click();
-  await page.getByRole("option").filter({ hasText: created.product_number }).click();
-  await sub.getByRole("button", { name: "Add Order", exact: true }).click();
+  await dialog.getByRole("button", { name: "Add orders", exact: true }).click();
+  const sub = page.getByRole("dialog", { name: "Add orders", exact: true });
+  const search = sub.getByRole("textbox", { name: "Search ready orders" });
+  await search.fill(created.product_number);
+  await sub.getByRole("checkbox", { name: `Select ${created.product_number}`, exact: true }).check();
+  await search.fill(second.product_number);
+  await sub.getByRole("checkbox", { name: `Select ${second.product_number}`, exact: true }).check();
+  await sub.getByRole("button", { name: "Add 2 orders", exact: true }).click();
   await expect(dialog).toContainText(created.product_number);
+  await expect(dialog).toContainText(second.product_number);
   await dialog.getByRole("button", { name: /^Continue to / }).click();
   await dialog.getByPlaceholder("Select driver...", { exact: true }).click();
   await page.getByRole("option").filter({ hasText: "Live Driver" }).click();
@@ -56,6 +61,7 @@ test("Delivery schedule modal loads ready orders, selects a named driver and sav
   expect(response.status(), await response.text()).toBe(200);
   const payload = response.request().postDataJSON();
   expect(payload.scheduled_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(payload.order_ids).toEqual([created.id, second.id]);
   const result = await response.json();
   expect(result.delivery.driver_name).toBe("Live Driver");
   expect(result.delivery.scheduled_date).toBe(payload.scheduled_date);
@@ -129,21 +135,22 @@ test("Order selector recovers from schedule lookup failure and confirms a legacy
     await route.fulfill({ response, json: rows });
   })());
   const dialog = await openSchedule(page);
-  await dialog.getByRole("button", { name: "Add Order", exact: true }).click();
-  const sub = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Add Order", exact: true }) });
+  await dialog.getByRole("button", { name: "Add orders", exact: true }).click();
+  const sub = page.getByRole("dialog", { name: "Add orders", exact: true });
   await expect(sub.getByRole("alert")).toContainText("Unable to load ready orders");
   fail = false;
   await sub.getByRole("button", { name: "Retry", exact: true }).click();
-  await sub.getByPlaceholder("Select order number...").click();
-  await page.getByRole("option").filter({ hasText: created.product_number }).click();
-  await sub.getByRole("button", { name: "Add Order", exact: true }).click();
-  await expect(sub).toContainText("Confirm this order's destination coordinates");
-  await sub.getByRole("button", { name: "Confirm location", exact: true }).click();
+  await sub.getByRole("textbox", { name: "Search ready orders" }).fill(created.product_number);
+  const entry = sub.getByRole("listitem").filter({ hasText: created.product_number });
+  const checkbox = entry.getByRole("checkbox", { name: `Select ${created.product_number}` });
+  await expect(checkbox).toBeDisabled();
+  await entry.getByRole("button", { name: "Confirm location", exact: true }).click();
   await page.getByLabel("Latitude", { exact: true }).fill("14.8");
   await page.getByLabel("Longitude", { exact: true }).fill("121.4");
   await page.getByRole("button", { name: "Save location", exact: true }).click();
-  await expect(sub.getByRole("button", { name: "Location saved", exact: true })).toBeVisible();
-  await sub.getByRole("button", { name: "Add Order", exact: true }).click();
+  await expect(entry.getByRole("button", { name: "Location saved", exact: true })).toBeVisible();
+  await checkbox.check();
+  await sub.getByRole("button", { name: "Add 1 order", exact: true }).click();
   await expect(sub).toHaveCount(0);
   await expect(dialog).toContainText(created.product_number);
 });
@@ -215,12 +222,11 @@ test("Schedule dialog keeps actions visible on mobile and supports adding a read
     await json(page.request, "POST", `/orders/delivery/${member.id}?version=2`);
   }
   const dialog = await openSchedule(page);
-  await dialog.getByRole("button", { name: "Add Order", exact: true }).click();
-  const sub = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Add Order", exact: true }) });
-  await sub.getByPlaceholder("Select order number...").click();
-  await expect(page.getByRole("option").filter({ hasText: batch.orders[0].order_group_number })).toHaveCount(1);
-  await page.getByRole("option").filter({ hasText: batch.orders[0].order_group_number }).click();
-  await sub.getByRole("button", { name: "Add group", exact: true }).click();
+  await dialog.getByRole("button", { name: "Add orders", exact: true }).click();
+  const sub = page.getByRole("dialog", { name: "Add orders", exact: true });
+  await sub.getByRole("textbox", { name: "Search ready orders" }).fill(batch.orders[0].order_group_number);
+  await sub.getByRole("checkbox", { name: `Select ${batch.orders[0].order_group_number}`, exact: true }).check();
+  await sub.getByRole("button", { name: "Add 2 orders", exact: true }).click();
   await expect(sub).toHaveCount(0);
   const summary = dialog.getByRole("complementary", { name: "Delivery run summary" });
   await expect(summary.getByRole("listitem")).toHaveCount(2);

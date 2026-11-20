@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch, type ControllerRenderProps } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Loader2, Minus, Plus, Search, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,8 +21,8 @@ import { useOrders } from "../provider";
 const catalogLimit = 40;
 const catalogFilters = [
   { value: "all", label: "All" },
-  { value: "selected", label: "Selected" },
-  { value: "unselected", label: "Unselected" },
+  { value: "selected", label: "In order" },
+  { value: "unselected", label: "Not in order" },
 ] as const;
 type CatalogFilter = (typeof catalogFilters)[number]["value"];
 
@@ -47,16 +47,30 @@ type VerifiedStock = Omit<OrderItemDetail, "description" | "price"> & {
   description: string | null;
   price: string | number;
 };
+type Selection = {
+  row: CatalogRow;
+  warehouseId: number;
+  quantity: number;
+  verified?: VerifiedStock | null;
+};
 
 function measurement(value: string | null | undefined, unit: string | null | undefined) {
   return unit && value != null && Number(value) > 0 ? `${Number(value).toLocaleString("en-PH")} ${unit}` : null;
 }
 
-async function verifyStock(inventoryId: number): Promise<VerifiedStock | null> {
-  const response = await request("GET", `/api/inventory/details?ids=${inventoryId}`);
+function itemName(row: CatalogRow) {
+  return row.variant_name || row.product_name || row.sku || "Stock item";
+}
+
+function isValidQuantity(quantity: number) {
+  return Number.isSafeInteger(quantity) && quantity >= 1;
+}
+
+async function verifyStock(inventoryIds: number[]) {
+  const response = await request("GET", `/api/inventory/details?ids=${inventoryIds.join(",")}`);
   if (!response.ok) throw new Error("Unable to verify warehouse stock. Try again.");
-  const [stock] = (await response.json()) as VerifiedStock[];
-  return stock ?? null;
+  const stock = (await response.json()) as VerifiedStock[];
+  return new Map(stock.map((row) => [row.inventory_id, row]));
 }
 
 export default function OrderItemDialog() {
@@ -64,7 +78,10 @@ export default function OrderItemDialog() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<CatalogFilter>("all");
-  const [selectedRow, setSelectedRow] = useState<CatalogRow | null>(null);
+  const [selections, setSelections] = useState(() => new Map<number, Selection>());
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [addError, setAddError] = useState("");
+  const [adding, setAdding] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const quantityInput = useRef<HTMLInputElement>(null);
   const preview = useRef<HTMLElement>(null);
@@ -78,9 +95,10 @@ export default function OrderItemDialog() {
     defaultValues: { inventory_id: 0, quantity: 1 },
   });
   const { remove } = useFieldArray({ control: form.control, name: "items" });
-  const inventoryId = useWatch({ control: itemForm.control, name: "inventory_id" });
-  const quantity = useWatch({ control: itemForm.control, name: "quantity" });
-  const { errors, isSubmitting } = itemForm.formState;
+  const editInventoryId = useWatch({ control: itemForm.control, name: "inventory_id" });
+  const editQuantity = useWatch({ control: itemForm.control, name: "quantity" });
+  const { errors, isSubmitting: editing } = itemForm.formState;
+  const isSubmitting = adding || editing;
   const isInsert = sub.mode === DialogMode.INSERT;
   const isEdit = sub.mode === DialogMode.EDIT;
   const isDelete = sub.mode === DialogMode.DELETE;
@@ -97,8 +115,6 @@ export default function OrderItemDialog() {
     if (sub.mode === DialogMode.EDIT) {
       const item = form.getValues("items").find(row => row.inventory_id === sub.id);
       if (item) itemForm.reset(item);
-    } else if (sub.mode === DialogMode.INSERT) {
-      itemForm.reset({ inventory_id: 0, quantity: 1 });
     }
   }, [sub, form, itemForm]);
 
@@ -120,46 +136,75 @@ export default function OrderItemDialog() {
   });
   const editDetails = useQuery({
     queryKey: ["order_item_edit_detail", sub.id],
-    queryFn: () => verifyStock(sub.id!),
+    queryFn: async () => (await verifyStock([sub.id!])).get(sub.id!) ?? null,
     enabled: sub.is_open && isEdit && Boolean(sub.id && sub.id > 0),
   });
 
   const rows = catalog.data?.rows ?? [];
-  const activeRow = rows.find(row => row.id === inventoryId) ?? (selectedRow?.id === inventoryId ? selectedRow : null);
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  const selectedItems = [...selections.values()];
+  const activeSelection = (activeId === null ? undefined : selections.get(activeId)) ?? selectedItems[0];
+  const inventoryId = isInsert ? activeSelection?.row.id ?? 0 : editInventoryId;
+  const quantity = isInsert ? activeSelection?.quantity ?? 1 : editQuantity;
+  const activeRow = rowsById.get(inventoryId) ?? (isInsert ? activeSelection?.row : undefined);
   const draftItem = draftItemsByInventoryId.get(inventoryId);
   const rawAvailable = activeRow ? Math.max(0, activeRow.quantity - activeRow.reserved) : editDetails.data?.quantity;
-  const available = rawAvailable != null && inventoryId > 0 ? getAvailableStock(inventoryId, rawAvailable, isEdit) : undefined;
+  const available = isInsert && activeSelection
+    ? availableForSelection(activeSelection)
+    : rawAvailable != null && inventoryId > 0 ? getAvailableStock(inventoryId, rawAvailable, isEdit) : undefined;
   const warehouse = activeRow?.warehouse_name ?? warehouseQuery.data?.rows?.find(row => row.id === warehouseId)?.name;
   const variant = activeRow?.variant_name || editDetails.data?.product_variant_name || draftItem?.product_variant_name;
   const product = activeRow?.product_name;
   const sku = activeRow?.sku || editDetails.data?.product_variant_sku || draftItem?.product_variant_sku;
   const description = activeRow?.description ?? editDetails.data?.description ?? draftItem?.description;
-  const unitPrice = activeRow?.price ?? editDetails.data?.price ?? draftItem?.price;
+  const unitPrice = isInsert && activeSelection ? selectionPrice(activeSelection) : activeRow?.price ?? editDetails.data?.price ?? draftItem?.price;
   const weight = measurement(activeRow?.weight_kg, "kg");
   const width = measurement(activeRow?.width_value, activeRow?.width_unit);
   const length = measurement(activeRow?.length_value, activeRow?.length_unit);
-  const validQuantity = Number.isSafeInteger(quantity) && quantity >= 1;
+  const validQuantity = isValidQuantity(quantity);
   const exceedsAvailable = available !== undefined && quantity > available;
   const subtotal = unitPrice != null && validQuantity ? Math.round(Number(unitPrice) * quantity * 100) / 100 : null;
   const canSave = inventoryId > 0 && available !== undefined && validQuantity && !exceedsAvailable;
-  const showItemDetails = selectedRow !== null && inventoryId > 0;
+  const canAdd = selectedItems.length > 0 && selectedItems.every((selection) =>
+    isValidQuantity(selection.quantity) && selection.quantity <= availableForSelection(selection));
+  const showItemDetails = selectedItems.length > 0;
 
   function availableToAdd(row: CatalogRow) {
     return getAvailableStock(row.id, Math.max(0, row.quantity - row.reserved));
   }
 
-  function selectItem(row: CatalogRow, keyboard = false) {
-    const available = availableToAdd(row);
-    if (available < 1 || isSubmitting) return;
-    setSelectedRow(row);
-    itemForm.setValue("inventory_id", row.id);
-    itemForm.clearErrors();
-    const current = itemForm.getValues("quantity");
-    if (!Number.isSafeInteger(current) || current < 1 || current > available) itemForm.setValue("quantity", 1);
-    requestAnimationFrame(() => {
-      if (keyboard) quantityInput.current?.focus();
-      else preview.current?.scrollIntoView({ block: "nearest" });
+  function availableForSelection({ row, verified }: Selection) {
+    if (verified !== undefined) return getAvailableStock(row.id, verified?.quantity ?? 0);
+    return availableToAdd(rowsById.get(row.id) ?? row);
+  }
+
+  function selectionPrice({ row, verified }: Selection) {
+    return verified === undefined ? (rowsById.get(row.id) ?? row).price : verified?.price;
+  }
+
+  function selectItem(row: CatalogRow) {
+    if (isSubmitting) return;
+    if (!selections.has(row.id) && availableToAdd(row) < 1) return;
+    setSelections((current) => current.has(row.id) ? current : new Map(current).set(row.id, { row, warehouseId, quantity: 1 }));
+    setActiveId(row.id);
+    setAddError("");
+  }
+
+  function removeSelection(id: number) {
+    setSelections((current) => {
+      const next = new Map(current);
+      next.delete(id);
+      return next;
     });
+    setAddError("");
+  }
+
+  function changeSelectionQuantity(value: number) {
+    setSelections((current) => {
+      const selection = current.get(inventoryId);
+      return selection ? new Map(current).set(inventoryId, { ...selection, quantity: value }) : current;
+    });
+    setAddError("");
   }
 
   function handleSearchKey(event: KeyboardEvent<HTMLInputElement>) {
@@ -168,38 +213,86 @@ export default function OrderItemDialog() {
     if (searchPending || catalog.isPending) return;
     const exact = rows.find(row => row.sku?.toLowerCase() === searchTerm.toLowerCase());
     const choice = exact ?? rows.find(row => availableToAdd(row) > 0);
-    if (choice) selectItem(choice, true);
+    if (choice && (selections.has(choice.id) || availableToAdd(choice) > 0)) {
+      selectItem(choice);
+      requestAnimationFrame(() => quantityInput.current?.focus());
+    }
   }
 
   function close() {
-    setSelectedRow(null);
+    setSelections(new Map());
+    setActiveId(null);
+    setAddError("");
     setCatalogSearch("");
     setSearchTerm("");
     setCatalogFilter("all");
     setSub({ is_open: false, mode: DialogMode.DEFAULT });
   }
 
-  async function saveItem(data: OrderItem) {
+  async function saveEdit(data: OrderItem) {
     itemForm.clearErrors("root");
     try {
-      const stock = await verifyStock(data.inventory_id);
+      const stock = (await verifyStock([data.inventory_id])).get(data.inventory_id);
       if (!stock) throw new Error("This item is no longer available.");
       const items = form.getValues("items");
       const existing = items.find(item => item.inventory_id === data.inventory_id);
-      const nextQuantity = isEdit ? data.quantity : (existing?.quantity ?? 0) + data.quantity;
       const verifiedAvailable = getAvailableStock(data.inventory_id, stock.quantity, true);
-      if (nextQuantity > verifiedAvailable) {
-        const limit = isEdit ? verifiedAvailable : Math.max(0, verifiedAvailable - (existing?.quantity ?? 0));
-        itemForm.setError("quantity", { message: `Stock changed. You can ${isEdit ? "use" : "add"} up to ${limit} units.` }, { shouldFocus: true });
+      if (data.quantity > verifiedAvailable) {
+        itemForm.setError("quantity", { message: `Stock changed. You can use up to ${verifiedAvailable} units.` }, { shouldFocus: true });
         void catalog.refetch();
-        if (isEdit) void editDetails.refetch();
+        void editDetails.refetch();
         return;
       }
-      const item = { ...stock, description: stock.description ?? "", price: Number(stock.price), quantity: nextQuantity };
+      const item = { ...stock, description: stock.description ?? "", price: Number(stock.price), quantity: data.quantity };
       form.setValue("items", existing ? items.map(row => row.inventory_id === data.inventory_id ? item : row) : [...items, item], { shouldValidate: true });
       close();
     } catch (error) {
       itemForm.setError("root", { message: error instanceof Error ? error.message : "Unable to save item." });
+    }
+  }
+
+  async function addSelections(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canAdd || isSubmitting) return;
+    if (selectedItems.some((selection) => selection.warehouseId !== warehouseId)) {
+      setAddError("The warehouse changed. Reopen the item picker to load its stock.");
+      return;
+    }
+    const draftAtSubmission = form.getValues("items");
+    setAddError("");
+    setAdding(true);
+    try {
+      const stockById = await verifyStock([...selections.keys()]);
+      if (form.getValues("warehouse_id") !== warehouseId) {
+        throw new Error("The warehouse changed. Reopen the item picker to load its stock.");
+      }
+      if (form.getValues("items") !== draftAtSubmission) {
+        throw new Error("The draft changed while checking stock. Review its items and try again.");
+      }
+      const items = new Map(draftAtSubmission.map((item) => [item.inventory_id, item]));
+      for (const { row, quantity } of selectedItems) {
+        const stock = stockById.get(row.id);
+        const totalQuantity = (items.get(row.id)?.quantity ?? 0) + quantity;
+        if (!stock || totalQuantity > getAvailableStock(row.id, stock.quantity, true)) {
+          setSelections(new Map(selectedItems.map((selection) => [selection.row.id, {
+            ...selection, verified: stockById.get(selection.row.id) ?? null,
+          }])));
+          setActiveId(row.id);
+          setAddError(stock
+            ? `Stock changed for ${row.sku || itemName(row)}. Adjust the selected quantity to continue.`
+            : `${row.sku || itemName(row)} is no longer available. Remove it from the selection to continue.`);
+          void catalog.refetch();
+          preview.current?.scrollIntoView({ block: "nearest" });
+          return;
+        }
+        items.set(row.id, { ...stock, description: stock.description ?? "", price: Number(stock.price), quantity: totalQuantity });
+      }
+      form.setValue("items", [...items.values()], { shouldDirty: true, shouldValidate: true });
+      close();
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "Unable to add the selected items.");
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -221,7 +314,7 @@ export default function OrderItemDialog() {
           )}
         </div>
       </div>
-      <div role="group" aria-label="Filter items by order selection" className="flex w-fit flex-wrap gap-1 rounded-lg border bg-background p-1">
+      <div role="group" aria-label="Filter by items already in the order" className="flex w-fit flex-wrap gap-1 rounded-lg border bg-background p-1">
         {catalogFilters.map(({ value, label }) => (
           <Button key={value} type="button" size="sm" variant={catalogFilter === value ? "secondary" : "ghost"}
             aria-pressed={catalogFilter === value} disabled={isSubmitting} onClick={() => setCatalogFilter(value)}>
@@ -242,17 +335,17 @@ export default function OrderItemDialog() {
         ) : rows.length ? (
           <ul aria-label="Warehouse stock" className="max-h-60 divide-y overflow-y-auto overscroll-contain md:max-h-[min(65dvh,42rem)]">
             {rows.map(row => {
-              const rowAvailable = availableToAdd(row);
+              const selection = selections.get(row.id);
+              const rowAvailable = selection ? availableForSelection(selection) : availableToAdd(row);
               const quantityInOrder = draftItemsByInventoryId.get(row.id)?.quantity ?? 0;
-              const selected = inventoryId === row.id;
-              const title = row.variant_name || row.product_name || row.sku || "Stock item";
+              const title = itemName(row);
               return (
                 <li key={row.id}>
-                  <button type="button" aria-pressed={selected} disabled={isSubmitting || rowAvailable < 1}
-                    onClick={event => selectItem(row, event.detail === 0)}
-                    className={cn("flex w-full items-start gap-3 px-3 py-3 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed", selected ? "bg-primary/10" : "hover:bg-muted/50")}>
-                    <span aria-hidden="true" className={cn("mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border", selected && "border-primary bg-primary text-primary-foreground")}>
-                      {selected && <Check className="size-3" />}
+                  <button type="button" aria-pressed={Boolean(selection)} disabled={isSubmitting || (!selection && rowAvailable < 1)}
+                    onClick={() => selection ? removeSelection(row.id) : selectItem(row)}
+                    className={cn("flex w-full items-start gap-3 px-3 py-3 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed", selection ? "bg-primary/10" : "hover:bg-muted/50")}>
+                    <span aria-hidden="true" className={cn("mt-0.5 grid size-4 shrink-0 place-items-center rounded-sm border", selection && "border-primary bg-primary text-primary-foreground")}>
+                      {selection && <Check className="size-3" />}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block break-words text-sm font-medium">{title}</span>
@@ -290,6 +383,44 @@ export default function OrderItemDialog() {
     </section>
   );
 
+  function renderQuantityField(
+    onChange: (value: number) => void,
+    field?: ControllerRenderProps<OrderItem, "quantity">,
+    errorMessage?: string,
+  ) {
+    const issue = errorMessage ?? (exceedsAvailable
+      ? `Only ${available} ${available === 1 ? "unit" : "units"} available.`
+      : !validQuantity ? "Enter a whole number of at least 1." : undefined);
+    return (
+      <Field data-invalid={Boolean(issue)} className="border-t pt-3">
+        <FieldLabel htmlFor="order-item-quantity">Quantity</FieldLabel>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="icon" aria-label="Decrease quantity"
+            disabled={isSubmitting || !validQuantity || quantity <= 1} onClick={() => onChange(quantity - 1)}>
+            <Minus aria-hidden="true" className="size-4" />
+          </Button>
+          <Input name={field?.name} onBlur={field?.onBlur} ref={element => { field?.ref(element); quantityInput.current = element; }}
+            id="order-item-quantity" type="number" inputMode="numeric" min={1} max={available} step={1}
+            value={Number.isFinite(quantity) ? quantity : ""} onChange={event => onChange(event.target.valueAsNumber)}
+            aria-invalid={Boolean(issue)} aria-describedby="order-item-quantity-message" disabled={isSubmitting}
+            className="w-20 text-center text-base tabular-nums" />
+          <Button type="button" variant="outline" size="icon" aria-label="Increase quantity"
+            disabled={isSubmitting || !validQuantity || available === undefined || quantity >= available} onClick={() => onChange(quantity + 1)}>
+            <Plus aria-hidden="true" className="size-4" />
+          </Button>
+          <Button type="button" variant="ghost" size="sm" aria-label="Use maximum available quantity"
+            disabled={isSubmitting || !available || quantity === available}
+            onClick={() => { if (available) onChange(available); }}>Max</Button>
+        </div>
+        <div id="order-item-quantity-message">
+          {issue ? <FieldError>{issue}</FieldError> : available !== undefined && (
+            <p className="text-xs text-muted-foreground tabular-nums">{(available - quantity).toLocaleString()} left after {isInsert ? "adding" : "saving"}</p>
+          )}
+        </div>
+      </Field>
+    );
+  }
+
   const itemDetails = inventoryId > 0 ? (
     <section ref={preview} aria-label="Selected item details" className="min-w-0 scroll-mt-4 space-y-4 rounded-xl border bg-background p-4">
       <div className="space-y-1">
@@ -322,49 +453,28 @@ export default function OrderItemDialog() {
           <Button type="button" variant="outline" size="sm" onClick={() => void editDetails.refetch()}>Retry</Button>
         </div>
       )}
-      <Controller name="quantity" control={itemForm.control} render={({ field, fieldState }) => {
-        const issue = fieldState.error?.message ?? (exceedsAvailable ? `Only ${available} units available.` : !validQuantity ? "Enter a whole number of at least 1." : undefined);
-        return (
-          <Field data-invalid={Boolean(issue)} className="border-t pt-3">
-            <FieldLabel htmlFor="order-item-quantity">Quantity</FieldLabel>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="icon" aria-label="Decrease quantity"
-                disabled={isSubmitting || !validQuantity || quantity <= 1} onClick={() => field.onChange(quantity - 1)}>
-                <Minus aria-hidden="true" className="size-4" />
-              </Button>
-              <Input {...field} ref={element => { field.ref(element); quantityInput.current = element; }}
-                id="order-item-quantity" type="number" inputMode="numeric" min={1} max={available} step={1}
-                value={Number.isFinite(field.value) ? field.value : ""} onChange={event => field.onChange(event.target.valueAsNumber)}
-                aria-invalid={Boolean(issue)} aria-describedby="order-item-quantity-message" disabled={isSubmitting}
-                className="w-20 text-center text-base tabular-nums" />
-              <Button type="button" variant="outline" size="icon" aria-label="Increase quantity"
-                disabled={isSubmitting || !validQuantity || available === undefined || quantity >= available} onClick={() => field.onChange(quantity + 1)}>
-                <Plus aria-hidden="true" className="size-4" />
-              </Button>
-              <Button type="button" variant="ghost" size="sm" aria-label="Use maximum available quantity"
-                disabled={isSubmitting || !available || quantity === available}
-                onClick={() => { field.onChange(available); itemForm.clearErrors("quantity"); }}>Max</Button>
-            </div>
-            <div id="order-item-quantity-message">
-              {issue ? <FieldError>{issue}</FieldError> : available !== undefined && (
-                <p className="text-xs text-muted-foreground tabular-nums">{(available - quantity).toLocaleString()} left after {isInsert ? "adding" : "saving"}</p>
-              )}
-            </div>
-          </Field>
-        );
-      }} />
+      {isInsert ? renderQuantityField(changeSelectionQuantity) : (
+        <Controller name="quantity" control={itemForm.control} render={({ field, fieldState }) => renderQuantityField((value) => {
+          field.onChange(value);
+          itemForm.clearErrors("quantity");
+        }, field, fieldState.error?.message)} />
+      )}
     </section>
   ) : null;
 
-  const errorMessage = errors.root?.message || errors.inventory_id?.message;
+  const errorMessage = isInsert ? addError : errors.root?.message || errors.inventory_id?.message;
   const error = errorMessage && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{errorMessage}</p>;
-  const lineTotal = (
+  const selectedTotal = selectedItems.reduce<number | null>((total, selection) => {
+    const price = selectionPrice(selection);
+    if (total === null || price == null || !isValidQuantity(selection.quantity)) return null;
+    return total + Math.round(Number(price) * 100) * selection.quantity;
+  }, 0);
+  const totalDisplay = (total: number | null, label: string) => (
     <div aria-live="polite">
-      <p className="text-xs text-muted-foreground">Line total</p>
-      <p className="text-lg font-semibold tabular-nums">{subtotal == null ? "—" : formatCurrency(subtotal)}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-lg font-semibold tabular-nums">{total == null ? "—" : formatCurrency(total)}</p>
     </div>
   );
-  const submit = (event: React.FormEvent<HTMLFormElement>) => void itemForm.handleSubmit(saveItem)(event);
 
   return (
     <>
@@ -383,24 +493,50 @@ export default function OrderItemDialog() {
           <DrawerHeader className="flex-row items-start justify-between gap-3 border-b px-4 py-4 sm:px-6">
             <div className="space-y-1">
               <DrawerTitle className="text-xl">Add item</DrawerTitle>
-              <DrawerDescription>{warehouse ? `Warehouse stock · ${warehouse}` : "Choose from warehouse stock."}</DrawerDescription>
+              <DrawerDescription>Select products and set their quantities{warehouse ? ` · ${warehouse}` : ""}.</DrawerDescription>
             </div>
             <Button type="button" variant="ghost" size="icon" aria-label="Close add item" disabled={isSubmitting} onClick={close}><X className="size-5" aria-hidden="true" /></Button>
           </DrawerHeader>
-          <form id="order-add-item-form" noValidate onSubmit={submit} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/20 px-4 py-4 sm:px-6">
+          <form id="order-add-item-form" noValidate onSubmit={(event) => void addSelections(event)} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/20 px-4 py-4 sm:px-6">
             {error && <div className="mb-4">{error}</div>}
             <div className={cn("grid items-start gap-4", showItemDetails && "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-5")}>
               {results}
-              {showItemDetails && itemDetails}
+              {showItemDetails && (
+                <div className="min-w-0 space-y-3">
+                  <ul aria-label="Selected items" className="max-h-40 divide-y overflow-y-auto rounded-lg border bg-background">
+                    {selectedItems.map((selection) => {
+                      const { row, quantity } = selection;
+                      const name = row.sku || itemName(row);
+                      const needsQuantity = !isValidQuantity(quantity) || quantity > availableForSelection(selection);
+                      return (
+                        <li key={row.id} className={cn("flex items-center gap-1 pr-2", row.id === inventoryId && "bg-primary/10")}>
+                          <button type="button" disabled={isSubmitting} aria-label={`Edit quantity for ${name}`} aria-current={row.id === inventoryId ? "true" : undefined}
+                            className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                            onClick={() => { setActiveId(row.id); requestAnimationFrame(() => quantityInput.current?.focus()); }}>
+                            <span className="min-w-0 truncate text-sm font-medium">{itemName(row)}</span>
+                            <span className={cn("shrink-0 text-xs tabular-nums", needsQuantity ? "text-destructive" : "text-muted-foreground")}>
+                              {needsQuantity ? "Check quantity" : `× ${quantity.toLocaleString()}`}
+                            </span>
+                          </button>
+                          <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${name} from selection`} disabled={isSubmitting} onClick={() => removeSelection(row.id)}>
+                            <X aria-hidden="true" className="size-4" />
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {itemDetails}
+                </div>
+              )}
             </div>
           </form>
           <DrawerFooter className="flex-row flex-wrap items-center justify-between gap-3 border-t bg-popover px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
-            {lineTotal}
+            {totalDisplay(selectedTotal === null ? null : selectedTotal / 100, "Selected items total")}
             <div className="flex gap-2">
               <Button type="button" variant="outline" disabled={isSubmitting} onClick={close}>Cancel</Button>
-              <Button type="submit" form="order-add-item-form" disabled={!canSave || isSubmitting}>
+              <Button type="submit" form="order-add-item-form" disabled={!canAdd || isSubmitting}>
                 {isSubmitting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-                {isSubmitting ? "Checking stock…" : "Add item"}
+                {isSubmitting ? "Checking stock…" : selectedItems.length > 1 ? `Add ${selectedItems.length} items` : "Add item"}
               </Button>
             </div>
           </DrawerFooter>
@@ -419,10 +555,10 @@ export default function OrderItemDialog() {
           {isDelete ? (
             <p className="text-sm text-muted-foreground">You can add this item back before creating the order.</p>
           ) : (
-            <form id="order-edit-item-form" noValidate onSubmit={submit} className="space-y-3">
+            <form id="order-edit-item-form" noValidate onSubmit={(event) => void itemForm.handleSubmit(saveEdit)(event)} className="space-y-3">
               {error}
               {itemDetails}
-              {lineTotal}
+              {totalDisplay(subtotal, "Line total")}
             </form>
           )}
           <DialogFooter>

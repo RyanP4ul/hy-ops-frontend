@@ -61,25 +61,14 @@ function RouteViewport({
 export function DeliveryEstimateMap({
   coordinates = [],
   stops = [],
-  isRoundTrip = false,
   clean = true,
   className,
 }: {
   coordinates?: [number, number][];
   stops?: RouteMapStop[];
-  isRoundTrip?: boolean;
   clean?: boolean;
   className?: string;
 }) {
-  const previewPath = useMemo<[number, number][]>(() => {
-    if (coordinates.length >= 2 || stops.length < 2) return [];
-    const base = stops.map((stop) => stop.coordinates);
-    if (isRoundTrip && stops[0]?.kind === "warehouse") {
-      return [...base, stops[0].coordinates];
-    }
-    return base;
-  }, [coordinates.length, stops, isRoundTrip]);
-
   const fitPoints = useMemo<[number, number][]>(() => {
     const all: [number, number][] = [];
     for (const coord of coordinates) all.push(coord);
@@ -100,7 +89,7 @@ export function DeliveryEstimateMap({
     >
       <Map clean={clean} center={initialCenter} zoom={11}>
         <RouteViewport points={fitPoints} />
-        {coordinates.length >= 2 ? (
+        {coordinates.length >= 2 && (
           <MapRoute
             coordinates={coordinates}
             color="#2563eb"
@@ -108,16 +97,7 @@ export function DeliveryEstimateMap({
             opacity={0.92}
             interactive={false}
           />
-        ) : previewPath.length >= 2 ? (
-          <MapRoute
-            coordinates={previewPath}
-            color="#64748b"
-            width={2.5}
-            opacity={0.65}
-            dashArray={[6, 6]}
-            interactive={false}
-          />
-        ) : null}
+        )}
 
         {stops.map((stop) => (
           <MapMarker

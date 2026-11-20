@@ -1,5 +1,6 @@
 import type { OrderGroupFields } from "./delivery-schedule";
 import { z } from "zod";
+import { orderPaymentMethodSchema } from "./order-payment-method";
 
 export const orderItemSchema = z.object({
   id: z.number().optional(),
@@ -46,7 +47,7 @@ export const orderSchema = z
     items: z
       .array(OrderItemDetailSchema)
       .min(1, "At least one item is required"),
-    payment_method: z.string(),
+    payment_method: orderPaymentMethodSchema,
     payment_type: z.string().trim().max(100, "Payment type must be 100 characters or fewer").optional(),
     amount_paid: z
       .number()
@@ -176,9 +177,10 @@ export type OrderDeliveryAssignment = {
   vehicle_type: string | null;
 };
 
-export type OrderDetail = Omit<OrderForm, "items" | "payment_type"> & Partial<OrderGroupFields> & {
+export type OrderDetail = Omit<OrderForm, "items" | "payment_method" | "payment_type"> & Partial<OrderGroupFields> & {
   sales_channel?: "STANDARD" | "WALK_IN";
   warehouse_name?: string | null;
+  payment_method: string;
   payment_type?: string | null;
   id: number;
   order_number: string;

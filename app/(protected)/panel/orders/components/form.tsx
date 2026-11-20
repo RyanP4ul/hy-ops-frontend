@@ -11,6 +11,7 @@ import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useOrders } from "../provider";
 import { OrderForm } from "@/schema/order";
+import { orderPaymentMethodLabels, orderPaymentMethodSchema } from "@/schema/order-payment-method";
 import {
   orderBatchFormSchema,
   toOrderBatchPayload,
@@ -71,12 +72,6 @@ const PAYMENT_ARRANGEMENTS: Record<string, string> = {
   FULLY_PAID: "Fully paid",
   PARTIALLY_PAID: "Partially paid",
   NET_30: "Net 30",
-};
-
-const PAYMENT_METHODS: Record<string, string> = {
-  CASH: "Cash",
-  BANK_TRANSFER: "Bank transfer",
-  CARD: "Card",
 };
 
 function formatCustomerAddress(address: {
@@ -959,6 +954,7 @@ export default function Form() {
                   <Select
                     value={field.value}
                     onValueChange={(value) => {
+                      if (value !== "CASH" && value !== "BANK_TRANSFER") return;
                       field.onChange(value);
                       form.setValue("payment_type", "", { shouldDirty: true });
                       form.clearErrors("payment_type");
@@ -966,16 +962,16 @@ export default function Form() {
                   >
                     <SelectTrigger id="payment_method">
                       <SelectValue>
-                        {PAYMENT_METHODS[field.value] ?? field.value}
+                        {orderPaymentMethodLabels[field.value]}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem value="CASH">Cash</SelectItem>
-                        <SelectItem value="BANK_TRANSFER">
-                          Bank transfer
-                        </SelectItem>
-                        <SelectItem value="CARD">Card</SelectItem>
+                        {orderPaymentMethodSchema.options.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {orderPaymentMethodLabels[value]}
+                          </SelectItem>
+                        ))}
                       </SelectGroup>
                     </SelectContent>
                   </Select>
@@ -984,16 +980,14 @@ export default function Form() {
             />
           </div>
 
-          {paymentMethod !== "CASH" && (
+          {paymentMethod === "BANK_TRANSFER" && (
             <Controller
               name="payment_type"
               control={form.control}
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="payment_type">
-                    {paymentMethod === "BANK_TRANSFER"
-                      ? "Bank / e-wallet"
-                      : "Card network"}{" "}
+                    Bank / e-wallet{" "}
                     <span className="text-destructive">*</span>
                   </FieldLabel>
                   <PaymentTypeCombobox
@@ -1245,13 +1239,11 @@ export default function Form() {
               />
               <ReviewItem
                 label="Method"
-                value={
-                  PAYMENT_METHODS[reviewPaymentMethod] ?? reviewPaymentMethod
-                }
+                value={orderPaymentMethodLabels[reviewPaymentMethod]}
               />
-              {reviewPaymentMethod !== "CASH" && (
+              {reviewPaymentMethod === "BANK_TRANSFER" && (
                 <ReviewItem
-                  label="Provider / card"
+                  label="Bank / e-wallet"
                   value={reviewValues.payment_type ?? ""}
                 />
               )}

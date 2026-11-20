@@ -19,6 +19,18 @@ export const deliveryScheduleSchema = z.object({
 
 export type DeliveryScheduleFormData = z.infer<typeof deliveryScheduleSchema>;
 
+export function parseDeliveryCoordinates(
+  latitude: string | number | null | undefined,
+  longitude: string | number | null | undefined,
+): [longitude: number, latitude: number] | null {
+  if (latitude == null || longitude == null || !String(latitude).trim() || !String(longitude).trim()) return null;
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 ||
+      Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return null;
+  return [lng, lat];
+}
+
 export type OrderGroupFields = {
   order_group_id: string | null;
   order_group_number: string | null;
@@ -36,12 +48,6 @@ export type DeliveryScheduleOrderDetail = OrderGroupFields & {
   item_count: number;
   total: number | null;
 };
-
-export const orderSchema = z.object({
-  order_id: z.number().nonnegative("Order ID must be a non-negative number"),
-});
-
-export type OrderFormData = z.infer<typeof orderSchema>;
 
 export type DeliveryScheduleRow = OrderGroupFields & {
   warehouse_id: number;

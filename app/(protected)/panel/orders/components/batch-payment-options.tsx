@@ -3,6 +3,7 @@
 import { useWatch } from "react-hook-form";
 import { useOrders } from "../provider";
 import { allocateCombinedPayment, orderTotal } from "@/schema/order-batch";
+import { orderPaymentMethodLabels, orderPaymentMethodSchema } from "@/schema/order-payment-method";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -42,12 +43,6 @@ export function BatchPaymentOptions({ disabled }: { disabled: boolean }) {
   const allocations = pricesKnown
     ? allocateCombinedPayment(combinedPayment.amount_paid, totals)
     : null;
-  const methods = {
-    CASH: "Cash",
-    BANK_TRANSFER: "Bank transfer",
-    CARD: "Card",
-  };
-
   return (
     <fieldset
       disabled={disabled}
@@ -129,11 +124,7 @@ export function BatchPaymentOptions({ disabled }: { disabled: boolean }) {
               <Select
                 value={combinedPayment.payment_method}
                 onValueChange={(value) => {
-                  if (
-                    value === "CASH" ||
-                    value === "BANK_TRANSFER" ||
-                    value === "CARD"
-                  ) {
+                  if (value === "CASH" || value === "BANK_TRANSFER") {
                     setCombinedPayment((current) => ({
                       ...current,
                       payment_method: value,
@@ -144,23 +135,23 @@ export function BatchPaymentOptions({ disabled }: { disabled: boolean }) {
               >
                 <SelectTrigger id="combined-method">
                   <SelectValue>
-                    {methods[combinedPayment.payment_method]}
+                    {orderPaymentMethodLabels[combinedPayment.payment_method]}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(methods).map(([value, label]) => (
+                  {orderPaymentMethodSchema.options.map((value) => (
                     <SelectItem key={value} value={value}>
-                      {label}
+                      {orderPaymentMethodLabels[value]}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
 
-            {combinedPayment.payment_method !== "CASH" && (
+            {combinedPayment.payment_method === "BANK_TRANSFER" && (
               <Field>
                 <FieldLabel htmlFor="combined-payment-type">
-                  Provider / card network
+                  Bank / e-wallet
                 </FieldLabel>
                 <PaymentTypeCombobox
                   id="combined-payment-type"
