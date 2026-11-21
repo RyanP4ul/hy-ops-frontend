@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import { ArrowDown, ArrowDownUp, ArrowUp, Eye, ListCollapse, ListOrdered, Plus, RotateCcw } from "lucide-react";
-import { ManagementListFooter, ManagementListHeader, ManagementSearch, ManagementTableView } from "@/components/management-list";
+import { ManagementListFooter, ManagementListHeader, ManagementTableView } from "@/components/management-list";
 import { useModal } from "@/components/providers/modal-provider";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { QueryFeedback } from "@/components/query-feedback";
@@ -17,7 +17,9 @@ import type { GroupedPayment, PaymentListEntry, PaymentRowType } from "@/schema/
 import { DialogMode } from "@/types/dialog";
 import { formatCurrency } from "@/utils/date-util";
 import { debounce } from "@/utils/debounce";
+import { hasActivePaymentFilters } from "../filters";
 import { usePayments } from "../provider";
+import { PaymentFiltersBar } from "./payment-filters";
 import { canCollect, orderLabel, OrderPaymentStatus, paymentMethods } from "./payment-summary";
 import { RefundControl } from "./refund-control";
 
@@ -129,7 +131,20 @@ function GroupDetails({ group, onDetails, onAddPayment }: {
 }
 
 export default function DataTable() {
-  const { paymentsQuery, page, setPage, search, setSearch, sortBy, setSortBy, setSelected, form } = usePayments();
+  const {
+    paymentsQuery,
+    page,
+    setPage,
+    search,
+    setSearch,
+    filters,
+    updateFilters,
+    resetFilters,
+    sortBy,
+    setSortBy,
+    setSelected,
+    form,
+  } = usePayments();
   const { openModal } = useModal();
   const { subscribe } = useWebSocket();
   const queryClient = useQueryClient();
@@ -170,6 +185,12 @@ export default function DataTable() {
     setSearchInput("");
     setSearch("");
     setPage(current => ({ ...current, pageIndex: 0 }));
+  }
+
+  function resetAllFilters() {
+    debouncedSearch.cancel();
+    setSearchInput("");
+    resetFilters();
   }
 
   const columns = useMemo<ColumnDef<PaymentListEntry>[]>(() => {
@@ -290,6 +311,8 @@ export default function DataTable() {
     manualPagination: true,
   });
 
+  const filtered = hasActivePaymentFilters(filters, search);
+
   return (
     <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
       <ManagementListHeader title="Payment records" description="Review receipts and expand combined payments to see each order."
@@ -299,11 +322,20 @@ export default function DataTable() {
           form.reset({ order_id: -1, payment_number: "", payment_amount: 0, version: -1 });
           openModal(DialogMode.INSERT, { title: "Add payment", description: "Choose an order and record the money received from the customer.", action: "Record payment" });
         }}><Plus className="size-4" aria-hidden="true" />Add payment</Button>} />
-      <div className="border-b bg-muted/20 p-4 md:px-5">
-        <ManagementSearch id="payment-search" value={searchInput} placeholder="Search payments by customer, order, or reference" onChange={value => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
-      </div>
+      <PaymentFiltersBar
+        searchInput={searchInput}
+        search={search}
+        filters={filters}
+        onSearchChange={value => {
+          setSearchInput(value);
+          debouncedSearch(value);
+        }}
+        onClearSearch={clearSearch}
+        onUpdateFilters={updateFilters}
+        onResetAll={resetAllFilters}
+      />
       <QueryFeedback query={paymentsQuery} label="payments" />
-      <ManagementTableView table={table} loading={paymentsQuery.isPending} isFetching={paymentsQuery.isFetching} error={paymentsQuery.isError} filtered={Boolean(search)} label="payments"
+      <ManagementTableView table={table} loading={paymentsQuery.isPending} isFetching={paymentsQuery.isFetching} error={paymentsQuery.isError} filtered={filtered} label="payments"
         getHeaderAriaSort={id => id === sortBy.id ? (sortBy.type === "asc" ? "ascending" : "descending") : undefined}
         renderRowDetails={({ original }) => original.entry_type === "GROUP" && expandedGroups.has(original.group_id) ? (
           <GroupDetails group={original} onDetails={payment => openOrderPayment(payment, DialogMode.VIEW)} onAddPayment={payment => openOrderPayment(payment, DialogMode.CUSTOM)} />

@@ -14,20 +14,26 @@ import {
 } from "@/components/ui/sidebar";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { isSidebarRouteActive } from "@/lib/sidebar-route";
+import {
+  filterSidebarGroups,
+  isSidebarRouteActive,
+} from "@/lib/sidebar-route";
 import { getSidebars, type SidebarGroupItem } from "@/constant/left-sidebar";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon } from "lucide-react";
-import { createElement, useId, useState } from "react";
+import { ChevronRightIcon, SearchXIcon } from "lucide-react";
+import { createElement, useId, useMemo, useState } from "react";
 import { useAuth } from "./providers/auth-provider";
+import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 
 function NavSidebarItem({
   item,
   pathname,
+  forceOpen,
 }: {
   item: SidebarGroupItem;
   pathname: string | null;
+  forceOpen?: boolean;
 }) {
   const submenuId = useId();
   const isActive = isSidebarRouteActive(pathname, item.url, item.isDisabled);
@@ -44,6 +50,8 @@ function NavSidebarItem({
   } else if (!hasActiveSubItem && prevActiveSub) {
     setPrevActiveSub(false);
   }
+
+  const isExpanded = forceOpen ? true : open;
 
   return (
     <SidebarMenuItem>
@@ -65,10 +73,10 @@ function NavSidebarItem({
         <>
           <SidebarMenuAction
             type="button"
-            aria-expanded={open}
+            aria-expanded={isExpanded}
             aria-controls={submenuId}
             aria-label={
-              open
+              isExpanded
                 ? `Collapse ${item.title} submenu`
                 : `Expand ${item.title} submenu`
             }
@@ -77,13 +85,13 @@ function NavSidebarItem({
           >
             <ChevronRightIcon
               aria-hidden="true"
-              className={cn("transition-transform", open && "rotate-90")}
+              className={cn("transition-transform", isExpanded && "rotate-90")}
             />
           </SidebarMenuAction>
           <SidebarMenuSub
             id={submenuId}
-            hidden={!open}
-            className={cn(!open && "hidden")}
+            hidden={!isExpanded}
+            className={cn(!isExpanded && "hidden")}
           >
             {subItems.map((subItem) => {
               const subActive = isSidebarRouteActive(
@@ -121,9 +129,23 @@ function NavSidebarItem({
   );
 }
 
-export function NavMain() {
+export function NavMain({
+  searchQuery = "",
+  onClearSearch,
+}: {
+  searchQuery?: string;
+  onClearSearch?: () => void;
+}) {
   const { userQuery } = useAuth();
   const pathname = usePathname();
+  const trimmedQuery = searchQuery.trim();
+
+  const role = userQuery.data?.role || "user";
+  const sidebar = useMemo(() => getSidebars(role), [role]);
+  const filteredSidebar = useMemo(
+    () => filterSidebarGroups(sidebar, trimmedQuery),
+    [sidebar, trimmedQuery],
+  );
 
   if (!userQuery.data) {
     return (
@@ -131,34 +153,34 @@ export function NavMain() {
         <SidebarGroupContent className="flex flex-col gap-2">
           <SidebarMenu>
             <div className="flex flex-col gap-3">
-              <Skeleton className="h-7 w-[30%] rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
+              <Skeleton className="h-7 w-[30%] rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
             </div>
           </SidebarMenu>
           <SidebarMenu>
             <div className="flex flex-col gap-3">
-              <Skeleton className="h-7 w-[30%] rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
+              <Skeleton className="h-7 w-[30%] rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
             </div>
           </SidebarMenu>
           <SidebarMenu>
             <div className="flex flex-col gap-3">
-              <Skeleton className="h-7 w-[30%] rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
+              <Skeleton className="h-7 w-[30%] rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
             </div>
           </SidebarMenu>
           <SidebarMenu>
             <div className="flex flex-col gap-3">
-              <Skeleton className="h-7 w-[30%] rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
-              <Skeleton className="h-7 w-full rounded-md" />
+              <Skeleton className="h-7 w-[30%] rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
+              <Skeleton className="h-7 w-full rounded-md motion-reduce:animate-none" />
             </div>
           </SidebarMenu>
         </SidebarGroupContent>
@@ -166,25 +188,65 @@ export function NavMain() {
     );
   }
 
-  const sidebar = getSidebars(userQuery.data?.role || "user");
+  const entries = Object.entries(filteredSidebar);
+  const totalMatches = entries.reduce(
+    (sum, [, items]) =>
+      sum + items.reduce((inner, item) => inner + 1 + (item.items?.length ?? 0), 0),
+    0,
+  );
 
   return (
     <SidebarGroup>
       <SidebarGroupContent className="flex flex-col gap-2">
-        {Object.entries(sidebar).map((group) => (
-          <div key={group[0]}>
-            <SidebarGroupLabel>{group[0]}</SidebarGroupLabel>
-            <SidebarMenu>
-              {group[1].map((item) => (
-                <NavSidebarItem
-                  key={item.title}
-                  item={item}
-                  pathname={pathname}
-                />
-              ))}
-            </SidebarMenu>
+        {trimmedQuery && (
+          <span className="sr-only" role="status" aria-live="polite">
+            {totalMatches === 0
+              ? `No navigation items match ${trimmedQuery}`
+              : `${totalMatches} navigation ${totalMatches === 1 ? "item" : "items"} found`}
+          </span>
+        )}
+
+        {entries.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-sidebar-border px-3 py-6 text-center">
+            <SearchXIcon
+              className="size-5 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <p className="text-xs font-medium text-sidebar-foreground">
+              No matching pages
+            </p>
+            <p className="break-words text-[11px] text-muted-foreground">
+              Nothing found for &ldquo;{trimmedQuery}&rdquo;.
+            </p>
+            {onClearSearch && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="mt-1 cursor-pointer"
+                onClick={onClearSearch}
+              >
+                Clear search
+              </Button>
+            )}
           </div>
-        ))}
+        ) : (
+          entries.map(([groupName, items]) => (
+            <div key={groupName}>
+              <SidebarGroupLabel>{groupName}</SidebarGroupLabel>
+              <SidebarMenu>
+                {items.map((item) => (
+                  <NavSidebarItem
+                    key={item.title}
+                    item={item}
+                    pathname={pathname}
+                    forceOpen={Boolean(trimmedQuery)}
+                  />
+                ))}
+              </SidebarMenu>
+            </div>
+          ))
+        )}
       </SidebarGroupContent>
     </SidebarGroup>
   );

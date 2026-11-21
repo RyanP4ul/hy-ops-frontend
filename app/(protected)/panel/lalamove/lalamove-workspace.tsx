@@ -33,6 +33,19 @@ import type {
 } from "./types";
 
 const BASE_PATH = "/panel/lalamove";
+const MANILA_NCR_LOCODE = "PH MNL";
+const MIN_TRUCK_LOAD_KG = 2000;
+
+function selectTruckCities({ data }: { data: City[] }) {
+  return data.map((city) => ({
+    ...city,
+    services: city.services.filter(({ load }) => {
+      if (load?.unit.trim().toLowerCase() !== "kg") return false;
+      const capacity = Number(load.value);
+      return Number.isFinite(capacity) && capacity >= MIN_TRUCK_LOAD_KG;
+    }),
+  }));
+}
 
 export function LalamoveWorkspace() {
   const params = useSearchParams();
@@ -98,7 +111,7 @@ function Workspace({
   const [pickupFeedback, setPickupFeedback] = useState<PickupFeedback>(null);
   const [quoting, setQuoting] = useState(false);
   const [booking, setBooking] = useState(false);
-  const [city, setCity] = useState("");
+  const [selectedCity, setCity] = useState<string>();
   const [service, setService] = useState("");
   const [quote, setQuote] = useState<Quotation | null>(null);
   const [packageConfirmed, setPackageConfirmed] = useState(false);
@@ -145,6 +158,7 @@ function Workspace({
   const cities = useQuery({
     queryKey: ["lalamove", "cities"],
     queryFn: () => api<{ data: City[] }>("GET", "/cities"),
+    select: selectTruckCities,
     enabled: Boolean(
       (orderId > 0 && context.data?.enabled) ||
         (isMultiStopBuilder && setup.data?.enabled),
@@ -166,9 +180,13 @@ function Workspace({
     null;
   const previousAttempts =
     data?.bookings.filter((attempt) => attempt.id !== primaryBooking?.id) || [];
-  const services =
-    cities.data?.data?.find((item) => item.locode === city)?.services || [];
-  const chosenService = services.find((item) => item.key === service);
+  const cityOptions = cities.data ?? [];
+  const defaultCity =
+    cityOptions.find((item) => item.locode === MANILA_NCR_LOCODE)?.locode ?? "";
+  const city = selectedCity ?? defaultCity;
+  const chosenService = cityOptions
+    .find((item) => item.locode === city)
+    ?.services.find((item) => item.key === service);
   const environment =
     data?.environment ||
     bookingDetail.data?.environment ||
@@ -265,7 +283,7 @@ function Workspace({
   }
 
   async function requestQuotation() {
-    if (!data) return;
+    if (!data || !chosenService) return;
     setQuoting(true);
     try {
       const success = await action(async () => {
@@ -274,7 +292,7 @@ function Workspace({
           await api<Quotation>("POST", "/quotations", {
             order_id: orderId,
             order_version: data.order.version,
-            service_type: service,
+            service_type: chosenService.key,
             city,
           }),
         );
@@ -529,7 +547,8 @@ function Workspace({
             readyPending={eligible.isPending}
             readyError={eligible.error?.message}
             retryReady={() => void eligible.refetch()}
-            cities={cities.data?.data ?? []}
+            cities={cityOptions}
+            defaultCity={defaultCity}
             citiesLoading={cities.isFetching && !cities.data}
             citiesError={cities.error?.message}
             retryCities={() => void cities.refetch()}
@@ -647,7 +666,7 @@ function Workspace({
                         data.order.delivery_method === "LALAMOVE" &&
                         !primaryBooking && (
                           <ServicePanel
-                            cities={cities.data?.data || []}
+                            cities={cityOptions}
                             city={city}
                             service={service}
                             disabled={busy || !data.enabled}

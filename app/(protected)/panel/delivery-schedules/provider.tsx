@@ -145,7 +145,7 @@ export function DeliveryScheduleProvider({
 }) {
   const { userQuery } = useAuth();
   const isStaff = userQuery.data?.role === "staff";
-  const expenseSettings = useExpenseSettings();
+  const expenseSettings = useExpenseSettings(true);
   const [groupPending, setGroupPending] = useState(false);
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
@@ -615,6 +615,7 @@ export function DeliveryScheduleProvider({
         body: JSON.stringify({
           points,
           ...expenseSettings.requestOptions(),
+          isRoundTrip: true,
         }),
       });
 

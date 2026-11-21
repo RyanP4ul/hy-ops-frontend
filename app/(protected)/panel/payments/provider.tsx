@@ -4,7 +4,7 @@ import { request } from "@/components/http";
 import { useSetting } from "@/components/providers/setting-provider";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
 import { useForm, UseFormReturn } from "react-hook-form";
 import {
   PaymentFormType,
@@ -12,6 +12,11 @@ import {
   PaymentRowType,
   paymentSchema,
 } from "@/schema/payment";
+import {
+  buildPaymentQueryParams,
+  DEFAULT_PAYMENT_FILTERS,
+  type PaymentFilters,
+} from "./filters";
 
 type Selected = {
   order_id: number;
@@ -31,6 +36,9 @@ type PaymentsContext = {
   >;
   search: string;
   setSearch: React.Dispatch<React.SetStateAction<string>>;
+  filters: PaymentFilters;
+  updateFilters: (patch: Partial<PaymentFilters>) => void;
+  resetFilters: () => void;
   sortBy: { id: string; type: string };
   setSortBy: React.Dispatch<React.SetStateAction<{ id: string; type: string }>>;
   selected: Selected;
@@ -50,12 +58,25 @@ export function PaymentsProvider({ children }: { children: React.ReactNode }) {
   const { settingQuery } = useSetting();
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<PaymentFilters>(DEFAULT_PAYMENT_FILTERS);
   const [sortBy, setSortBy] = useState({ id: "id", type: "desc" });
   const [selected, setSelected] = useState<Selected>({
     order_id: -1,
     payment_number: "",
     version: -1,
   });
+
+  const updateFilters = useCallback((patch: Partial<PaymentFilters>) => {
+    setFilters((current) => ({ ...current, ...patch }));
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setFilters(DEFAULT_PAYMENT_FILTERS);
+    setSearch("");
+    setPage((current) => ({ ...current, pageIndex: 0 }));
+  }, []);
+
   const form = useForm<PaymentFormType>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
@@ -66,16 +87,23 @@ export function PaymentsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const paymentsQuery = useQuery({
-    queryKey: ["payments", "grouped", page.pageIndex, page.pageSize, search, sortBy],
+    queryKey: [
+      "payments",
+      "grouped",
+      page.pageIndex,
+      page.pageSize,
+      search,
+      sortBy,
+      filters,
+    ],
     queryFn: async () => {
-      const params = new URLSearchParams({
-        grouped: "true",
-        page: String(page.pageIndex),
-        limit: String(page.pageSize),
-        sort_by: `${sortBy.id}:${sortBy.type}`,
+      const params = buildPaymentQueryParams({
+        pageIndex: page.pageIndex,
+        pageSize: page.pageSize,
+        search,
+        sortBy,
+        filters,
       });
-
-      if (search.trim()) params.set("search", search.trim());
 
       const response = await request("GET", `/api/payments?${params}`);
 
@@ -100,6 +128,9 @@ export function PaymentsProvider({ children }: { children: React.ReactNode }) {
         setPage,
         search,
         setSearch,
+        filters,
+        updateFilters,
+        resetFilters,
         sortBy,
         setSortBy,
         selected,

@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { isSidebarRouteActive } from "../lib/sidebar-route";
+import {
+  filterSidebarGroups,
+  getFirstMatchingSidebarUrl,
+  isSidebarRouteActive,
+} from "../lib/sidebar-route";
 import { getSidebars } from "../constant/left-sidebar";
 
 test("sidebar URL matching handles direct links, nested routes and trailing slashes", () => {
@@ -36,4 +40,33 @@ test("Deliveries exposes Lalamove as a submenu item for admin and staff", () => 
       { title: "Lalamove", url: "/panel/lalamove" },
     ]);
   }
+});
+
+test("sidebar search filters groups, items and submenus and resolves first Enter target", () => {
+  const adminSidebar = getSidebars("admin");
+
+  expect(Object.keys(filterSidebarGroups(adminSidebar, ""))).toEqual(
+    Object.keys(adminSidebar),
+  );
+
+  const lalamoveMatch = filterSidebarGroups(adminSidebar, "lalamove");
+  expect(Object.keys(lalamoveMatch)).toEqual(["Logistics & Tracking"]);
+  expect(lalamoveMatch["Logistics & Tracking"].map((item) => item.title)).toEqual([
+    "Deliveries",
+  ]);
+  expect(
+    lalamoveMatch["Logistics & Tracking"][0].items?.map((sub) => sub.title),
+  ).toEqual(["Lalamove"]);
+  expect(getFirstMatchingSidebarUrl(adminSidebar, "lalamove")).toBe(
+    "/panel/lalamove",
+  );
+
+  const commsMatch = filterSidebarGroups(adminSidebar, "COMM");
+  expect(Object.keys(commsMatch)).toEqual(["Communications"]);
+  expect(getFirstMatchingSidebarUrl(adminSidebar, "COMM")).toBe(
+    "/panel/communications",
+  );
+
+  expect(filterSidebarGroups(adminSidebar, "nonexistent-module")).toEqual({});
+  expect(getFirstMatchingSidebarUrl(adminSidebar, "nonexistent-module")).toBeNull();
 });

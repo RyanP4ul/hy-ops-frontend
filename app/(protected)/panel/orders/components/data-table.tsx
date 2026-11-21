@@ -11,7 +11,9 @@ import {
   ManagementTableView,
 } from "@/components/management-list";
 import {
+  formatDeliveryMethodLabel,
   formatOrderLabel,
+  getDeliveryMethodBadgeClass,
   getOrderStatusBadgeClass,
 } from "@/components/order-details";
 import { useModal } from "@/components/providers/modal-provider";
@@ -41,8 +43,11 @@ import {
   Layers,
   Link2,
   NotepadText,
+  Package,
   Plus,
+  Route,
   Store,
+  Truck,
   Unlink,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -52,6 +57,7 @@ import {
   canAddOrdersToGroup,
   canSeparateOrder,
   formatOrderGroupCode,
+  summarizeGroupDeliveryMethods,
   type OrderTableRow,
 } from "@/schema/order";
 import { useOrders } from "../provider";
@@ -78,6 +84,41 @@ const STATUS_DISPLAY_ORDER = [
   "COMPLETED",
   "CANCELLED",
 ] as const;
+
+function DeliveryMethodBadge({
+  method,
+  count,
+  compact = false,
+}: {
+  method?: string | null;
+  count?: number;
+  compact?: boolean;
+}) {
+  const normalized = method?.toUpperCase() ?? null;
+  const label = formatDeliveryMethodLabel(normalized);
+  const colorClass = getDeliveryMethodBadgeClass(normalized);
+  const Icon =
+    normalized === "INTERNAL"
+      ? Truck
+      : normalized === "LALAMOVE"
+        ? Route
+        : normalized === "WALK_IN"
+          ? Store
+          : normalized === "PICKUP"
+            ? Package
+            : null;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border font-medium ${
+        compact ? "px-2 py-0.5 text-[11px] tabular-nums" : "px-2.5 py-0.5 text-xs"
+      } ${colorClass}`}
+    >
+      {Icon && <Icon className="size-3 shrink-0" aria-hidden="true" />}
+      {count !== undefined ? `${count} ${label}` : label}
+    </span>
+  );
+}
 
 export default function DataTable() {
   const {
@@ -442,6 +483,37 @@ export default function DataTable() {
             </p>
           </div>
         ),
+      },
+      {
+        accessorKey: "delivery_type",
+        header: () => "Delivery Method",
+        cell: ({ row }) => {
+          const item = row.original;
+          const isGroup = row.depth === 0 && item.entry_type === "GROUP";
+
+          if (isGroup && item.members && item.members.length > 0) {
+            const summary = summarizeGroupDeliveryMethods(item.members);
+
+            if (summary.length > 1) {
+              return (
+                <div className="flex max-w-48 flex-wrap gap-1">
+                  {summary.map(({ method, count }) => (
+                    <DeliveryMethodBadge
+                      key={method ?? "UNASSIGNED"}
+                      method={method}
+                      count={count}
+                      compact
+                    />
+                  ))}
+                </div>
+              );
+            }
+
+            return <DeliveryMethodBadge method={summary[0]?.method ?? null} />;
+          }
+
+          return <DeliveryMethodBadge method={item.delivery_type} />;
+        },
       },
       {
         accessorKey: "status",

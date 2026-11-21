@@ -1,13 +1,12 @@
 "use client";
 
-import { Boxes, DatabaseBackup, Loader2, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { Boxes, Loader2, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useSetting } from "@/components/providers/setting-provider";
 import { MotionPage } from "@/components/page-motion";
 import TabGeneral from "./tab-general";
 import TabInventory from "./tab-inventory";
-import TabBackup from "./tab-backup";
 
 export default function SettingPage() {
   const { settingQuery: query } = useSetting();
@@ -26,14 +25,12 @@ export default function SettingPage() {
         </div>
       ) : (
         <Tabs defaultValue="general" className="gap-6">
-          <TabsList aria-label="Settings categories" className="grid w-full grid-cols-3 justify-start gap-1 rounded-xl border bg-muted/40 p-1 group-data-horizontal/tabs:h-auto sm:flex sm:w-fit">
-            <TabsTrigger value="general" className="min-h-11 gap-2 px-2 sm:px-5"><SlidersHorizontal className="hidden sm:block" aria-hidden="true" /> General</TabsTrigger>
-            <TabsTrigger value="inventory" className="min-h-11 gap-2 px-2 sm:px-5"><Boxes className="hidden sm:block" aria-hidden="true" /> Inventory</TabsTrigger>
-            <TabsTrigger value="backup" className="min-h-11 gap-2 whitespace-normal px-3 sm:px-5"><DatabaseBackup className="hidden sm:block" aria-hidden="true" /> Database backup</TabsTrigger>
+          <TabsList aria-label="Settings categories" className="grid w-full grid-cols-2 justify-start gap-1 rounded-xl border bg-muted/40 p-1 group-data-horizontal/tabs:h-auto sm:flex sm:w-fit">
+            <TabsTrigger value="general" className="min-h-11 gap-2 px-3 sm:px-5"><SlidersHorizontal className="hidden sm:block" aria-hidden="true" /> General</TabsTrigger>
+            <TabsTrigger value="inventory" className="min-h-11 gap-2 px-3 sm:px-5"><Boxes className="hidden sm:block" aria-hidden="true" /> Inventory</TabsTrigger>
           </TabsList>
           <TabsContent value="general" keepMounted className="data-[hidden]:hidden"><TabGeneral /></TabsContent>
           <TabsContent value="inventory" keepMounted className="data-[hidden]:hidden"><TabInventory /></TabsContent>
-          <TabsContent value="backup" keepMounted className="data-[hidden]:hidden"><TabBackup /></TabsContent>
         </Tabs>
       )}
     </MotionPage>

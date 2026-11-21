@@ -9,7 +9,7 @@ import { deliveryScheduleSchema, type DeliveryScheduleFormData } from "../schema
 import type { EstimateResponse } from "../types/estimate";
 
 function Harness() {
-  const expenseSettings = useExpenseSettings();
+  const expenseSettings = useExpenseSettings(true);
   const form = useForm<DeliveryScheduleFormData>({
     resolver: zodResolver(deliveryScheduleSchema),
     defaultValues: {
@@ -80,6 +80,7 @@ function Harness() {
             { latitude: 14.5547, longitude: 121.0244 },
           ],
           ...expenseSettings.requestOptions(),
+          isRoundTrip: true,
         }),
       });
       return response.json();

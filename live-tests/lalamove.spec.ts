@@ -1,6 +1,26 @@
 import { expect, test } from "@playwright/test";
 import { browserLogin } from "./helpers";
 
+const cityCatalog = {
+  data: [
+    {
+      locode: "PH BCD",
+      name: "Bacolod",
+      services: [{ key: "CAR", load: { value: "1000", unit: "kg" } }],
+    },
+    {
+      locode: "PH MNL",
+      name: "Manila NCR & South Luzon",
+      services: [
+        { key: "MOTORCYCLE", load: { value: "20", unit: "kg" } },
+        { key: "VAN1000", load: { value: "1000", unit: "kg" } },
+        { key: "TRUCK550", load: { value: "2000", unit: "kg" } },
+        { key: "3000KG_TRUCK", load: { value: "3000", unit: "kg" } },
+      ],
+    },
+  ],
+};
+
 test("Lalamove saved pickup warehouse supports search, pagination, save feedback and reload", async ({ page }) => {
   await browserLogin(page);
   const original = { id: 1, name: "Original warehouse", street_address: "Original pickup", city: "City", state: "Province", zip_code: "0000", phone_number: "+639171111111" };
@@ -80,8 +100,11 @@ test("Lalamove requires fee confirmation, retains booking after reload and keeps
     if (path === "/context/123") json = { order: { id: 123, order_number: "ORDER-LALAMOVE-123", version, status: created ? "SCHEDULED" : "SCHEDULING", delivery_method: method, shipping_address: "Fixture destination", shipping_recipient: "Recipient" }, warehouse: { id: 1, name: "Fixture warehouse", street_address: "Pickup street", city: "City", state: "Province", zip_code: "0000", version: 1, phone_number: "+639171234567" }, bookings: created ? [booking] : [], history: [], can_reconcile: true, eligible: true, reason: null, enabled: true, environment: "sandbox" };
     else if (path === "/context/123/method") { method = req.postDataJSON().method; version++; json = { message: "Saved" }; }
     else if (path === "/context/123/warehouses") json = { rows: [], total: 0 };
-    else if (path === "/cities") json = { data: [{ locode: "PH MNL", name: "Manila", services: [{ key: "MOTORCYCLE", description: "Small packages", load: { value: "20", unit: "kg" } }] }] };
-    else if (path === "/quotations") json = { quotation_ref: "quote-fixture", expiresAt: new Date(Date.now()+300000).toISOString(), serviceType: "MOTORCYCLE", priceBreakdown: { total: "125", currency: "PHP" }, route: { pickup: { address: "Pickup street" }, dropoff: { address: "Fixture destination" } } };
+    else if (path === "/cities") json = cityCatalog;
+    else if (path === "/quotations") {
+      expect(req.postDataJSON()).toMatchObject({ city: "PH MNL", service_type: "TRUCK550" });
+      json = { quotation_ref: "quote-fixture", expiresAt: new Date(Date.now()+300000).toISOString(), serviceType: "TRUCK550", priceBreakdown: { total: "125", currency: "PHP" }, route: { pickup: { address: "Pickup street" }, dropoff: { address: "Fixture destination" } } };
+    }
     else if (path === "/orders" && req.method() === "POST") { submissions++; expect(req.postDataJSON().package_confirmed).toBe(true); created = true; version++; json = booking; }
     else if (path.endsWith("/refresh")) json = booking;
     else json = [];
@@ -89,20 +112,71 @@ test("Lalamove requires fee confirmation, retains booking after reload and keeps
   });
   await page.goto("/panel/lalamove?orderId=123");
   await expect(page.getByText("ORDER-LALAMOVE-123", { exact: false })).toBeVisible();
-  await page.getByLabel("Delivery method", { exact: true }).selectOption("LALAMOVE");
-  await page.getByLabel("Operating city", { exact: true }).selectOption("PH MNL");
-  await page.getByLabel("Vehicle service", { exact: true }).selectOption("MOTORCYCLE");
+  const lalamoveMethod = page.getByRole("group", { name: "Delivery method" }).getByRole("button", { name: "Lalamove", exact: true });
+  await lalamoveMethod.click();
+  await expect(page.getByLabel("Operating city", { exact: true })).toHaveValue("PH MNL");
+  const vehicles = page.getByRole("radiogroup", { name: "Vehicle service" }).getByRole("radio");
+  await expect(vehicles).toHaveText([/truck550.*2000 kg/i, /3000kg truck.*3000 kg/i]);
+  await vehicles.filter({ hasText: "truck550" }).click();
   await page.getByRole("button", { name: "Get quotation", exact: true }).click();
-  const confirm = page.getByRole("button", { name: "Confirm and book Lalamove", exact: true });
+  const confirm = page.getByRole("button", { name: "Confirm booking", exact: true });
   await expect(confirm).toBeDisabled(); expect(submissions).toBe(0);
   await page.screenshot({ path: testInfo.outputPath("lalamove-quotation-desktop.png"), fullPage: true });
-  await page.getByRole("checkbox").check(); await confirm.click();
-  await expect(page.getByText("Lalamove reference: 1234567890123456789")).toBeVisible();
-  await page.reload(); await expect(page.getByText("Lalamove reference: 1234567890123456789")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open Lalamove tracking" })).toHaveAttribute("href", /share\.sandbox\.lalamove\.com/);
-  await expect(page.getByLabel("Delivery method", { exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Confirm and book Lalamove" })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: /Package fits selected vehicle/ }).check(); await confirm.click();
+  const reference = page.getByText(booking.lalamove_order_id, { exact: true });
+  await expect(reference).toBeVisible();
+  await page.reload(); await expect(reference).toBeVisible();
+  await expect(page.getByRole("link", { name: "Track live" })).toHaveAttribute("href", /share\.sandbox\.lalamove\.com/);
+  await expect(lalamoveMethod).toBeDisabled();
+  await expect(confirm).toHaveCount(0);
   expect(submissions).toBe(1);
+});
+
+test("Lalamove multiple-stop quotations default to Manila NCR and use high-capacity trucks", async ({ page }) => {
+  await browserLogin(page);
+  const orders = [101, 102].map(id => ({
+    id, order_number: `READY-${id}`, version: 1, warehouse_id: 1,
+    shipping_address: `Destination ${id}`, delivery_method: "LALAMOVE", ready_for_lalamove: true,
+  }));
+  const pickup = { address: "Pickup street", name: "Fixture warehouse", phone: "+639171234567" };
+  await page.route("**/api/lalamove/**", route => {
+    const path = new URL(route.request().url()).pathname.replace("/api/lalamove", "");
+    if (path === "/setup") return route.fulfill({ json: { enabled: true, environment: "sandbox" } });
+    if (path === "/cities") return route.fulfill({ json: cityCatalog });
+    if (path === "/eligible") return route.fulfill({ json: orders });
+    if (path === "/warehouses") return route.fulfill({ json: { rows: [{ id: 1, name: pickup.name, street_address: pickup.address, phone_number: pickup.phone, latitude: "14.5", longitude: "121.1" }], total: 1 } });
+    if (path === "/multi-stop/quotations") {
+      expect(route.request().postDataJSON()).toMatchObject({
+        city: "PH MNL", service_type: "3000KG_TRUCK", order_ids: [101, 102], pickup_warehouse_id: 1,
+      });
+      return route.fulfill({ json: {
+        quotation_ref: "multi-quote-fixture", expiresAt: new Date(Date.now() + 300000).toISOString(),
+        serviceType: "3000KG_TRUCK", priceBreakdown: { total: "500", currency: "PHP" },
+        route: { pickup, dropoffs: orders.map(order => ({ order_id: order.id, order_number: order.order_number, address: order.shipping_address, name: "Recipient", phone: pickup.phone })) },
+      } });
+    }
+    throw new Error(`Unexpected Lalamove request: ${path}`);
+  });
+
+  await page.goto("/panel/lalamove?mode=multi-stop");
+  const city = page.getByLabel("Operating city", { exact: true });
+  await expect(city).toHaveValue("PH MNL");
+  const vehicles = page.getByRole("radiogroup", { name: "Vehicle service" });
+  await expect(vehicles.getByRole("radio")).toHaveText([/truck550.*2000 kg/i, /3000kg truck.*3000 kg/i]);
+  await page.getByRole("checkbox", { name: /READY-101/ }).check();
+  await page.getByRole("checkbox", { name: /READY-102/ }).check();
+  await vehicles.getByRole("radio", { name: /3000kg truck/i }).click();
+  const getQuote = page.getByRole("button", { name: "Get multi-stop quote" });
+  await getQuote.click();
+  await expect(page.getByText("Confirmed route sequence")).toBeVisible();
+
+  await city.selectOption("PH BCD");
+  await expect(page.getByText("No high-capacity trucks available for this city.")).toBeVisible();
+  await expect(vehicles).toHaveCount(0);
+  await expect(getQuote).toBeDisabled();
+  await city.selectOption("PH MNL");
+  await expect(vehicles.getByRole("radio", { checked: true })).toHaveCount(0);
+  await expect(getQuote).toBeDisabled();
 });
 
 test("Lalamove webhook setup shows callback activity and registers only after an administrator clicks", async ({ page }) => {

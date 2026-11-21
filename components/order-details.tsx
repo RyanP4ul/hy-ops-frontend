@@ -70,6 +70,38 @@ export function formatOrderLabel(value?: string | null): string {
     .join(" ");
 }
 
+export function formatDeliveryMethodLabel(value?: string | null): string {
+  switch (value?.toUpperCase()) {
+    case "INTERNAL":
+      return "Internal";
+    case "LALAMOVE":
+      return "Lalamove";
+    case "WALK_IN":
+      return "Walk-in";
+    case "PICKUP":
+      return "Pickup";
+    case "MULTIPLE":
+      return "Mixed";
+    default:
+      return value ? formatOrderLabel(value) : "Unassigned";
+  }
+}
+
+export function getDeliveryMethodBadgeClass(value?: string | null): string {
+  switch (value?.toUpperCase()) {
+    case "INTERNAL":
+      return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300";
+    case "LALAMOVE":
+      return "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-300";
+    case "WALK_IN":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300";
+    case "PICKUP":
+      return "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-300";
+    default:
+      return "border-border bg-muted text-muted-foreground";
+  }
+}
+
 export function getOrderStatusBadgeClass(status?: string | null): string {
   switch (status) {
     case "PENDING":

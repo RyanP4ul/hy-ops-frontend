@@ -250,7 +250,7 @@ export function ServicePanel({
             </span>
             {!services.length ? (
               <p className="text-xs text-muted-foreground">
-                No vehicles available for this city.
+                No high-capacity trucks available for this city.
               </p>
             ) : (
               <div

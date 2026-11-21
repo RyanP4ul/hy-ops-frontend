@@ -132,7 +132,7 @@ export type OrderRow = Partial<OrderGroupFields> & {
   customer_name: string;
   email: string;
   customer_company: string;
-  delivery_type: string;
+  delivery_type?: string | null;
   status: string;
   status_counts?: Record<string, number>;
   active_member_count?: number;
@@ -154,6 +154,37 @@ export function formatOrderGroupCode(groupNumber?: string | null): string {
   if (!groupNumber) return "";
   if (groupNumber.length <= 14) return groupNumber;
   return `${groupNumber.slice(0, 7)}…${groupNumber.slice(-4)}`;
+}
+
+export const DELIVERY_METHOD_DISPLAY_ORDER = [
+  "INTERNAL",
+  "LALAMOVE",
+  "WALK_IN",
+  "PICKUP",
+  "UNASSIGNED",
+] as const;
+
+export function summarizeGroupDeliveryMethods(
+  members?: Pick<OrderRow, "status" | "delivery_type">[],
+): { method: string | null; count: number }[] {
+  if (!members || members.length === 0) return [];
+  const activeMembers = members.filter((member) => member.status !== "CANCELLED");
+  const summaryMembers = activeMembers.length > 0 ? activeMembers : members;
+  const counts = new Map<string, number>();
+  for (const member of summaryMembers) {
+    const key = member.delivery_type?.toUpperCase() || "UNASSIGNED";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const orderedKeys = [
+    ...DELIVERY_METHOD_DISPLAY_ORDER.filter((key) => counts.has(key)),
+    ...[...counts.keys()].filter(
+      (key) => !(DELIVERY_METHOD_DISPLAY_ORDER as readonly string[]).includes(key),
+    ),
+  ];
+  return orderedKeys.map((key) => ({
+    method: key === "UNASSIGNED" ? null : key,
+    count: counts.get(key) ?? 0,
+  }));
 }
 
 export const SEPARABLE_ORDER_STATUSES = [
@@ -268,7 +299,7 @@ export type GroupOrderCandidate = {
   warehouse_id: number;
   warehouse_name: string | null;
   shipping_address: string | null;
-  delivery_type: string;
+  delivery_type?: string | null;
   item_count: number;
   total_quantity: number;
   total: number | null;

@@ -156,16 +156,20 @@ test("renders clean map at top, hides store names/icons, calculates and updates 
     ]),
   );
 
+  // Round trip switch is not shown; estimates always calculate round trip
+  await expect(page.getByRole("switch", { name: /round trip/i })).toHaveCount(0);
+  await expect(page.getByText(/round trip/i)).toHaveCount(0);
+
   // Compact fuel rates toggle expands and edits cleanly
   await expect(page.getByRole("button", { name: /6 km\/L/ })).toBeVisible();
   await page.getByRole("button", { name: /6 km\/L/ }).click();
   await expect(page.getByLabel("Efficiency (km/L)")).toHaveValue("6");
   await page.getByLabel("Efficiency (km/L)").fill("8");
 
-  // Calculate populates metrics, allowance, fuel, and flags unknown toll
+  // Calculate populates metrics, allowance, fuel, and flags unknown toll using round trip route
   await page.getByRole("button", { name: "Calculate", exact: true }).click();
   await expect(page.getByText("42.6 km")).toBeVisible();
-  await expect.poll(visiblePaths).toEqual([roadPath]);
+  await expect.poll(visiblePaths).toEqual([[...roadPath, { lat: 14.709, lng: 120.981 }, roadPath[0]]]);
   await expect(page.getByText("1h 15m")).toBeVisible();
   await expect(page.getByText("Enter toll")).toBeVisible();
   await expect(page.getByLabel(/Allowance/)).toHaveValue("600");
@@ -176,8 +180,7 @@ test("renders clean map at top, hides store names/icons, calculates and updates 
   await expect(page.getByText("Enter toll")).toHaveCount(0);
   await expect(page.getByText(/\+ toll/)).toHaveCount(0);
 
-  await page.getByRole("switch", { name: "Round trip" }).press("Space");
-  await expect.poll(visiblePaths).toEqual([]);
+  await page.getByLabel("Efficiency (km/L)").fill("10");
   await page.getByRole("button", { name: "Recalculate", exact: true }).click();
   await expect.poll(visiblePaths).toEqual([[...roadPath, { lat: 14.709, lng: 120.981 }, roadPath[0]]]);
 

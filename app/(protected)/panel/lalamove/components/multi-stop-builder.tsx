@@ -52,6 +52,7 @@ export function MultiStopBuilder({
   readyError,
   retryReady,
   cities,
+  defaultCity,
   citiesLoading,
   citiesError,
   retryCities,
@@ -65,6 +66,7 @@ export function MultiStopBuilder({
   readyError?: string;
   retryReady: () => void;
   cities: City[];
+  defaultCity: string;
   citiesLoading: boolean;
   citiesError?: string;
   retryCities: () => void;
@@ -89,7 +91,7 @@ export function MultiStopBuilder({
   );
   const [switchingMethod, setSwitchingMethod] = useState(false);
 
-  const [city, setCity] = useState("");
+  const [selectedCity, setCity] = useState<string>();
   const [service, setService] = useState("");
   const [isRouteOptimized, setIsRouteOptimized] = useState(false);
   const [quote, setQuote] = useState<MultiStopQuotation | null>(null);
@@ -177,9 +179,10 @@ export function MultiStopBuilder({
     });
   }, [readyOrders, orderSearch, orderFilter]);
 
-  const services =
-    cities.find((item) => item.locode === city)?.services || [];
-  const chosenService = services.find((item) => item.key === service);
+  const city = selectedCity ?? defaultCity;
+  const chosenService = cities
+    .find((item) => item.locode === city)
+    ?.services.find((item) => item.key === service);
 
   const warehouseMissingPhone = !activeWarehouse?.phone_number?.trim();
   const warehouseMissingCoords =
@@ -276,7 +279,7 @@ export function MultiStopBuilder({
   }
 
   async function requestMultiStopQuote() {
-    if (!activeWarehouse || !selectedOrders.length) return;
+    if (!activeWarehouse || !canQuote || !chosenService) return;
     setQuoting(true);
     try {
       const ok = await action(async () => {
@@ -292,7 +295,7 @@ export function MultiStopBuilder({
             order_versions: versions,
             pickup_warehouse_id: activeWarehouse.id,
             city,
-            service_type: service,
+            service_type: chosenService.key,
             is_route_optimized: isRouteOptimized && selectedOrders.length > 1,
           },
         );

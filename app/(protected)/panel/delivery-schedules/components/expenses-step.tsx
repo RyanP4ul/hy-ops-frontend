@@ -22,7 +22,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { parseDeliveryCoordinates } from "@/schema/delivery-schedule";
 import { formatCurrency } from "@/utils/date-util";
@@ -47,7 +46,6 @@ export function ExpensesStep() {
   } = useDeliverySchedule();
 
   const [ratesOpen, setRatesOpen] = useState(false);
-  const roundTripId = useId();
   const efficiencyId = useId();
   const fuelPriceId = useId();
   const ratesPanelId = useId();
@@ -101,7 +99,7 @@ export function ExpensesStep() {
   const estimate = driverExpensesMutation.data;
   const isPending = driverExpensesMutation.isPending;
   const routeMatchesTrip = estimate &&
-    estimate.route.isRoundTrip === expenseSettings.values.isRoundTrip &&
+    estimate.route.isRoundTrip === true &&
     estimate.route.inputPointCount === mapStops.length;
 
   const isStale = Boolean(
@@ -231,25 +229,10 @@ export function ExpensesStep() {
         )}
       </div>
 
-      {/* Compact Trip & Fuel Settings */}
+      {/* Compact Fuel Settings */}
       <div className="rounded-xl border bg-muted/25 px-3.5 py-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <Switch
-              id={roundTripId}
-              checked={expenseSettings.values.isRoundTrip}
-              onCheckedChange={(checked) =>
-                expenseSettings.update({ isRoundTrip: checked })
-              }
-              disabled={isPending}
-            />
-            <label
-              htmlFor={roundTripId}
-              className="cursor-pointer text-sm font-medium select-none"
-            >
-              Round trip
-            </label>
-          </div>
+          <span className="text-sm font-medium">Fuel rates</span>
 
           <Button
             type="button"

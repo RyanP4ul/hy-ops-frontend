@@ -21,7 +21,7 @@ export const STATIC_FILTERS: { key: ArrayFilterKey; label: string; options: Opt[
   { key: "arrangements", label: "Arrangement", options: enumOptions(PAYMENT_ARRANGEMENTS) },
   { key: "payStatuses", label: "Payment status", options: enumOptions(PAYMENT_STATUSES) },
   { key: "orderStatuses", label: "Order status", options: enumOptions(ORDER_STATUSES) },
-  { key: "paymentMethods", label: "Payment method", options: enumOptions(PAYMENT_METHODS) },
+  { key: "paymentMethods", label: "Payment method", options: enumOptions(PAYMENT_METHODS.filter((method) => method !== "CARD")) },
   { key: "deliveryStatuses", label: "Delivery status", options: enumOptions(DELIVERY_STATUSES) },
   { key: "deliveryTypes", label: "Delivery type", options: enumOptions(DELIVERY_TYPES) },
 ];
