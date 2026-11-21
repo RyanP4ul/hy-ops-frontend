@@ -1,7 +1,7 @@
 "use client";
 
 import { LifecycleActions } from "@/components/lifecycle-actions";
-import { WarehouseOverviewAction } from "./warehouse-overview-action";
+import { useWarehouseOverview } from "./warehouse-overview-action";
 
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableState } from "@/components/management-list";
@@ -37,6 +37,27 @@ import { WarehouseRow } from "@/schema/warehouse";
 import { useWarehouses } from "../provider";
 import { REQUESTS } from "@/constant/request";
 import { useWebSocket } from "@/components/providers/websocket-provider";
+
+function WarehouseRowActions({ warehouse, onEdit, onArchive }: {
+  warehouse: WarehouseRow;
+  onEdit: () => void;
+  onArchive: () => void;
+}) {
+  const overview = useWarehouseOverview({ warehouseId: warehouse.id, warehouseName: warehouse.name });
+  return (
+    <>
+      <LifecycleActions
+        resource="warehouses"
+        record={warehouse}
+        rowLabel={warehouse.name}
+        primary={overview.action}
+        secondary={[{ label: "Edit warehouse", icon: Edit, onClick: onEdit }]}
+        additional={[{ label: "Archive warehouse", icon: Archive, destructive: true, onClick: onArchive }]}
+      />
+      {overview.dialog}
+    </>
+  );
+}
 
 export default function DataTable() {
   const { subscribe } = useWebSocket();
@@ -107,48 +128,25 @@ export default function DataTable() {
         accessorKey: "actions",
         header: "Actions",
         cell: ({ row }) => (
-          <div className="flex gap-2">
-            <WarehouseOverviewAction
-              warehouseId={row.original.id}
-              warehouseName={row.original.name}
-            />
-            <LifecycleActions resource="warehouses" record={row.original} />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Edit warehouse"
-              onClick={() => {
-                setSelected({
-                  id: row.original.id,
-                  version: row.original.version,
-                });
-                openModal(DialogMode.EDIT, {
-                  title: "Edit Warehouse",
-                  description: "Update this warehouse.",
-                  action: "Save changes",
-                });
-              }}
-            >
-              <Edit className="size-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Archive warehouse"
-              onClick={() => {
-                setSelected(row.original);
-
-                openModal(DialogMode.ARCHIVE, {
-                  title: "Archive Warehouse",
-                  description: `Are you sure you want to archive the warehouse "${row.original.name}"? You can restore it from Archives.`,
-                  action: "Archive",
-                });
-              }}
-            >
-              <Archive className="size-4" />
-            </Button>
-          </div>
+          <WarehouseRowActions
+            warehouse={row.original}
+            onEdit={() => {
+              setSelected({ id: row.original.id, version: row.original.version });
+              openModal(DialogMode.EDIT, {
+                title: "Edit Warehouse",
+                description: "Update this warehouse.",
+                action: "Save changes",
+              });
+            }}
+            onArchive={() => {
+              setSelected(row.original);
+              openModal(DialogMode.ARCHIVE, {
+                title: "Archive Warehouse",
+                description: `Are you sure you want to archive the warehouse "${row.original.name}"? You can restore it from Archives.`,
+                action: "Archive",
+              });
+            }}
+          />
         ),
       },
     ],
@@ -188,7 +186,7 @@ export default function DataTable() {
       <div aria-busy={warehouseQuery.isFetching}>
         <Table>
           <TableHeader className="bg-muted/30">
-            {table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id} className="px-5">{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}
+            {table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id} className={header.column.id === "actions" ? "w-px px-5 text-right" : "px-5"}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}
           </TableHeader>
           <TableBody>
             {warehouseQuery.isPending ? <TableRow><TableCell colSpan={columns.length}><ManagementTableState loading label="warehouses" /></TableCell></TableRow> : table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="px-5 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={columns.length}><ManagementTableState error={warehouseQuery.isError} filtered={Boolean(search)} label="warehouses" /></TableCell></TableRow>}

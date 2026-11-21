@@ -26,12 +26,21 @@ import {
   Calculator,
 } from "lucide-react";
 
-type SidebarGroupItem = {
+export type SidebarSubItem = {
+  title: string;
+  url: string;
+  icon?: React.ElementType;
+  role?: string[];
+  isDisabled?: boolean;
+};
+
+export type SidebarGroupItem = {
   title: string;
   url: string;
   icon: React.ElementType;
   role: string[];
   isDisabled: boolean;
+  items?: SidebarSubItem[];
 };
 
 export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
@@ -115,6 +124,14 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       icon: TruckIcon,
       role: ["admin", "staff"],
       isDisabled: false,
+      items: [
+        {
+          title: "Lalamove",
+          url: "/panel/lalamove",
+          role: ["admin", "staff"],
+          isDisabled: false,
+        },
+      ],
     },
     {
       title: "Fleet Map",
@@ -140,6 +157,7 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       isDisabled: false,
     },
   ],
+  /*
   Tools: [
     {
       title: "Delivery Expenses Calculator",
@@ -149,6 +167,7 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
       isDisabled: false,
     },
   ],
+  */
   "Analysis & Reports": [
     {
       title: "Analysis & Reports",
@@ -200,9 +219,18 @@ export const leftSidebarData: Record<string, SidebarGroupItem[]> = {
 export const getSidebars = (userRole: string) => {
   const filteredSidebarData: Record<string, SidebarGroupItem[]> = {};
   for (const [group, items] of Object.entries(leftSidebarData)) {
-    const filteredItems = items.filter((item) => {
-      return !item.role || item.role.includes(userRole);
-    });
+    const filteredItems = items
+      .filter((item) => !item.role || item.role.includes(userRole))
+      .map((item) => {
+        if (!item.items) return item;
+        const filteredSubItems = item.items.filter(
+          (subItem) => !subItem.role || subItem.role.includes(userRole),
+        );
+        return {
+          ...item,
+          items: filteredSubItems.length > 0 ? filteredSubItems : undefined,
+        };
+      });
     if (filteredItems.length > 0) {
       filteredSidebarData[group] = filteredItems;
     }

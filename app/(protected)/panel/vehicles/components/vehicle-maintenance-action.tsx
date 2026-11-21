@@ -1,5 +1,7 @@
 "use client";
 
+import type { TableAction } from "@/components/table-actions";
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, ClipboardList, Plus, Wrench } from "lucide-react";
@@ -14,7 +16,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import type { VehicleRow } from "@/schema/vehicle";
 import { resourceQueryRoots } from "@/lib/realtime";
@@ -62,7 +63,7 @@ const MAINT_TYPES = [
   { value: "breakdown", label: "Breakdown" },
 ] as const;
 
-export function VehicleMaintenanceAction({ vehicle }: { vehicle: VehicleRow }) {
+export function useVehicleMaintenance({ vehicle }: { vehicle: VehicleRow }) {
   const cache = useQueryClient();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -157,23 +158,15 @@ export function VehicleMaintenanceAction({ vehicle }: { vehicle: VehicleRow }) {
     }
   }
 
-  const openBadge = vehicle.open_maintenance_count ?? 0;
+  const openCount = vehicle.open_maintenance_count ?? 0;
 
-  return (
+  const action: TableAction = {
+    label: openCount > 0 ? `Service log (${openCount})` : "Service log",
+    icon: ClipboardList,
+    onClick: () => setOpen(true),
+  };
+  const dialog = (
     <Dialog open={open} onOpenChange={(v) => { if (!busy) setOpen(v); }}>
-      <DialogTrigger
-        render={
-          <Button type="button" variant="outline" size="sm" />
-        }
-      >
-        <ClipboardList className="mr-1.5 size-3.5" aria-hidden="true" />
-        Service Log
-        {openBadge > 0 ? (
-          <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px]">
-            {openBadge}
-          </Badge>
-        ) : null}
-      </DialogTrigger>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -448,4 +441,5 @@ export function VehicleMaintenanceAction({ vehicle }: { vehicle: VehicleRow }) {
       </DialogContent>
     </Dialog>
   );
+  return { action, dialog };
 }

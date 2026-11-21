@@ -1,5 +1,7 @@
 "use client";
 
+import { TableActions } from "@/components/table-actions";
+
 import { useEffect, useState } from "react";
 import {
   ArrowLeft, ArrowRight, ArrowUpRight, FileClock, Loader2,
@@ -25,6 +27,10 @@ import { useAuditLogs } from "../provider";
 
 function readableLabel(value: string) {
   return value.replace(/[_-]+/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function performerName(log: AuditLogsTableSchemaType) {
+  return log.user_name?.trim() || `User #${log.user_id}`;
 }
 
 function logDate(value: string) {
@@ -141,7 +147,7 @@ export function DataTable() {
                 <TableHead className="hidden md:table-cell">Record</TableHead>
                 <TableHead className="hidden sm:table-cell">Performed by</TableHead>
                 <TableHead>When</TableHead>
-                <TableHead className="pr-5 text-right"><span className="sr-only">Details</span></TableHead>
+                <TableHead className="w-px pr-5 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -156,13 +162,14 @@ export function DataTable() {
                 </TableRow>
               ) : rows.length ? rows.map((log) => {
                 const date = logDate(log.created_at);
+                const performer = performerName(log);
                 return (
                   <TableRow key={log.id}>
                     <TableCell className="max-w-44 whitespace-normal py-4 pl-5 sm:max-w-sm">
                       <div className="space-y-2">
                         <ActionBadge action={log.action} />
                         <p className="line-clamp-2 break-words text-sm font-medium">{log.description || "Activity recorded"}</p>
-                        <p className="text-xs text-muted-foreground sm:hidden">User #{log.user_id}</p>
+                        <p className="break-words text-xs text-muted-foreground sm:hidden">{performer}</p>
                         <p className="text-xs text-muted-foreground md:hidden">{readableLabel(log.entity_type)} #{log.entity_id}</p>
                       </div>
                     </TableCell>
@@ -170,11 +177,8 @@ export function DataTable() {
                       <p className="text-sm">{readableLabel(log.entity_type)}</p>
                       <p className="mt-1 font-mono text-xs text-muted-foreground">#{log.entity_id}</p>
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell">
-                      <div className="flex items-center gap-2">
-                        <div aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">U</div>
-                        <span className="text-sm">User #{log.user_id}</span>
-                      </div>
+                    <TableCell className="hidden whitespace-normal text-sm sm:table-cell">
+                      {performer}
                     </TableCell>
                     <TableCell className="whitespace-normal">
                       {date ? <time dateTime={date.toISOString()} title={date.toLocaleString()}>
@@ -183,9 +187,15 @@ export function DataTable() {
                       </time> : <span className="text-xs text-muted-foreground">Not recorded</span>}
                     </TableCell>
                     <TableCell className="pr-5 text-right">
-                      <Button variant="ghost" size="sm" aria-label={`View audit log ${log.id}`} onClick={() => setSelectedLog(log)}>
-                        <span className="hidden lg:inline">Details</span><ArrowUpRight className="size-4" aria-hidden="true" />
-                      </Button>
+                      <TableActions
+                        rowLabel={`audit log ${log.id}`}
+                        primary={{
+                          label: "View details",
+                          ariaLabel: `View details for audit log ${log.id}`,
+                          icon: ArrowUpRight,
+                          onClick: () => setSelectedLog(log),
+                        }}
+                      />
                     </TableCell>
                   </TableRow>
                 );
@@ -240,7 +250,7 @@ export function DataTable() {
               <p className="break-words text-sm leading-relaxed">{selectedLog.description}</p>
             </div>
             <dl className="grid grid-cols-2 gap-4">
-              <DetailValue label="Performed by" value={`User #${selectedLog.user_id}`} />
+              <DetailValue label="Performed by" value={performerName(selectedLog)} />
               <DetailValue label="Date and time" value={logDate(selectedLog.created_at)?.toLocaleString()} />
               <DetailValue label="Record type" value={readableLabel(selectedLog.entity_type)} />
               <DetailValue label="Record ID" value={`#${selectedLog.entity_id}`} />

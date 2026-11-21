@@ -1,5 +1,8 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
+import type { TableAction } from "@/components/table-actions";
+
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -19,7 +22,7 @@ export function ArchiveDeletionDate({ record }: { record: ArchiveTable }) {
   </div>;
 }
 
-export function ArchiveDeletionAction({ record }: { record: ArchiveTable }) {
+export function useArchiveDeletion(record: ArchiveTable) {
   const cache = useQueryClient();
   const [open, setOpen] = useState(false);
   const [estimate, setEstimate] = useState(0);
@@ -37,11 +40,19 @@ export function ArchiveDeletionAction({ record }: { record: ArchiveTable }) {
     },
     onError: (error) => toast.error(error.message),
   });
-  return <>
-    <Button variant="ghost" size="sm" disabled={record.delete_after != null || deletion.isPending}
-      onClick={() => { deletion.reset(); setEstimate(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60); setOpen(true); }}>
-      {record.delete_after != null ? "Deletion scheduled" : "Delete"}
-    </Button>
+  const action: TableAction = {
+    label: record.delete_after != null ? "Deletion scheduled" : "Schedule deletion",
+    icon: Trash2,
+    destructive: true,
+    disabled: record.delete_after != null,
+    busy: deletion.isPending,
+    onClick: () => {
+      deletion.reset();
+      setEstimate(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60);
+      setOpen(true);
+    },
+  };
+  const dialog = (
     <Dialog open={open} onOpenChange={(value) => { if (!deletion.isPending) setOpen(value); }}>
       <DialogContent showCloseButton={!deletion.isPending}>
         <DialogHeader>
@@ -57,5 +68,6 @@ export function ArchiveDeletionAction({ record }: { record: ArchiveTable }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </>;
+  );
+  return { action, dialog };
 }

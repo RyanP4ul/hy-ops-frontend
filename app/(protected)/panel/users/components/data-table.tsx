@@ -83,68 +83,58 @@ export default function DataTable() {
       {
         accessorKey: "actions",
         header: "Actions",
-        cell: ({ row }) => (
-          <div className="flex gap-2">
-            <LifecycleActions resource="users" record={row.original} />
-            {row.original.role !== "customer" && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Change password"
-                onClick={() => {
-                  setSelected({
-                    id: row.original.id,
-                    version: row.original.version,
+        cell: ({ row }) => {
+          const user = row.original;
+          const ownAccount = user.id === actorId;
+          return (
+            <LifecycleActions
+              resource="users"
+              record={user}
+              rowLabel={user.name}
+              primary={{
+                label: "Edit user",
+                ariaLabel: `Edit user ${user.name}`,
+                icon: Edit,
+                onClick: () => {
+                  setSelected({ id: user.id, version: user.version });
+                  openModal(DialogMode.EDIT, {
+                    title: "Edit User",
+                    description: `Update the account for ${user.name}.`,
+                    action: "Save changes",
                   });
+                },
+              }}
+              secondary={[user.role !== "customer" && {
+                label: "Change password",
+                icon: KeyRound,
+                onClick: () => {
+                  setSelected({ id: user.id, version: user.version });
                   openModal(DialogMode.CHANGE_PASSWORD, {
                     title: "Change Password",
-                    description: `Set a new password for ${row.original.name}.`,
+                    description: `Set a new password for ${user.name}.`,
                     action: "Change Password",
                   });
-                }}
-              >
-                <KeyRound className="size-4" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Edit user ${row.original.name}`}
-              onClick={() => {
-                setSelected({
-                  id: row.original.id,
-                  version: row.original.version,
-                });
-                openModal(DialogMode.EDIT, {
-                  title: "Edit User",
-                  description: `Update the account for ${row.original.name}.`,
-                  action: "Save changes",
-                });
-              }}
-            >
-              <Edit className="size-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Archive user ${row.original.name}`}
-              disabled={row.original.id === actorId}
-              title={row.original.id === actorId ? "You cannot archive your own account." : "Archive this account while retaining its history"}
-              onClick={() => {
-                setSelected(row.original);
-
-                openModal(DialogMode.ARCHIVE, {
-                  title: "Archive User",
-                  description: `Archive ${row.original.name} (${row.original.email})? They will no longer be able to sign in. The account can be restored from Archives, and existing records are retained.`,
-                  action: "Archive User",
-                });
-              }}
-            >
-              <Archive className="size-4" />
-            </Button>
-          </div>
-        ),
+                },
+              }]}
+              additional={[{
+                label: "Archive user",
+                ariaLabel: `Archive user ${user.name}`,
+                icon: Archive,
+                destructive: true,
+                disabled: ownAccount,
+                tooltip: ownAccount ? "You cannot archive your own account." : "Archive this account while retaining its history",
+                onClick: () => {
+                  setSelected(user);
+                  openModal(DialogMode.ARCHIVE, {
+                    title: "Archive User",
+                    description: `Archive ${user.name} (${user.email})? They will no longer be able to sign in. The account can be restored from Archives, and existing records are retained.`,
+                    action: "Archive User",
+                  });
+                },
+              }]}
+            />
+          );
+        },
       },
     ],
     [openModal, setSelected, actorId],

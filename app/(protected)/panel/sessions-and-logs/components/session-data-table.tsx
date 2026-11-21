@@ -1,5 +1,7 @@
 "use client";
 
+import { TableActions } from "@/components/table-actions";
+
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 import { debounce } from "@/utils/debounce";
@@ -13,7 +15,7 @@ import {
   getExpandedRowModel,
   getSortedRowModel,
 } from "@tanstack/table-core";
-import { Laptop, Loader2Icon, Smartphone, Trash2 } from "lucide-react";
+import { Laptop, Loader2Icon, LogOut, Smartphone } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSessionsAndLogs } from "../provider";
 import { Badge } from "@/components/ui/badge";
@@ -167,22 +169,19 @@ export default function DataTable() {
       accessorKey: "actions",
       header: "Actions",
       cell: ({ row }) => (
-        <div className="flex space-x-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive cursor-pointer"
-            disabled={disconnectingId === row.original.id}
-            aria-label="Disconnect session"
-            onClick={() => { setDisconnectError(""); setSessionToDisconnect(row.original); }}
-          >
-            {disconnectingId === row.original.id ? (
-              <Loader2Icon className="h-3 w-3 animate-spin" />
-            ) : (
-              <Trash2 className="h-3 w-3" />
-            )}
-          </Button>
-        </div>
+        <TableActions
+          rowLabel={`session #${row.original.id} for ${row.original.user.name}`}
+          additional={[{
+            label: "Disconnect session",
+            icon: LogOut,
+            destructive: true,
+            busy: disconnectingId === row.original.id,
+            onClick: () => {
+              setDisconnectError("");
+              setSessionToDisconnect(row.original);
+            },
+          }]}
+        />
       ),
     },
   ];

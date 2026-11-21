@@ -1,5 +1,7 @@
 "use client";
-import { RefreshCw, Scale, ShoppingCart, Wallet } from "lucide-react";
+
+import { TableActions } from "@/components/table-actions";
+import { ListOrdered, RefreshCw, Scale, ShoppingCart, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CustomersResponse } from "../../api/contract";
@@ -29,15 +31,26 @@ export function CustomersTab({ filters, refreshKey, onSelect }: TabProps & { onS
         <CardHeader><CardTitle className="text-base">Customer performance</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead>Orders</TableHead><TableHead>Sales</TableHead><TableHead>Payments</TableHead><TableHead>Outstanding</TableHead><TableHead>Last order</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead>Orders</TableHead><TableHead>Sales</TableHead><TableHead>Payments</TableHead><TableHead>Outstanding</TableHead><TableHead>Last order</TableHead><TableHead className="w-px text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {data.rows.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell><button className="font-medium hover:underline" onClick={() => onSelect({ id: c.id, name: c.name })}>{c.name}</button></TableCell>
+                  <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell>{c.orders}</TableCell><TableCell>{peso(c.sales)}</TableCell><TableCell>{peso(c.paid)}</TableCell><TableCell>{peso(c.balance)}</TableCell><TableCell>{manilaDay(c.lastOrderAt)}</TableCell>
+                  <TableCell>
+                    <TableActions
+                      rowLabel={c.name}
+                      primary={{
+                        label: "View orders",
+                        ariaLabel: `View orders for ${c.name}`,
+                        icon: ListOrdered,
+                        onClick: () => onSelect({ id: c.id, name: c.name }),
+                      }}
+                    />
+                  </TableCell>
                 </TableRow>
               ))}
-              {!data.rows.length && <TableRow><TableCell colSpan={6} className="py-6 text-center text-muted-foreground">No customers with orders for these filters.</TableCell></TableRow>}
+              {!data.rows.length && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">No customers with orders for these filters.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

@@ -155,30 +155,27 @@ export function DataTable() {
       accessorKey: "actions",
       header: "Actions",
       cell: ({ row }) => (
-        <div className="flex space-x-2">
-            <LifecycleActions resource="inventory" record={row.original} archive />
-          <Button
-            aria-label="Edit inventory"
-            variant="ghost"
-            size="sm"
-            className="cursor-pointer"
-            onClick={() => {
+        <LifecycleActions
+          resource="inventory"
+          record={row.original}
+          rowLabel={`inventory #${row.original.id}`}
+          archive
+          primary={{
+            label: "Edit inventory",
+            icon: Edit,
+            onClick: () => {
               openModal(DialogMode.EDIT, {
                 title: "Edit Inventory",
                 description: "Edit the inventory details below.",
                 action: "Save Changes",
               });
-
               setInventoryDetail({
                 id: row.original.id,
                 version: row.original.version,
               });
-            }}
-          >
-            <Edit className="h-3 w-3" />
-          </Button>
-
-        </div>
+            },
+          }}
+        />
       ),
     },
   ];
@@ -286,7 +283,7 @@ export function DataTable() {
       <div aria-busy={inventoryQuery.isFetching}>
         <Table>
           <TableHeader className="bg-muted/30">
-            {table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id} className="px-5">{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}
+            {table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id} className={header.column.id === "actions" ? "w-px px-5 text-right" : "px-5"}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}
           </TableHeader>
           <TableBody>
             {inventoryQuery.isPending ? <TableRow><TableCell colSpan={columns.length}><ManagementTableState loading label="inventory records" /></TableCell></TableRow> : table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="px-5 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={columns.length}><ManagementTableState error={inventoryQuery.isError} filtered={filtered} label="inventory records" /></TableCell></TableRow>}

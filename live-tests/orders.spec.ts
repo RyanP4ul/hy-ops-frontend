@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { AxeResults } from "axe-core";
-import { browserLogin, json, order } from "./helpers";
+import { browserLogin, json, order, openRowActions } from "./helpers";
 
 test.use({ timezoneId: "America/Los_Angeles", actionTimeout: 15_000 });
 test.setTimeout(90_000);
@@ -33,7 +33,7 @@ async function addItem(page: Page, quantity = 1) {
   await main.getByRole("button", { name: "Add item", exact: true }).click();
   const item = page.getByRole("dialog", { name: "Add item", exact: true });
   await item.getByRole("button", { name: /LIVE-SKU/ }).click();
-  await item.getByLabel("Quantity", { exact: false }).fill(String(quantity));
+  await item.getByRole("spinbutton", { name: "Quantity", exact: true }).fill(String(quantity));
   await item.getByRole("button", { name: "Add item", exact: true }).click();
   await expect(item).toHaveCount(0);
 }
@@ -80,7 +80,7 @@ test("Orders Cancel releases reserved stock and stale edits retain notes", async
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog.getByRole("alert").first()).toBeVisible(); await expect(notes).toHaveValue("Keep this draft");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await row.getByRole("button", { name: "Cancel order", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Cancel order", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Cancel Order", exact: true })).toBeEnabled();
   const before = await json(page.request, "GET", "/inventory?limit=10");
   await dialog.getByRole("button", { name: "Cancel Order", exact: true }).click();
@@ -133,7 +133,8 @@ test("Orders create wizard adds, edits, deletes draft items and checks out with 
   await expect(catalogItem.getByText("3 in this order", { exact: true })).toBeVisible();
   await drawer.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(drawer).toBeHidden();
-  await main.getByRole("button", { name: "Remove item LIVE-SKU", exact: true }).click();
+  const itemRow = main.getByRole("row").filter({ hasText: "LIVE-SKU" });
+  await (await openRowActions(page, itemRow)).getByRole("menuitem", { name: "Remove item LIVE-SKU", exact: true }).click();
   await page.getByRole("dialog", { name: "Remove item", exact: true }).getByRole("button", { name: "Remove", exact: true }).click();
   await expect(main.getByText("LIVE-SKU", { exact: true })).toHaveCount(0);
   await addItem(page);
@@ -196,6 +197,72 @@ test("Orders column sorting and newest/oldest control return successful server r
   await page.getByRole("button", { name: "Newest first", exact: true }).click();
   await page.getByRole("button", { name: "Newest first", exact: true }).click();
   await expect(page.getByRole("button", { name: "Oldest first", exact: true })).toBeVisible();
+});
+
+test("Create Order can create a customer and use their saved shipping address", async ({ page }) => {
+  await page.route("**/api/geocode/search?*", (route) => route.fulfill({ json: [{
+    place_id: 1, display_name: "12 Fixture Road, Fixture barangay, Fixture city",
+    lat: "14.7", lon: "121.3",
+    address: { house_number: "12", road: "Fixture Road", suburb: "Fixture barangay", city: "Fixture city", state: "Fixture province", postcode: "1234" },
+  }] }));
+  const wizard = await openWizard(page);
+  const addCustomer = wizard.getByRole("button", { name: "Add customer", exact: true });
+  const customerDialog = page.getByRole("dialog", { name: "Add customer", exact: true });
+  await addCustomer.click();
+  await customerDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(wizard.getByPlaceholder("Select customer")).toHaveValue("Live Customer");
+  const desktopViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await addCustomer.click();
+  const name = customerDialog.getByRole("textbox", { name: "Name", exact: true });
+  const email = customerDialog.getByRole("textbox", { name: "Email", exact: true });
+  await name.fill("New Order Customer");
+  await email.fill("customer@example.test");
+  await customerDialog.getByRole("combobox", { name: "Search Address", exact: true }).fill("Fixture Road");
+  await page.getByRole("option", { name: "12 Fixture Road, Fixture barangay, Fixture city", exact: true }).click();
+  const street = customerDialog.getByRole("textbox", { name: "Address", exact: true });
+  await expect(street).toHaveValue("12 Fixture Road");
+  await expect(customerDialog.getByRole("textbox", { name: "Barangay", exact: true })).toHaveValue("Fixture barangay");
+  await expect(customerDialog.getByRole("textbox", { name: "City/Municipality", exact: true })).toHaveValue("Fixture city");
+  await expect(customerDialog.getByRole("textbox", { name: "Province", exact: true })).toHaveValue("Fixture province");
+  await expect(customerDialog.getByRole("textbox", { name: "Postal code", exact: true })).toHaveValue("1234");
+  await expect(customerDialog.getByRole("spinbutton", { name: "Latitude", exact: true })).toHaveValue("14.7");
+  await expect(customerDialog.getByRole("spinbutton", { name: "Longitude", exact: true })).toHaveValue("121.3");
+  await street.fill("New order destination");
+  const save = customerDialog.getByRole("button", { name: "Save and select customer" });
+  await expect(save).toBeInViewport();
+  await save.click();
+  await expect(customerDialog).toContainText("Phone number is required for shipping");
+  const phone = customerDialog.getByRole("textbox", { name: "Phone number", exact: true });
+  await expect(phone).toHaveAttribute("required", "");
+  await expect(customerDialog.locator("label").filter({ hasText: "Phone number" }).getByText("*", { exact: true })).toBeVisible();
+  await phone.fill("09000000001");
+  await save.click();
+  await expect(customerDialog).toContainText("A user with this email already exists.");
+  await expect(name).toHaveValue("New Order Customer");
+  await email.fill("new-order-customer@example.test");
+  await save.click();
+  await expect(customerDialog).toHaveCount(0);
+  await page.setViewportSize(desktopViewport);
+  await expect(wizard.getByPlaceholder("Select warehouse")).toHaveValue("Live warehouse");
+  await expect(wizard.getByPlaceholder("Select customer")).toHaveValue("New Order Customer");
+  await expect(wizard.getByLabel("Shipping address", { exact: false })).toContainText("New order destination");
+  const { rows: [customer] } = await json(page.request, "GET", "/users/customers?search=new-order-customer%40example.test");
+  expect(customer).toMatchObject({ name: "New Order Customer", addresses: [{ address_line: "New order destination" }] });
+  await wizard.getByRole("button", { name: "Next: Order items", exact: true }).click();
+  await addItem(page);
+  await wizard.getByRole("button", { name: "Next: Payment", exact: true }).click();
+  await wizard.getByLabel("Method", { exact: false }).click();
+  await page.getByRole("option", { name: "Cash", exact: true }).click();
+  await wizard.getByRole("button", { name: "Next: Review & create", exact: true }).click();
+  const checkout = page.waitForResponse(response => new URL(response.url()).pathname === "/api/orders" && response.request().method() === "POST");
+  await wizard.getByRole("button", { name: "Create order", exact: true }).click();
+  const response = await checkout;
+  expect(response.ok(), await response.text()).toBeTruthy();
+  const created = await response.json();
+  expect(await json(page.request, "GET", `/orders/${created.id}`)).toMatchObject({
+    customer_id: customer.id, customer_address_id: customer.addresses[0].id,
+  });
 });
 
 test("Orders save a second address and preserve it after a failed checkout while another order stays active", async ({ page }) => {
@@ -467,9 +534,9 @@ test("Combined payments preserve separate entries, allocate one receipt, and sho
   await page.getByPlaceholder(/Search payments/).fill(created[0].product_number);
   const records = page.getByRole("row").filter({ hasText: first.combined_payment.payment_number });
   await expect(records).toHaveCount(1);
-  await records.getByRole("button", { name: first.combined_payment.payment_number }).click();
+  await records.getByRole("button", { name: "Show orders", exact: true }).click();
   await page.getByRole("region", { name: `Orders for ${first.combined_payment.payment_number}` })
-    .getByRole("button", { name: created[0].product_number, exact: true }).click();
+    .getByRole("button", { name: `View payment for ${created[0].product_number}`, exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Original combined receipt");
 });
 

@@ -1,16 +1,19 @@
 "use client";
 
+import { TableActions } from "@/components/table-actions";
+
 import {
   Activity,
   BellRing,
   CheckCircle2,
   Clock3,
-  Ellipsis,
+  Eye,
   FileText,
   History,
   ListChecks,
   MailCheck,
   PackageSearch,
+  Pause,
   Play,
   Settings2,
   Truck,
@@ -29,7 +32,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -304,7 +306,23 @@ function SummaryCard({ title, value, description, icon: Icon }: { title: string;
 }
 
 function Actions({ task, onEdit, onRun, onToggle }: { task: AutomationTask; onEdit: (task: AutomationTask) => void; onRun: (task: AutomationTask) => void; onToggle: (task: AutomationTask) => void }) {
-  return <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${task.name}`} />}><Ellipsis /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => onEdit(task)}><Settings2 /> View Details</DropdownMenuItem><DropdownMenuItem onClick={() => onEdit(task)}><Settings2 /> Edit Configuration</DropdownMenuItem><DropdownMenuItem onClick={() => onRun(task)}><Play /> Run Now</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onClick={() => onToggle(task)}><Activity /> {task.status === "Enabled" ? "Disable" : "Enable"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
+  const enabled = task.status === "Enabled";
+  return (
+    <TableActions
+      rowLabel={task.name}
+      primary={{ label: "Run now", icon: Play, onClick: () => onRun(task) }}
+      secondary={[{ label: "Edit configuration", icon: Settings2, onClick: () => onEdit(task) }]}
+      additional={[
+        { label: "View details", icon: Eye, onClick: () => onEdit(task) },
+        {
+          label: enabled ? "Disable" : "Enable",
+          icon: enabled ? Pause : Play,
+          destructive: enabled,
+          onClick: () => onToggle(task),
+        },
+      ]}
+    />
+  );
 }
 
 function TaskMobileCard({ task, onEdit, onRun, onToggle }: { task: AutomationTask; onEdit: (task: AutomationTask) => void; onRun: (task: AutomationTask) => void; onToggle: (task: AutomationTask) => void }) {

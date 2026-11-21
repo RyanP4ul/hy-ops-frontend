@@ -7,7 +7,6 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  RefreshCw,
   Search,
   X,
 } from "lucide-react";
@@ -20,7 +19,6 @@ import type {
   Booking,
   ReadyOrder,
   Reconciliation,
-  Setup,
 } from "../types";
 import { api } from "../lib/api";
 import {
@@ -46,10 +44,8 @@ type Props = {
   busy: boolean;
   ready: Query<ReadyOrder[]>;
   bookings: Query<Booking[]>;
-  setup: Query<Setup>;
   queue: Query<Reconciliation>;
   action: Action;
-  setNotice: (message: string) => void;
   updateUrl: (values: Record<string, string | null>) => void;
 };
 
@@ -61,10 +57,8 @@ export function Overview({
   busy,
   ready,
   bookings,
-  setup,
   queue,
   action,
-  setNotice,
   updateUrl,
 }: Props) {
   const [readyLimit, setReadyLimit] = useState(8);
@@ -101,126 +95,6 @@ export function Overview({
             : true)
     );
   });
-
-  if (view === "settings") {
-    return (
-      <div className="max-w-2xl space-y-5">
-        {setup.isPending ? (
-          <div className="overflow-hidden rounded-xl border bg-card">
-            <RowsSkeleton rows={2} label="settings" />
-          </div>
-        ) : setup.error ? (
-          <QueryError
-            message={setup.error.message}
-            retry={() => void setup.refetch()}
-          />
-        ) : !setup.data?.can_manage ? (
-          <div className="rounded-xl border bg-card">
-            <EmptyBlock
-              title="Administrator access required"
-              description="Only administrators can manage Lalamove connection settings."
-            />
-          </div>
-        ) : (
-          <>
-            <section className="overflow-hidden rounded-xl border bg-card">
-              <div className="flex items-center justify-between border-b px-5 py-3.5">
-                <h2 className="text-sm font-semibold tracking-tight">
-                  Connection
-                </h2>
-                <span className="rounded-md bg-muted px-2 py-0.5 text-xs capitalize text-muted-foreground">
-                  {setup.data.environment}
-                </span>
-              </div>
-              <div className="divide-y px-5">
-                <div className="flex items-center justify-between py-3.5 text-sm">
-                  <span className="text-muted-foreground">New bookings</span>
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 text-xs font-medium",
-                      setup.data.enabled
-                        ? "text-emerald-700 dark:text-emerald-400"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        setup.data.enabled
-                          ? "bg-emerald-500"
-                          : "bg-muted-foreground",
-                      )}
-                    />
-                    {setup.data.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-                <div className="py-3.5 text-xs leading-relaxed text-muted-foreground">
-                  Automatic polling updates deliveries every 2–3 minutes. Use{" "}
-                  <span className="font-medium text-foreground">
-                    Refresh status
-                  </span>{" "}
-                  on any booking for an immediate check.
-                </div>
-              </div>
-            </section>
-
-            <section className="overflow-hidden rounded-xl border bg-card">
-              <div className="border-b px-5 py-3.5">
-                <h2 className="text-sm font-semibold tracking-tight">
-                  Webhook
-                </h2>
-              </div>
-              <div className="space-y-4 p-5">
-                <label className="block space-y-1.5 text-xs font-medium text-muted-foreground">
-                  <span>Callback URL</span>
-                  <Input
-                    aria-label="Public callback URL"
-                    readOnly
-                    value={setup.data.callback_url || ""}
-                    placeholder="Not configured"
-                    className="h-9 font-mono text-xs"
-                  />
-                </label>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>
-                    Last callback:{" "}
-                    {setup.data.last_callback_at
-                      ? `${dateLabel(setup.data.last_callback_at)} · Manila`
-                      : "None yet"}
-                  </span>
-                  <span>Use v3 in Partner Portal</span>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy || !setup.data.callback_url}
-                  onClick={() =>
-                    void action(async () => {
-                      const result = await api<{ message: string }>(
-                        "POST",
-                        "/webhook/register",
-                      );
-                      setNotice(result.message);
-                    })
-                  }
-                >
-                  <RefreshCw
-                    className={cn("size-3.5", busy && "animate-spin")}
-                    aria-hidden="true"
-                  />
-                  Register {setup.data.environment} webhook
-                </Button>
-              </div>
-            </section>
-          </>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-5">
@@ -399,7 +273,7 @@ export function Overview({
           aria-label="Ready to book"
           className="overflow-hidden rounded-xl border bg-card"
         >
-          <div className="flex items-center justify-between gap-3 border-b px-5 py-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold tracking-tight">
                 Ready to book
@@ -408,12 +282,22 @@ export function Overview({
                 {matchingReady.length}
               </span>
             </div>
-            <Link
-              href="/panel/orders"
-              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              All orders →
-            </Link>
+            <div className="flex items-center gap-3">
+              {matchingReady.length > 0 && (
+                <Link
+                  href="/panel/lalamove?mode=multi-stop"
+                  className="text-xs font-medium text-orange-700 transition-colors hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300"
+                >
+                  Book multi-stop →
+                </Link>
+              )}
+              <Link
+                href="/panel/orders"
+                className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                All orders →
+              </Link>
+            </div>
           </div>
 
           {ready.isPending ? (
@@ -606,6 +490,11 @@ export function Overview({
                 const needsReview = ["UNKNOWN", "REVIEW"].includes(
                   booking.booking_state,
                 );
+                const stopCount = booking.stops?.length || booking.stop_count || 1;
+                const isMultiStop = stopCount > 1;
+                const detailHref = isMultiStop
+                  ? `/panel/lalamove?bookingId=${booking.id}`
+                  : `/panel/lalamove?orderId=${booking.order_id}`;
                 return (
                   <li
                     key={booking.id}
@@ -621,12 +510,20 @@ export function Overview({
                       />
                     )}
                     <div className="min-w-0">
-                      <Link
-                        href={`/panel/lalamove?orderId=${booking.order_id}`}
-                        className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                      >
-                        {booking.order_number || `Order #${booking.order_id}`}
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={detailHref}
+                          className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                        >
+                          {booking.order_number || `Order #${booking.order_id}`}
+                          {isMultiStop ? ` +${stopCount - 1} more` : ""}
+                        </Link>
+                        {isMultiStop && (
+                          <span className="rounded bg-orange-500/10 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-orange-700 dark:text-orange-400">
+                            {stopCount} stops
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
                         {booking.lalamove_order_id || `Attempt #${booking.id}`}{" "}
                         · {booking.environment}
@@ -650,7 +547,7 @@ export function Overview({
 
                     <div className="md:text-right">
                       <Link
-                        href={`/panel/lalamove?orderId=${booking.order_id}`}
+                        href={detailHref}
                         aria-label={`View ${booking.order_number || booking.order_id}`}
                         className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                       >

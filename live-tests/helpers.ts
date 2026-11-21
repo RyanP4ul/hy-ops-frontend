@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 export const password = "Fixture-password-2026";
 export async function login(api: APIRequestContext, email = "admin@example.test") {
@@ -13,6 +13,10 @@ export async function browserLogin(page: Page, email = "admin@example.test") {
   await page.getByRole("button", { name: "Login", exact: true }).click();
   await expect(page).toHaveURL(/\/panel/, { timeout: 30_000 });
   await expect(page.getByText(email, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+}
+export async function openRowActions(page: Page, row: Locator) {
+  await row.getByRole("button", { name: /^Actions for / }).click();
+  return page.getByRole("menu");
 }
 export async function json(api: APIRequestContext, method: string, path: string, data?: unknown) {
   const response = await api.fetch(`/api${path}`, { method, data });

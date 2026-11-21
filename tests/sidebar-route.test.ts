@@ -17,11 +17,23 @@ test("sidebar URL matching handles direct links, nested routes and trailing slas
 
 test("every visible menu URL activates exactly its own item regardless of display title", () => {
   for (const role of ["admin", "staff"]) {
-    const items = Object.values(getSidebars(role)).flat();
+    const items = Object.values(getSidebars(role))
+      .flat()
+      .flatMap((item) => [item, ...(item.items ?? [])]);
     for (const item of items.filter(item => !item.isDisabled)) {
       for (const path of [item.url, `${item.url}/`]) {
         expect(items.filter(candidate => isSidebarRouteActive(path, candidate.url, candidate.isDisabled)).map(candidate => candidate.title)).toEqual([item.title]);
       }
     }
+  }
+});
+
+test("Deliveries exposes Lalamove as a submenu item for admin and staff", () => {
+  for (const role of ["admin", "staff"]) {
+    const logistics = getSidebars(role)["Logistics & Tracking"];
+    const deliveries = logistics?.find((item) => item.title === "Deliveries");
+    expect(deliveries?.items?.map((sub) => ({ title: sub.title, url: sub.url }))).toEqual([
+      { title: "Lalamove", url: "/panel/lalamove" },
+    ]);
   }
 });

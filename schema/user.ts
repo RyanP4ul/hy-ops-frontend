@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { savedAddressSchema, savedCoordinatesSchema } from "./shipping-address";
 
 const baseUserSchema = {
   name: z.string().min(1, "Name is required"),
@@ -27,11 +28,30 @@ const customerProfileSchema = z.object({
   longitude: z.string(),
 });
 
+export const emptyCustomerProfile = {
+  search_address: "",
+  company_name: "",
+  phone_number: "",
+  address_line: "",
+  barangay: "",
+  city_municipality: "",
+  province: "",
+  postal_code: "",
+  latitude: "",
+  longitude: "",
+} satisfies z.infer<typeof customerProfileSchema>;
+
 const driverProfileSchema = z.object({
   warehouse_id: z.number().min(1, "Warehouse is required"),
   warehouse_name: z.string(),
   status: z.string(),
   phone_number: z.string(),
+});
+
+const customerUserSchema = z.object({
+  ...baseUserSchema,
+  role: z.literal("customer"),
+  profile: customerProfileSchema.optional(),
 });
 
 export const userSchema = z.discriminatedUnion("role", [
@@ -46,11 +66,7 @@ export const userSchema = z.discriminatedUnion("role", [
     profile: staffProfileSchema.optional(),
   }),
 
-  z.object({
-    ...baseUserSchema,
-    role: z.literal("customer"),
-    profile: customerProfileSchema.optional(),
-  }),
+  customerUserSchema,
 
   z.object({
     ...baseUserSchema,
@@ -60,6 +76,28 @@ export const userSchema = z.discriminatedUnion("role", [
 ]);
 
 export type UserForm = z.infer<typeof userSchema>;
+
+const coordinateText = z.string().trim().min(1, "Search for an address or enter the coordinates");
+
+export const orderCustomerSchema: z.ZodType<UserForm, UserForm> = customerUserSchema.extend({
+  name: baseUserSchema.name.trim().min(1, "Name is required"),
+  email: z.string().trim().email("Enter a valid email"),
+  profile: customerProfileSchema.extend({
+    ...savedAddressSchema.shape,
+    company_name: z.string().trim(),
+    phone_number: z.string().trim().min(1, "Phone number is required for shipping"),
+    latitude: coordinateText,
+    longitude: coordinateText,
+  }).superRefine(({ latitude, longitude }, ctx) => {
+    if (!latitude || !longitude) return;
+    const coordinates = savedCoordinatesSchema.safeParse({ latitude: Number(latitude), longitude: Number(longitude) });
+    if (!coordinates.success) {
+      for (const issue of coordinates.error.issues) {
+        ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+      }
+    }
+  }),
+});
 
 export type UserRow = UserForm & {
   id: number;

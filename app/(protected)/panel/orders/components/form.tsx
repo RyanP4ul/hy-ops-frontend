@@ -1,15 +1,18 @@
 "use client";
 
+import { TableActions } from "@/components/table-actions";
+
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Controller, useWatch } from "react-hook-form";
-import { Edit, Plus, Trash2 } from "lucide-react";
+import { Edit, PackagePlus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
-import { useOrders } from "../provider";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useOrders, type CustomerOption } from "../provider";
 import { OrderForm } from "@/schema/order";
 import { orderPaymentMethodLabels, orderPaymentMethodSchema } from "@/schema/order-payment-method";
 import {
@@ -62,6 +65,7 @@ import { PaymentTypeCombobox } from "@/components/payment-type-combobox";
 import { formatCurrency } from "@/utils/date-util";
 import { cn } from "@/lib/utils";
 import { SavedAddressForm } from "./saved-address-form";
+import { CreateCustomerDialog } from "./create-customer-dialog";
 
 const DELIVERY_METHODS = [
   { value: "INTERNAL", label: "Company delivery" },
@@ -125,6 +129,8 @@ export default function Form() {
     customerCB,
     warehouseQuery,
     customerQuery,
+    selectedCustomer,
+    setCustomerSnapshot,
     customerOrderEligibility,
     setSub,
     setInventoryItem,
@@ -136,6 +142,7 @@ export default function Form() {
     paymentMode,
     combinedPayment,
   } = useOrders();
+  const { userQuery } = useAuth();
   const { state, dispatch } = useModal();
   const { send } = useWebSocket();
 
@@ -159,24 +166,29 @@ export default function Form() {
     control: form.control,
     name: "items",
   });
-  const selectedCustomerId = useWatch({
-    control: form.control,
-    name: "customer_id",
-  });
   const selectedCustomerAddressId = useWatch({
     control: form.control,
     name: "customer_address_id",
   });
 
-  const selectedCustomer = customerQuery.data?.rows.find(
-    (customer) => customer.id === selectedCustomerId,
-  );
   const selectedCustomerAddress = selectedCustomer?.addresses.find(
     (customerAddress) => customerAddress.id === selectedCustomerAddressId,
   );
   const savedShippingAddress = selectedCustomerAddress
     ? formatCustomerAddress(selectedCustomerAddress)
     : "";
+
+  function selectCustomer(customer: CustomerOption | undefined) {
+    setCustomerSnapshot(customer);
+    customerCB.setInputValue(customer?.name ?? "");
+    form.setValue("customer_id", customer?.id ?? -1, { shouldDirty: true });
+    const addresses = customer?.addresses ?? [];
+    form.setValue("customer_address_id", addresses.length === 1 ? addresses[0].id : undefined, {
+      shouldDirty: true,
+    });
+    form.setValue("is_custom_shipping", false, { shouldDirty: true });
+    form.clearErrors(["customer_id", "customer_address_id"]);
+  }
 
   const onSuccess = () => {
     setPage((current) => ({ ...current, pageIndex: 0 }));
@@ -446,23 +458,10 @@ export default function Form() {
                 value={field.value ? String(field.value) : ""}
                 onValueChange={(value) => {
                   if (orderCount > 1) return;
-                  const picked = customerQuery.data?.rows?.find(
+                  const picked = customerQuery.data?.rows.find(
                     (customer) => customer.id === Number(value),
                   );
-
-                  customerCB.setInputValue(picked?.name ?? "");
-                  field.onChange(value ? Number(value) : null);
-                  const addresses = picked?.addresses ?? [];
-                  form.setValue(
-                    "customer_address_id",
-                    addresses.length === 1 ? addresses[0]?.id : undefined,
-                    { shouldDirty: true },
-                  );
-                  form.setValue("is_custom_shipping", false, {
-                    shouldDirty: true,
-                  });
-
-                  form.clearErrors(["customer_id", "customer_address_id"]);
+                  selectCustomer(picked);
                 }}
               >
                 <Field data-invalid={fieldState.invalid}>
@@ -470,14 +469,25 @@ export default function Form() {
                     Customer <span className="text-destructive">*</span>
                   </FieldLabel>
 
-                  <ComboboxInput
-                    placeholder="Select customer"
-                    id="customer-name"
-                    value={customerCB.inputValue}
-                    disabled={customerQuery.isFetching || orderCount > 1}
-                    aria-invalid={fieldState.invalid ? "true" : "false"}
-                    readOnly
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ComboboxInput
+                      className="min-w-32 flex-1"
+                      placeholder="Select customer"
+                      id="customer-name"
+                      value={customerCB.inputValue}
+                      disabled={customerQuery.isFetching || orderCount > 1}
+                      aria-invalid={fieldState.invalid ? "true" : "false"}
+                      readOnly
+                    />
+                    {userQuery.data?.role === "admin" && orderCount === 1 && (
+                      <CreateCustomerDialog onCreated={(customer) => {
+                        if (!mounted.current) return;
+                        customerCB.setOpen(false);
+                        customerCB.setPage(0);
+                        selectCustomer(customer);
+                      }} />
+                    )}
+                  </div>
                   <ComboboxContent>
                     <ComboboxList>
                       {customerQuery.data?.rows?.map((customer) => (
@@ -666,6 +676,10 @@ export default function Form() {
                   ) {
                     return;
                   }
+                  setCustomerSnapshot({
+                    ...selectedCustomer,
+                    addresses: [...selectedCustomer.addresses, address],
+                  });
                   form.setValue("is_custom_shipping", false);
                   form.setValue("customer_address_id", address.id, {
                     shouldDirty: true,
@@ -790,7 +804,7 @@ export default function Form() {
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
                     <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="w-[84px] text-right">
+                    <TableHead className="w-px text-right">
                       <span className="sr-only">Actions</span>
                     </TableHead>
                   </TableRow>
@@ -824,54 +838,72 @@ export default function Form() {
                           ? "—"
                           : formatCurrency(item.price * item.quantity)}
                       </TableCell>
-                      <TableCell className="text-right whitespace-nowrap">
-                        <Button
-                          aria-label={`Edit item ${item.product_variant_sku}`}
-                          type="button"
-                          size="icon-xs"
-                          variant="ghost"
-                          onClick={() => {
-                            setSub({
+                      <TableCell>
+                        <TableActions
+                          rowLabel={item.product_variant_sku}
+                          primary={{
+                            label: "Edit item",
+                            ariaLabel: `Edit item ${item.product_variant_sku}`,
+                            icon: Edit,
+                            onClick: () => setSub({
                               id: item.inventory_id,
                               is_open: true,
                               mode: DialogMode.EDIT,
-                            });
+                            }),
                           }}
-                        >
-                          <Edit className="size-3.5" />
-                        </Button>
-                        <Button
-                          aria-label={`Remove item ${item.product_variant_sku}`}
-                          type="button"
-                          size="icon-xs"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => {
-                            setSub({
+                          additional={[{
+                            label: "Remove item",
+                            ariaLabel: `Remove item ${item.product_variant_sku}`,
+                            icon: Trash2,
+                            destructive: true,
+                            onClick: () => setSub({
                               id: index,
                               is_open: true,
                               mode: DialogMode.DELETE,
-                            });
-                          }}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
+                            }),
+                          }]}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
 
                   {(!items || items.length < 1) && (
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
                       <TableCell
                         colSpan={6}
-                        className="h-32 text-center text-sm text-muted-foreground"
+                        className="py-10 text-center text-sm text-muted-foreground"
                       >
-                        <p className="font-medium text-foreground">
-                          No items yet
-                        </p>
-                        <p className="mt-1 text-xs">
-                          Click Add item to pick products from warehouse stock.
-                        </p>
+                        <div className="mx-auto flex max-w-xs flex-col items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className="grid size-10 place-items-center rounded-xl border bg-muted/40 text-muted-foreground"
+                          >
+                            <PackagePlus className="size-5" />
+                          </span>
+                          <div className="space-y-0.5">
+                            <p className="font-medium text-foreground">
+                              No items yet
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Browse warehouse stock to add products and set quantities.
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-1"
+                            onClick={() => {
+                              setSub({
+                                is_open: true,
+                                mode: DialogMode.INSERT,
+                              });
+                            }}
+                          >
+                            <Plus className="size-3.5" aria-hidden="true" />
+                            Browse warehouse stock
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )}

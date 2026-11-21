@@ -4,22 +4,26 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, RefreshCw, Route, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { api } from "./lib/api";
 import { BookingCard } from "./components/booking-card";
+import { LalamoveLiveMap } from "./components/lalamove-live-map";
+import { MultiStopBookingView } from "./components/multi-stop-booking-view";
+import { MultiStopBuilder } from "./components/multi-stop-builder";
 import {
   DeliveryDetails,
   QuotePanel,
   ServicePanel,
 } from "./components/order-panels";
 import { Overview } from "./components/overview";
-import { dateLabel, QueryError, words } from "./components/shared";
+import { dateLabel, primaryCtaClass, QueryError, words } from "./components/shared";
 import type { PickupFeedback } from "./components/pickup-warehouse-selector";
 import type {
   Booking,
+  BookingContext,
   City,
   Context,
   Quotation,
@@ -32,19 +36,49 @@ const BASE_PATH = "/panel/lalamove";
 
 export function LalamoveWorkspace() {
   const params = useSearchParams();
-  const value = Number(params.get("orderId"));
-  const orderId = Number.isSafeInteger(value) && value > 0 ? value : 0;
-  return <Workspace key={orderId} orderId={orderId} />;
+  const orderParam = Number(params.get("orderId"));
+  const bookingParam = Number(params.get("bookingId"));
+  const orderId = Number.isSafeInteger(orderParam) && orderParam > 0 ? orderParam : 0;
+  const bookingId =
+    !orderId && Number.isSafeInteger(bookingParam) && bookingParam > 0
+      ? bookingParam
+      : 0;
+  const isMultiStopBuilder =
+    !orderId && !bookingId && params.get("mode") === "multi-stop";
+
+  const workspaceKey = orderId
+    ? `order-${orderId}`
+    : bookingId
+      ? `booking-${bookingId}`
+      : isMultiStopBuilder
+        ? "multi-stop"
+        : "overview";
+
+  return (
+    <Workspace
+      key={workspaceKey}
+      orderId={orderId}
+      bookingId={bookingId}
+      isMultiStopBuilder={isMultiStopBuilder}
+    />
+  );
 }
 
-function Workspace({ orderId }: { orderId: number }) {
+function Workspace({
+  orderId,
+  bookingId,
+  isMultiStopBuilder,
+}: {
+  orderId: number;
+  bookingId: number;
+  isMultiStopBuilder: boolean;
+}) {
   const router = useRouter();
   const params = useSearchParams();
   const client = useQueryClient();
 
-  const view = ["history", "settings"].includes(params.get("view") || "")
-    ? params.get("view") || "overview"
-    : "overview";
+  const isOverview = !orderId && !bookingId && !isMultiStopBuilder;
+  const view = params.get("view") === "history" ? "history" : "overview";
   const filter = ["active", "review", "completed"].includes(
     params.get("filter") || "",
   )
@@ -79,41 +113,50 @@ function Workspace({ orderId }: { orderId: number }) {
     enabled: orderId > 0,
     refetchInterval: 15000,
   });
+  const bookingDetail = useQuery({
+    queryKey: ["lalamove", "booking-context", bookingId],
+    queryFn: () => api<BookingContext>("GET", `/bookings/${bookingId}`),
+    enabled: bookingId > 0,
+    refetchInterval: 15000,
+  });
   const eligible = useQuery({
     queryKey: ["lalamove", "eligible"],
     queryFn: () => api<ReadyOrder[]>("GET", "/eligible"),
-    enabled: !orderId,
+    enabled: isOverview || isMultiStopBuilder,
   });
   const bookings = useQuery({
     queryKey: ["lalamove", "history", historyPage],
     queryFn: () => api<Booking[]>("GET", `/orders?page=${historyPage}`),
-    enabled: !orderId,
+    enabled: isOverview,
     refetchInterval: 30000,
   });
   const queue = useQuery({
     queryKey: ["lalamove", "reconciliation"],
     queryFn: () => api<Reconciliation>("GET", "/reconciliation"),
-    enabled: !orderId,
+    enabled: isOverview,
     refetchInterval: 60000,
   });
   const setup = useQuery({
     queryKey: ["lalamove", "setup"],
     queryFn: () => api<Setup>("GET", "/setup"),
-    enabled: !orderId,
+    enabled: isOverview || isMultiStopBuilder,
     refetchInterval: 30000,
   });
   const cities = useQuery({
     queryKey: ["lalamove", "cities"],
     queryFn: () => api<{ data: City[] }>("GET", "/cities"),
-    enabled: Boolean(context.data?.enabled),
+    enabled: Boolean(
+      (orderId > 0 && context.data?.enabled) ||
+        (isMultiStopBuilder && setup.data?.enabled),
+    ),
     staleTime: 300000,
   });
 
   useEffect(() => {
-    if (!orderId) return;
+    if (!orderId && !bookingId) return;
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [orderId]);
+  }, [orderId, bookingId]);
 
   const data = context.data;
   const active = data?.bookings.some((attempt) => attempt.active) || false;
@@ -126,10 +169,17 @@ function Workspace({ orderId }: { orderId: number }) {
   const services =
     cities.data?.data?.find((item) => item.locode === city)?.services || [];
   const chosenService = services.find((item) => item.key === service);
-  const environment = data?.environment || setup.data?.environment;
+  const environment =
+    data?.environment ||
+    bookingDetail.data?.environment ||
+    setup.data?.environment;
   const updatedAt = orderId
     ? context.dataUpdatedAt
-    : Math.max(eligible.dataUpdatedAt, bookings.dataUpdatedAt);
+    : bookingId
+      ? bookingDetail.dataUpdatedAt
+      : isMultiStopBuilder
+        ? eligible.dataUpdatedAt
+        : Math.max(eligible.dataUpdatedAt, bookings.dataUpdatedAt);
   const step = primaryBooking ? 2 : quote ? 1 : 0;
 
   function updateUrl(values: Record<string, string | null>) {
@@ -277,33 +327,44 @@ function Workspace({ orderId }: { orderId: number }) {
 
   const isRefreshing = orderId
     ? context.isFetching
-    : bookings.isFetching || eligible.isFetching;
+    : bookingId
+      ? bookingDetail.isFetching
+      : isMultiStopBuilder
+        ? eligible.isFetching
+        : bookings.isFetching || eligible.isFetching;
 
   const navItems = [
     { value: "overview", label: "Overview" },
     { value: "history", label: "History" },
-    ...(setup.data?.can_manage
-      ? [{ value: "settings", label: "Settings" }]
-      : []),
   ];
+
+  const pageTitle = orderId
+    ? data?.order.order_number || "Order booking"
+    : bookingId
+      ? `Multi-stop booking #${bookingId}`
+      : isMultiStopBuilder
+        ? "Multi-stop Lalamove booking"
+        : "Lalamove";
 
   return (
     <main className="min-w-0 px-4 py-5 md:px-6 lg:px-8 lg:py-7">
-      <div className="mx-auto max-w-[1440px] space-y-5">
+      <div className="space-y-5">
         {/* Clean Header */}
         <header className="space-y-4">
-          <Link
-            href={orderId ? BASE_PATH : "/panel/deliveries"}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden="true" />
-            {orderId ? "Lalamove" : "Deliveries"}
-          </Link>
+          {!isOverview && (
+            <Link
+              href={BASE_PATH}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="size-3.5" aria-hidden="true" />
+              Lalamove
+            </Link>
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h1 className="text-2xl font-semibold tracking-tight">
-                {orderId ? data?.order.order_number || "Order booking" : "Lalamove"}
+                {pageTitle}
               </h1>
               {environment && (
                 <span className="rounded-md border px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">
@@ -317,32 +378,50 @@ function Workspace({ orderId }: { orderId: number }) {
               )}
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isRefreshing}
-              onClick={() => {
-                if (orderId) {
-                  void context.refetch();
-                } else {
-                  void bookings.refetch();
-                  void eligible.refetch();
-                }
-              }}
-            >
-              <RefreshCw
-                aria-hidden="true"
-                className={cn(
-                  "size-3.5",
-                  isRefreshing && "animate-spin motion-reduce:animate-none",
-                )}
-              />
-              {isRefreshing ? "Refreshing" : "Refresh"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {isOverview && (
+                <Button
+                  size="sm"
+                  className={primaryCtaClass}
+                  nativeButton={false}
+                  render={<Link href={`${BASE_PATH}?mode=multi-stop`} />}
+                >
+                  <Route className="size-3.5" aria-hidden="true" />
+                  New multi-stop booking
+                </Button>
+              )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isRefreshing}
+                onClick={() => {
+                  if (orderId) {
+                    void context.refetch();
+                  } else if (bookingId) {
+                    void bookingDetail.refetch();
+                  } else if (isMultiStopBuilder) {
+                    void eligible.refetch();
+                  } else {
+                    void bookings.refetch();
+                    void eligible.refetch();
+                  }
+                }}
+              >
+                <RefreshCw
+                  aria-hidden="true"
+                  className={cn(
+                    "size-3.5",
+                    isRefreshing && "animate-spin motion-reduce:animate-none",
+                  )}
+                />
+                {isRefreshing ? "Refreshing" : "Refresh"}
+              </Button>
+            </div>
           </div>
 
-          {!orderId && (
+          {isOverview && (
             <nav
               aria-label="Lalamove sections"
               className="flex items-center gap-1 border-b"
@@ -442,7 +521,49 @@ function Workspace({ orderId }: { orderId: number }) {
         )}
 
         {/* Main Content */}
-        {!orderId ? (
+        {isMultiStopBuilder ? (
+          <MultiStopBuilder
+            enabled={Boolean(setup.data?.enabled)}
+            busy={busy}
+            readyOrders={eligible.data ?? []}
+            readyPending={eligible.isPending}
+            readyError={eligible.error?.message}
+            retryReady={() => void eligible.refetch()}
+            cities={cities.data?.data ?? []}
+            citiesLoading={cities.isFetching && !cities.data}
+            citiesError={cities.error?.message}
+            retryCities={() => void cities.refetch()}
+            action={action}
+            onBooked={(newId) => {
+              setNotice("Multi-stop Lalamove booking created.");
+              router.replace(`${BASE_PATH}?bookingId=${newId}`);
+            }}
+          />
+        ) : bookingId > 0 ? (
+          <>
+            {bookingDetail.error && (
+              <QueryError
+                message={bookingDetail.error.message}
+                retry={() => void bookingDetail.refetch()}
+              />
+            )}
+            {bookingDetail.isPending ? (
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+                <Skeleton className="h-72 w-full rounded-xl motion-reduce:animate-none" />
+                <Skeleton className="h-72 w-full rounded-xl motion-reduce:animate-none" />
+              </div>
+            ) : (
+              bookingDetail.data && (
+                <MultiStopBookingView
+                  data={bookingDetail.data}
+                  busy={busy}
+                  action={action}
+                  now={clock}
+                />
+              )
+            )}
+          </>
+        ) : isOverview ? (
           <Overview
             view={view}
             filter={filter}
@@ -451,10 +572,8 @@ function Workspace({ orderId }: { orderId: number }) {
             busy={busy}
             ready={eligible}
             bookings={bookings}
-            setup={setup}
             queue={queue}
             action={action}
-            setNotice={setNotice}
             updateUrl={updateUrl}
           />
         ) : (
@@ -474,8 +593,38 @@ function Workspace({ orderId }: { orderId: number }) {
             ) : (
               data && (
                 <div className="space-y-5">
+                  {primaryBooking && (primaryBooking.stop_count ?? 1) > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.06] px-4 py-3 text-xs">
+                      <span className="font-medium text-foreground">
+                        This order is part of a {primaryBooking.stop_count}-stop
+                        Lalamove run (Booking #{primaryBooking.id}).
+                      </span>
+                      <Link
+                        href={`${BASE_PATH}?bookingId=${primaryBooking.id}`}
+                        className="inline-flex items-center gap-1 font-semibold text-orange-700 underline-offset-4 hover:underline dark:text-orange-400"
+                      >
+                        View all {primaryBooking.stop_count} stops
+                        <ArrowRight className="size-3.5" aria-hidden="true" />
+                      </Link>
+                    </div>
+                  )}
+
                   <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
                     <div className="min-w-0 space-y-5">
+                      {primaryBooking && (
+                        <LalamoveLiveMap
+                          booking={primaryBooking}
+                          warehouse={data.warehouse}
+                          fallbackDropoff={{
+                            orderNumber: data.order.order_number,
+                            recipient: data.order.shipping_recipient,
+                            address: data.order.shipping_address,
+                            lat: data.order.shipping_latitude,
+                            lng: data.order.shipping_longitude,
+                          }}
+                        />
+                      )}
+
                       <DeliveryDetails
                         key={data.warehouse.id}
                         data={data}

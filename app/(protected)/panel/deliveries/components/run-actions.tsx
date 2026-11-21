@@ -1,5 +1,8 @@
 "use client";
 
+import { Truck, Warehouse } from "lucide-react";
+import type { TableAction } from "@/components/table-actions";
+
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -17,7 +20,13 @@ import { resourceQueryRoots } from "@/lib/realtime";
 import { toast } from "sonner";
 import { WarehouseReturnDialog, type CodCollectionInput } from "@/components/warehouse-return-dialog";
 
-export function RunActions({ id, status, overdue, warehouseName }: { id: number; status: string; overdue?: boolean; warehouseName?: string }) {
+type RunActionProps = { id: number; status: string; overdue?: boolean; warehouseName?: string };
+
+export function RunActions(props: RunActionProps) {
+  return useRunAction(props, true)?.dialog ?? null;
+}
+
+export function useRunAction({ id, status, overdue, warehouseName }: RunActionProps, showTrigger = false) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -52,9 +61,19 @@ export function RunActions({ id, status, overdue, warehouseName }: { id: number;
     }
   }
   if (status === "returning") {
-    return (
+    const action: TableAction = {
+      label: "Confirm warehouse return",
+      icon: Warehouse,
+      busy,
+      onClick: () => {
+        setActionError(null);
+        setOpen(true);
+      },
+    };
+    const dialog = (
       <WarehouseReturnDialog
         open={open}
+        showTrigger={showTrigger}
         onOpenChange={(value) => {
           if (value) setActionError(null);
           setOpen(value);
@@ -66,13 +85,24 @@ export function RunActions({ id, status, overdue, warehouseName }: { id: number;
         deliveryId={id}
       />
     );
+    return { action, dialog };
   }
 
-  return (
+  const action: TableAction = {
+    label: "Dispatch",
+    icon: Truck,
+    busy,
+    disabled: overdue,
+    tooltip: overdue ? "Reschedule the overdue delivery before dispatching." : undefined,
+    onClick: () => setOpen(true),
+  };
+  const dialog = (
     <Dialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }}>
-      <DialogTrigger render={<Button type="button" variant="outline" disabled={busy || overdue} />}>
-        Dispatch
-      </DialogTrigger>
+      {showTrigger && (
+        <DialogTrigger render={<Button type="button" variant="outline" disabled={busy || overdue} />}>
+          Dispatch
+        </DialogTrigger>
+      )}
       <DialogContent showCloseButton={!busy}>
         <DialogHeader>
           <DialogTitle>Dispatch delivery</DialogTitle>
@@ -97,4 +127,5 @@ export function RunActions({ id, status, overdue, warehouseName }: { id: number;
       </DialogContent>
     </Dialog>
   );
+  return { action, dialog };
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import type { TableAction } from "@/components/table-actions";
+
 import { LifecycleActions } from "@/components/lifecycle-actions";
 
 import { QueryFeedback } from "@/components/query-feedback";
@@ -25,14 +27,14 @@ import { REQUESTS } from "@/constant/request";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { request, requestWithErrorHandling } from "@/components/http";
 import { resourceQueryRoots } from "@/lib/realtime";
-import { VehicleMaintenanceAction } from "./vehicle-maintenance-action";
+import { useVehicleMaintenance } from "./vehicle-maintenance-action";
 
 type VehicleQueryData = {
   rows: VehicleRow[];
   total: number;
 };
 
-function MaintenanceAction({ vehicle }: { vehicle: VehicleRow }) {
+function useMaintenanceStatus(vehicle: VehicleRow): TableAction {
   const queryClient = useQueryClient();
   const inMaintenance = vehicle.status === "maintenance";
   const onDelivery = vehicle.status === "on_delivery";
@@ -52,12 +54,33 @@ function MaintenanceAction({ vehicle }: { vehicle: VehicleRow }) {
     }),
   });
 
+  return {
+    label: inMaintenance ? "End maintenance" : "Set maintenance",
+    icon: Wrench,
+    busy: mutation.isPending,
+    disabled: onDelivery,
+    destructive: !inMaintenance,
+    tooltip: onDelivery ? "This vehicle is on delivery" : undefined,
+    onClick: () => mutation.mutate(),
+  };
+}
+
+function VehicleRowActions({ vehicle, onEdit }: { vehicle: VehicleRow; onEdit: () => void }) {
+  const serviceLog = useVehicleMaintenance({ vehicle });
+  const maintenanceStatus = useMaintenanceStatus(vehicle);
   return (
-    <Button type="button" variant="outline" size="sm" disabled={onDelivery || mutation.isPending}
-      title={onDelivery ? "This vehicle is on delivery" : undefined} onClick={() => mutation.mutate()}>
-      <Wrench className="size-4" aria-hidden="true" />
-      {mutation.isPending ? "Updating…" : inMaintenance ? "End maintenance" : "Set maintenance"}
-    </Button>
+    <>
+      <LifecycleActions
+        resource="vehicles"
+        record={vehicle}
+        rowLabel={vehicle.plate_number}
+        archive
+        primary={serviceLog.action}
+        secondary={[{ label: "Edit vehicle", icon: Edit, onClick: onEdit }]}
+        additional={[maintenanceStatus]}
+      />
+      {serviceLog.dialog}
+    </>
   );
 }
 
@@ -135,30 +158,17 @@ export default function DataTable() {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <VehicleMaintenanceAction vehicle={row.original} />
-            <MaintenanceAction vehicle={row.original} />
-            <LifecycleActions resource="vehicles" record={row.original} archive />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Edit vehicle"
-              onClick={() => {
-                setSelected({
-                  id: row.original.id,
-                  version: row.original.version,
-                });
-                openModal(DialogMode.EDIT, {
-                  title: "Edit Vehicle",
-                  description: "Update this vehicle.",
-                  action: "Save changes",
-                });
-              }}
-            >
-              <Edit className="size-4" />
-            </Button>
-
-          </div>
+          <VehicleRowActions
+            vehicle={row.original}
+            onEdit={() => {
+              setSelected({ id: row.original.id, version: row.original.version });
+              openModal(DialogMode.EDIT, {
+                title: "Edit Vehicle",
+                description: "Update this vehicle.",
+                action: "Save changes",
+              });
+            }}
+          />
         ),
       },
     ],

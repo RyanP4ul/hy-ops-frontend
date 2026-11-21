@@ -1,5 +1,7 @@
 "use client";
 
+import { TableActions } from "@/components/table-actions";
+
 import {
   Select,
   SelectContent,
@@ -54,10 +56,24 @@ export default function WsLogsDataTable() {
     { accessorKey: "session_id", header: "Session", cell: ({ row }) => <span className="font-mono text-xs">{row.original.session_id}</span> },
     { accessorKey: "user_id", header: "User", cell: ({ row }) => <span>User #{row.original.user_id}</span> },
     { accessorKey: "action", header: "Action", cell: ({ row }) => <Badge variant="outline">{row.original.action}</Badge> },
-    { accessorKey: "payload", header: "Payload", cell: ({ row }) => <div className="flex items-center gap-3">
+    { accessorKey: "payload", header: "Payload", cell: ({ row }) => (
       <span className="block max-w-48 truncate font-mono text-xs text-muted-foreground">{row.original.payload || "No payload"}</span>
-      <Button variant="ghost" size="sm" aria-label={`View payload for log ${row.original.ws_id}`} onClick={() => setSelectedLog(row.original)}>Details<ArrowUpRight className="size-4" aria-hidden="true" /></Button>
-    </div> },
+    ) },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: ({ row }) => (
+        <TableActions
+          rowLabel={`log ${row.original.ws_id}`}
+          primary={{
+            label: "View details",
+            ariaLabel: `View details for log ${row.original.ws_id}`,
+            icon: ArrowUpRight,
+            onClick: () => setSelectedLog(row.original),
+          }}
+        />
+      ),
+    },
   ];
 
   useEffect(() => {

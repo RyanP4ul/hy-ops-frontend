@@ -1,18 +1,29 @@
 "use client";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type RefObject } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { request } from "@/components/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import { QueryFeedback } from "@/components/query-feedback";
 import { formatCurrency } from "@/utils/date-util";
 import type { PaymentRowType } from "@/schema/payment";
 type Refund = { id: number; amount: string; reason: string; actor: string; created_at: string };
 
-export function RefundControl({ payment, inline = false }: { payment: PaymentRowType; inline?: boolean }) {
-  const [open, setOpen] = useState(false), [amount, setAmount] = useState(""), [reason, setReason] = useState(""), [saving, setSaving] = useState(false), [message, setMessage] = useState("");
+type RefundControlProps = { payment: PaymentRowType } & (
+  | { inline: true; popover?: never }
+  | { inline?: false; popover: {
+      open: boolean;
+      onOpenChange: (open: boolean) => void;
+      anchor: RefObject<HTMLButtonElement | null>;
+    } }
+);
+
+export function RefundControl({ payment, inline, popover }: RefundControlProps) {
+  const [inlineOpen, setInlineOpen] = useState(false);
+  const open = popover?.open ?? inlineOpen;
+  const [amount, setAmount] = useState(""), [reason, setReason] = useState(""), [saving, setSaving] = useState(false), [message, setMessage] = useState("");
   const [locked, setLocked] = useState(false);
   const requestId = useRef<string | null>(null);
   const submitted = useRef<{ amount: number; reason: string; version: number } | null>(null);
@@ -58,16 +69,23 @@ export function RefundControl({ payment, inline = false }: { payment: PaymentRow
   if (inline) {
     return (
       <div className="space-y-3">
-        <Button type="button" variant="outline" size="sm" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(value => !value)}>Refund / history</Button>
+        <Button type="button" variant="outline" size="sm" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setInlineOpen(value => !value)}>Refund / history</Button>
         {open && <section id={panelId} aria-label="Refund and history" className="grid gap-2.5 rounded-lg border p-3">{refundForm}</section>}
       </div>
     );
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}>Refund / history</PopoverTrigger>
-      <PopoverContent className="w-80 space-y-3">{refundForm}</PopoverContent>
+    <Popover open={open} onOpenChange={popover.onOpenChange}>
+      <PopoverContent
+        anchor={popover.anchor}
+        align="end"
+        finalFocus={popover.anchor}
+        aria-label="Refund and history"
+        className="w-80 max-w-[calc(100vw-2rem)] space-y-3"
+      >
+        {refundForm}
+      </PopoverContent>
     </Popover>
   );
 }

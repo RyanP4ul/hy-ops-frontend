@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { expect, test } from "@playwright/test";
-import { browserLogin, json, order } from "./helpers";
+import { browserLogin, json, order, openRowActions } from "./helpers";
 import type { AxeResults } from "axe-core";
 
 for (const moduleName of ["products", "inventory", "warehouses", "calendar", "vehicles", "users"]) {
@@ -74,13 +74,14 @@ test("UIUX Products creates, edits and removes draft variants without duplicatio
   await row.locator("summary").click(); await expect(row).toContainText("15.67");
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Remove variant UIUX-CREATED-SKU", exact: true }).click();
+  const variantRow = dialog.getByRole("row").filter({ hasText: "UIUX-CREATED-SKU" });
+  await (await openRowActions(page, variantRow)).getByRole("menuitem", { name: "Remove variant UIUX-CREATED-SKU", exact: true }).click();
   await page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Delete Variant", exact: true }) }).getByRole("button", { name: "Delete", exact: true }).click();
   await expect(dialog.getByText("No variants have been added yet.", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.getByPlaceholder("Search products or variants...").fill("UIUX created product");
-  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Archive", exact: true }).click();
   await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0); await expect(row).toHaveCount(0);
 });
@@ -160,7 +161,7 @@ test("UIUX Inventory adjusts with reasons, preserves history and reviews legacy 
   await expect(page.getByRole("status").filter({ hasText: "Reservations reconciled" })).toBeVisible();
   const current = await json(page.request, "GET", `/inventory/${stock.id}`); expect(current.quantity).toBe(8); expect(current.reserved).toBe(2);
   await page.getByText("Replenishment suggestions", { exact: true }).click(); await expect(page.getByText(/UIUX-STOCK-SKU.*suggested/)).toBeVisible();
-  await row.getByRole("button", { name: "Archive", exact: true }).click(); await dialog.getByRole("button", { name: "Archive", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Archive", exact: true }).click(); await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText(/history|stock|reserved|empty/i);
 });
 

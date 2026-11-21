@@ -4,6 +4,7 @@ import { MarkerContent, MarkerTooltip } from "@/components/ui/map";
 
 export type MarkerTone =
   | "vehicle"
+  | "lalamove"
   | "parked"
   | "cluster"
   | "warehouse"
@@ -21,6 +22,7 @@ function resolveMarkerShape(tone: MarkerTone, compact?: boolean): MarkerShape {
   if (compact) return "dot";
   switch (tone) {
     case "vehicle":
+    case "lalamove":
     case "parked":
       return "beacon";
     case "cluster":

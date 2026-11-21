@@ -49,6 +49,11 @@ import { DirectoryRail, type DirectoryTab } from "./directory-rail";
 import { FleetMapError, FleetMapLoading } from "./fleet-map-status";
 import { FleetTable } from "./fleet-table";
 import { FleetMapCanvas } from "./map-canvas";
+import {
+  LalamoveCourierInspector,
+  useLalamoveCouriers,
+  type LiveLalamoveCourier,
+} from "./lalamove-couriers";
 import { AssignPickupDialog, useReturnPickups } from "./return-pickups";
 import { SimulationControls } from "./simulation-controls";
 import { Topbar } from "./topbar";
@@ -72,6 +77,7 @@ export function FleetWorkspace() {
 
   // Server queries
   const returns = useReturnPickups();
+  const lalamove = useLalamoveCouriers(!simulationOn);
   const fleet = useFleetQuery({ pollMs: simulationOn ? false : FLEET_POLL_MS });
   const live = useLivePositions(!simulationOn);
   const enrichment = useDeliveryEnrichment(!simulationOn);
@@ -116,6 +122,7 @@ export function FleetWorkspace() {
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
   const [directoryTab, setDirectoryTab] = useState<DirectoryTab>("vehicles");
   const [selectedReturnId, setSelectedReturnId] = useState<number | null>(null);
+  const [selectedLalamoveId, setSelectedLalamoveId] = useState<number | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("trip");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusedStopId, setFocusedStopId] = useState<string | null>(null);
@@ -139,6 +146,13 @@ export function FleetWorkspace() {
   const [returnError, setReturnError] = useState<string | null>(null);
 
   const selectedVehicle = vehicles.find((v) => v.id === selectedId) ?? null;
+  const activeLalamoveCouriers = useMemo(
+    () => (simulationOn ? [] : (lalamove.data ?? [])),
+    [simulationOn, lalamove.data],
+  );
+  const selectedLalamove =
+    activeLalamoveCouriers.find((c) => c.booking_id === selectedLalamoveId) ??
+    null;
 
   const previewTrip =
     selectedVehicle && previewTripId
@@ -254,8 +268,9 @@ export function FleetWorkspace() {
         setMobileRailOpen(false);
         return;
       }
-      if (selectedId) {
+      if (selectedId || selectedLalamoveId !== null) {
         setSelectedId(null);
+        setSelectedLalamoveId(null);
         setPreviewTripId(null);
         setFocusedStopId(null);
         setFollowMode("off");
@@ -273,7 +288,7 @@ export function FleetWorkspace() {
       }
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [fullscreen, mobileRailOpen, selectedId]);
+  }, [fullscreen, mobileRailOpen, selectedId, selectedLalamoveId]);
 
   useEffect(() => {
     if (!notice) return;
@@ -343,6 +358,7 @@ export function FleetWorkspace() {
 
   function selectVehicle(vehicle: Vehicle) {
     setSelectedId(vehicle.id);
+    setSelectedLalamoveId(null);
     setInspectorTab("trip");
     setFocusedStopId(null);
     setPreviewTripId(null);
@@ -408,9 +424,16 @@ export function FleetWorkspace() {
       if (!simulationOn && pos.health === "none") return [];
       return [pos.coordinates];
     });
+    const lalamovePoints = activeLalamoveCouriers.flatMap((c) => {
+      const coords = c.driver.coordinates;
+      if (!coords) return [];
+      const pt: Coordinates = [coords.lng, coords.lat];
+      return isValidCoordinate(pt) ? [pt] : [];
+    });
+    const combinedPoints = [...knownVehiclePoints, ...lalamovePoints];
     const points =
-      knownVehiclePoints.length > 0
-        ? knownVehiclePoints
+      combinedPoints.length > 0
+        ? combinedPoints
         : warehouses.map((w) => w.coordinates);
     if (points.length === 0) {
       setNotice({ tone: "error", text: "No coordinates available to fit." });
@@ -591,8 +614,41 @@ export function FleetWorkspace() {
   const canStepVehicles =
     (visibleVehicles.length > 0 ? visibleVehicles.length : vehicles.length) > 1;
 
+  function selectLalamoveCourier(courier: LiveLalamoveCourier) {
+    setSelectedId(null);
+    setSelectedLalamoveId(courier.booking_id);
+    setPreviewTripId(null);
+    setFocusedStopId(null);
+    setFocusedWarehouseId(null);
+    setFollowMode("off");
+    setRailOpen(true);
+    setMode("map");
+    if (courier.driver.coordinates) {
+      easeToPoint(
+        [courier.driver.coordinates.lng, courier.driver.coordinates.lat],
+        13.5,
+        15,
+      );
+    } else if (courier.pickup.coordinates) {
+      easeToPoint(courier.pickup.coordinates, 13, 14.5);
+    }
+  }
+
   const inspectorNode =
-    selectedVehicle && selectedPosition ? (
+    selectedLalamove ? (
+      <LalamoveCourierInspector
+        courier={selectedLalamove}
+        now={now}
+        refreshing={lalamove.isFetching}
+        onClose={() => setSelectedLalamoveId(null)}
+        onLocate={(point) => {
+          setMode("map");
+          setMobileRailOpen(false);
+          easeToPoint(point, 14, 15.5);
+        }}
+        onRefresh={() => void lalamove.refetch()}
+      />
+    ) : selectedVehicle && selectedPosition ? (
       <VehicleInspector
         vehicle={selectedVehicle}
         warehouse={getWarehouse(selectedVehicle, warehouses)}
@@ -661,6 +717,13 @@ export function FleetWorkspace() {
     returnsLoading: returns.isPending,
     returnsError: returns.isError,
     onRetryReturns: () => void returns.refetch(),
+    lalamoveCouriers: activeLalamoveCouriers,
+    lalamoveLoading: lalamove.isPending,
+    lalamoveError: lalamove.isError,
+    selectedLalamoveId,
+    now,
+    onRetryLalamove: () => void lalamove.refetch(),
+    onSelectLalamove: selectLalamoveCourier,
     simulationOn,
     positions,
     counts,
@@ -767,6 +830,9 @@ export function FleetWorkspace() {
               setRailOpen(true);
               setSelectedReturnId(taskId);
             }}
+            lalamoveCouriers={activeLalamoveCouriers}
+            selectedLalamoveId={selectedLalamoveId}
+            onSelectLalamove={selectLalamoveCourier}
             mapRef={mapRef}
             mode={mode}
             fullscreen={fullscreen}
@@ -922,6 +988,13 @@ export function FleetWorkspace() {
               returnsLoading={returns.isPending}
               returnsError={returns.isError}
               onRetryReturns={() => void returns.refetch()}
+              lalamoveCouriers={activeLalamoveCouriers}
+              lalamoveLoading={lalamove.isPending}
+              lalamoveError={lalamove.isError}
+              selectedLalamoveId={selectedLalamoveId}
+              now={now}
+              onRetryLalamove={() => void lalamove.refetch()}
+              onSelectLalamove={selectLalamoveCourier}
               simulationOn={simulationOn}
               positions={positions}
               counts={counts}

@@ -37,8 +37,8 @@ export default function Page() {
 
 function PageContent() {
   const searchParams = useSearchParams();
-  const { walkInOpen, setWalkInOpen, orderViewQuery, viewOrder } = useOrders();
-  const { state, closeModal } = useModal();
+  const { walkInOpen, setWalkInOpen, orderViewQuery, viewOrder, setSelected } = useOrders();
+  const { state, openModal, closeModal } = useModal();
   const isViewDrawerOpen = state.isOpen && state.mode === DialogMode.VIEW;
 
   useEffect(() => {
@@ -79,6 +79,17 @@ function PageContent() {
         isLoading={orderViewQuery.isLoading}
         feedback={<QueryFeedback query={orderViewQuery} label="order details" />}
         onSelectOrder={(orderId) => viewOrder(orderId)}
+        onSeparateOrder={(order) => {
+          setSelected({
+            id: order.id,
+            version: order.version,
+          });
+          openModal(DialogMode.CUSTOM, {
+            title: "Separate Order from Group",
+            description: `Remove ${order.order_number} from its order group so it can be managed independently.`,
+            action: "Separate Order",
+          });
+        }}
       />
       <WalkInSaleDialog open={walkInOpen} onOpenChange={setWalkInOpen} />
     </>

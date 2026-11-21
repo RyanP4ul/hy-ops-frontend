@@ -1,5 +1,7 @@
 "use client";
 
+import { TableActions } from "@/components/table-actions";
+
 import {
   useEffect,
   useMemo,
@@ -175,11 +177,18 @@ export function EditOrderForm({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const pickerSearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchTerm(catalogSearch.trim()), 220);
     return () => clearTimeout(timer);
   }, [catalogSearch]);
+
+  useEffect(() => {
+    if (pickerOpen) {
+      requestAnimationFrame(() => pickerSearchRef.current?.focus());
+    }
+  }, [pickerOpen]);
 
   useEffect(() => {
     if (!order || isFetching || initializedRef.current === order.id) return;
@@ -618,20 +627,60 @@ export function EditOrderForm({
                 id="edit-order-catalog-panel"
                 className="space-y-3 rounded-xl border bg-muted/25 p-3.5"
               >
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    type="search"
-                    aria-label="Search warehouse stock to add"
-                    placeholder="Search by product name or SKU…"
-                    value={catalogSearch}
-                    onChange={(event) => setCatalogSearch(event.target.value)}
-                    className="bg-background pl-9"
-                  />
-                </div>
+                <search aria-label="Search warehouse stock to add">
+                  <div className="relative">
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <Input
+                      ref={pickerSearchRef}
+                      type="search"
+                      aria-label="Search warehouse stock to add"
+                      placeholder="Search by product name or SKU…"
+                      value={catalogSearch}
+                      onChange={(event) => setCatalogSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                        event.preventDefault();
+                        if (catalogQuery.isPending || !catalogQuery.data?.length) return;
+                        const match =
+                          catalogQuery.data.find(
+                            (row) => row.sku?.toLowerCase() === searchTerm.toLowerCase(),
+                          ) ??
+                          catalogQuery.data.find((row) => {
+                            const unreserved = Math.max(0, row.quantity - row.reserved);
+                            const originalQty = originalQtyByInventory.get(row.id) ?? 0;
+                            const inOrderQty =
+                              items.find((item) => item.inventory_id === row.id)?.quantity ?? 0;
+                            return unreserved + originalQty - inOrderQty > 0;
+                          });
+                        if (match) addCatalogItem(match);
+                      }}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      enterKeyHint="search"
+                      className="h-9 bg-background pr-9 pl-9 text-base md:text-sm [&::-webkit-search-cancel-button]:hidden"
+                    />
+                    {catalogSearch && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Clear stock search"
+                        onClick={() => {
+                          setCatalogSearch("");
+                          pickerSearchRef.current?.focus();
+                        }}
+                        className="absolute top-1/2 right-1.5 -translate-y-1/2"
+                      >
+                        <X className="size-3.5" aria-hidden="true" />
+                      </Button>
+                    )}
+                  </div>
+                </search>
 
                 {catalogQuery.isPending ? (
                   <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
@@ -642,16 +691,40 @@ export function EditOrderForm({
                     Loading warehouse stock…
                   </div>
                 ) : catalogQuery.isError ? (
-                  <p role="alert" className="py-3 text-xs text-destructive">
-                    Unable to load warehouse stock. Try again.
-                  </p>
+                  <div role="alert" className="flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                    <span>Unable to load warehouse stock. Try again.</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      onClick={() => void catalogQuery.refetch()}
+                    >
+                      Retry
+                    </Button>
+                  </div>
                 ) : (catalogQuery.data?.length ?? 0) === 0 ? (
-                  <p className="py-4 text-center text-xs text-muted-foreground">
-                    No active stock matches this search in{" "}
-                    {order?.warehouse_name || "this warehouse"}.
-                  </p>
+                  <div className="flex flex-col items-center gap-2 py-5 text-center">
+                    <p className="text-xs text-muted-foreground">
+                      No active stock matches this search in{" "}
+                      {order?.warehouse_name || "this warehouse"}.
+                    </p>
+                    {catalogSearch && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        onClick={() => {
+                          setCatalogSearch("");
+                          setSearchTerm("");
+                          pickerSearchRef.current?.focus();
+                        }}
+                      >
+                        Clear search
+                      </Button>
+                    )}
+                  </div>
                 ) : (
-                  <div className="max-h-52 divide-y overflow-y-auto rounded-lg border bg-background overscroll-contain">
+                  <div className="max-h-56 divide-y overflow-y-auto rounded-lg border bg-background overscroll-contain">
                     {catalogQuery.data!.map((row) => {
                       const unreserved = Math.max(0, row.quantity - row.reserved);
                       const originalQty = originalQtyByInventory.get(row.id) ?? 0;
@@ -666,13 +739,17 @@ export function EditOrderForm({
                         row.variant_name || row.product_name || `Item #${row.id}`;
                       const showProduct =
                         row.product_name && row.product_name !== row.variant_name;
+                      const lowStock = remaining > 0 && remaining <= 5;
 
                       return (
                         <div
                           key={row.id}
-                          className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm"
+                          className={cn(
+                            "flex items-center justify-between gap-3 px-3 py-2.5 text-sm transition-colors",
+                            remaining < 1 ? "bg-muted/20 opacity-55" : "hover:bg-muted/40",
+                          )}
                         >
-                          <div className="min-w-0 flex-1">
+                          <div className="min-w-0 flex-1 space-y-0.5">
                             {showProduct && (
                               <p className="truncate text-[11px] text-muted-foreground">
                                 {row.product_name}
@@ -681,17 +758,27 @@ export function EditOrderForm({
                             <p className="truncate font-medium text-foreground">
                               {label}
                             </p>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span className="font-mono">{row.sku || "—"}</span>
-                              <span aria-hidden="true">·</span>
-                              <span className="tabular-nums">
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80">
+                                {row.sku || "—"}
+                              </span>
+                              <span className="font-medium text-foreground tabular-nums">
                                 {row.price !== null
                                   ? formatCurrency(Number(row.price))
                                   : "Unverified"}
                               </span>
                               <span aria-hidden="true">·</span>
-                              <span className="tabular-nums">
-                                {remaining} available
+                              <span
+                                className={cn(
+                                  "font-medium tabular-nums",
+                                  remaining < 1
+                                    ? "text-destructive"
+                                    : lowStock
+                                      ? "text-amber-700 dark:text-amber-400"
+                                      : "text-emerald-700 dark:text-emerald-400",
+                                )}
+                              >
+                                {remaining > 0 ? `${remaining} available` : "None left"}
                               </span>
                               {inOrderQty > 0 && (
                                 <Badge
@@ -706,7 +793,7 @@ export function EditOrderForm({
                           <Button
                             type="button"
                             size="sm"
-                            variant="outline"
+                            variant={inOrderQty > 0 ? "secondary" : "outline"}
                             disabled={remaining < 1}
                             onClick={() => addCatalogItem(row)}
                           >
@@ -735,8 +822,8 @@ export function EditOrderForm({
                     <TableHead scope="col" className="text-right">
                       Subtotal
                     </TableHead>
-                    <TableHead scope="col" className="w-10">
-                      <span className="sr-only">Remove</span>
+                    <TableHead scope="col" className="w-px text-right">
+                      <span className="sr-only">Actions</span>
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -884,23 +971,19 @@ export function EditOrderForm({
                             ? "Unverified"
                             : formatCurrency(subtotal)}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Remove ${line.product_variant_name}`}
-                            disabled={items.length <= 1}
-                            title={
-                              items.length <= 1
-                                ? "An order must have at least one item"
-                                : `Remove ${line.product_variant_name}`
-                            }
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => removeItem(line.inventory_id)}
-                          >
-                            <Trash2 className="size-3.5" aria-hidden="true" />
-                          </Button>
+                        <TableCell>
+                          <TableActions
+                            rowLabel={line.product_variant_name}
+                            additional={[{
+                              label: "Remove item",
+                              ariaLabel: `Remove item ${line.product_variant_name}`,
+                              icon: Trash2,
+                              disabled: items.length <= 1,
+                              tooltip: items.length <= 1 ? "An order must have at least one item" : undefined,
+                              destructive: true,
+                              onClick: () => removeItem(line.inventory_id),
+                            }]}
+                          />
                         </TableCell>
                       </TableRow>
                     );

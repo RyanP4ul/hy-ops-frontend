@@ -3,6 +3,7 @@ import z from "zod";
 export const auditLogsTableSchema = z.object({
   id: z.number().nonnegative(),
   user_id: z.number().nonnegative(),
+  user_name: z.string().nullish(),
   action: z.string().min(1).nonempty(),
   entity_id: z.number().nonnegative(),
   entity_type: z.string().min(1).nonempty(),

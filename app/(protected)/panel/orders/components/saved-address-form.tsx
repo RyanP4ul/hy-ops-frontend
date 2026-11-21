@@ -2,40 +2,23 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel, FieldError } from "@/components/ui/field";
 import { request, requestWithErrorHandling } from "@/components/http";
-
-const addressSchema = z.object({
-  address_line: z.string().trim().min(1, "Street address is required").max(255),
-  barangay: z.string().trim().min(1, "Barangay is required").max(100),
-  city_municipality: z.string().trim().min(1, "City or municipality is required").max(100),
-  province: z.string().trim().min(1, "Province is required").max(100),
-  postal_code: z.string().trim().max(20),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-}).refine(data => data.latitude !== 0 || data.longitude !== 0, {
-  path: ["latitude"], message: "Confirm the destination coordinates; (0, 0) is not a verified location.",
-});
-type AddressForm = z.infer<typeof addressSchema>;
+import { savedAddressSchema, shippingAddressFields, type SavedAddressFormValues } from "@/schema/shipping-address";
+import type { CustomerAddress } from "../provider";
 
 export function SavedAddressForm({ customerId, onSaved }: {
   customerId: number;
-  onSaved: (address: { id: number }) => Promise<void>;
+  onSaved: (address: CustomerAddress) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const form = useForm<AddressForm>({
-    resolver: zodResolver(addressSchema),
+  const form = useForm<SavedAddressFormValues>({
+    resolver: zodResolver(savedAddressSchema),
     defaultValues: { address_line: "", barangay: "", city_municipality: "", province: "", postal_code: "" },
   });
-  const fields = [
-    ["address_line", "Street address"], ["barangay", "Barangay"],
-    ["city_municipality", "City / municipality"], ["province", "Province"],
-    ["postal_code", "Postal code (optional)"], ["latitude", "Latitude"], ["longitude", "Longitude"],
-  ] as const;
 
   if (!open) return <Button type="button" variant="outline" onClick={() => setOpen(true)}>Save another shipping address</Button>;
 
@@ -45,11 +28,10 @@ export function SavedAddressForm({ customerId, onSaved }: {
       <p className="text-xs text-muted-foreground">This address will be saved to the customer and selected for this order. Confirm its map coordinates for delivery navigation.</p>
     </div>
     <fieldset disabled={form.formState.isSubmitting} className="grid gap-3 sm:grid-cols-2">
-      {fields.map(([name, label]) => <Field key={name} data-invalid={!!form.formState.errors[name]}>
+      {shippingAddressFields.map(({ name, label, type }) => <Field key={name} data-invalid={!!form.formState.errors[name]}>
         <FieldLabel htmlFor={`saved-${name}`}>{label}</FieldLabel>
-        <Input id={`saved-${name}`} type={name === "latitude" || name === "longitude" ? "number" : "text"}
-          step={name === "latitude" || name === "longitude" ? "any" : undefined}
-          {...form.register(name, { valueAsNumber: name === "latitude" || name === "longitude" })} />
+        <Input id={`saved-${name}`} type={type} step={type === "number" ? "any" : undefined}
+          {...form.register(name, { valueAsNumber: type === "number" })} />
         {form.formState.errors[name] && <FieldError errors={[form.formState.errors[name]]} />}
       </Field>)}
     </fieldset>
@@ -64,7 +46,7 @@ export function SavedAddressForm({ customerId, onSaved }: {
               await requestWithErrorHandling(response, form);
               return;
             }
-            const address = await response.json() as { id: number };
+            const address = await response.json() as CustomerAddress;
             await onSaved(address);
             form.reset();
             setOpen(false);

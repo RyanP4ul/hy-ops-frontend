@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { browserLogin, connectSocket, json } from "./helpers";
+import { browserLogin, connectSocket, json, openRowActions } from "./helpers";
 
 test("Archive retention: Products archive, schedule deletion, restore and preserve the record", async ({ page }) => {
   await browserLogin(page);
@@ -20,19 +20,37 @@ test("Archive retention: Products archive, schedule deletion, restore and preser
   await dialog.getByRole('button', { name: /save/i }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toContainText('Browser product updated');
-  await row.getByRole('button', { name: 'Archive', exact: true }).click();
+  await (await openRowActions(page, row)).getByRole('menuitem', { name: 'Archive', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Archive', exact: true }).click();
   await expect(row).toHaveCount(0);
   await page.goto('/panel/archives');
   const archivedRow = page.getByRole('row').filter({ hasText: 'Browser product updated' });
   await expect(archivedRow).toBeVisible();
-  await archivedRow.getByRole('button', { name: 'Delete', exact: true }).click();
+  await (await openRowActions(page, archivedRow)).getByRole('menuitem', { name: 'Schedule deletion', exact: true }).click();
   dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('30 days');
   await expect(dialog).toContainText('Estimated permanent deletion date:');
   await dialog.getByRole('button', { name: 'Schedule deletion', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(archivedRow.getByRole('button', { name: 'Deletion scheduled', exact: true })).toBeDisabled();
+  await expect(archivedRow.getByText('Not scheduled', { exact: true })).toHaveCount(0);
+  let menu = await openRowActions(page, archivedRow);
+  await expect(menu.getByRole('menuitem', { name: 'Deletion scheduled', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+
+  await page.setViewportSize({ width: 850, height: 844 });
+  await expect(archivedRow.getByRole('button', { name: 'Restore Browser product updated', exact: true })).toBeVisible();
+  await expect(archivedRow.getByRole('button', { name: 'View details for Browser product updated', exact: true })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(archivedRow.getByRole('button', { name: 'Restore Browser product updated', exact: true })).toHaveCount(0);
+  const mobileTrigger = archivedRow.getByRole('button', { name: 'Actions for Browser product updated', exact: true });
+  await mobileTrigger.focus();
+  await mobileTrigger.press('Enter');
+  menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: 'View details for Browser product updated', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(mobileTrigger).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 844 });
   const records = await json(page.request, 'GET', '/archives?limit=50');
   const record = records.find((entry: { data: { name?: string } }) => entry.data.name === 'Browser product updated');
   expect(record.delete_after - record.deletion_requested_at).toBe(30 * 24 * 60 * 60);
@@ -42,8 +60,10 @@ test("Archive retention: Products archive, schedule deletion, restore and preser
   await page.goto('/panel/products');
   await page.getByPlaceholder(/Search products/).fill('Browser product updated');
   await expect(row).toBeVisible();
-  await expect(row).toContainText('Inactive');
-  await expect(row.getByRole('button', { name: /Delete/ })).toHaveCount(0);
+  menu = await openRowActions(page, row);
+  await expect(menu.getByRole('menuitem', { name: 'Activate', exact: true })).toBeEnabled();
+  await expect(menu.getByRole('menuitem', { name: /Delete/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await page.goto('/panel/vehicles');
   await page.getByRole('button', { name: /^Add vehicle$/i }).click();
   dialog = page.getByRole('dialog');

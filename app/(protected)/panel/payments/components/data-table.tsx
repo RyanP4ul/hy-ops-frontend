@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { TableActions, type TableAction } from "@/components/table-actions";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { ArrowDown, ArrowDownUp, ArrowUp, ChevronRight, Plus } from "lucide-react";
+import { ArrowDown, ArrowDownUp, ArrowUp, Eye, ListCollapse, ListOrdered, Plus, RotateCcw } from "lucide-react";
 import { ManagementListFooter, ManagementListHeader, ManagementSearch, ManagementTableView } from "@/components/management-list";
 import { useModal } from "@/components/providers/modal-provider";
 import { useWebSocket } from "@/components/providers/websocket-provider";
@@ -50,6 +52,41 @@ function GroupPaymentStatus({ orders }: { orders: PaymentRowType[] }) {
   );
 }
 
+function GroupPaymentActions({ payment, onDetails, onAddPayment }: {
+  payment: PaymentRowType;
+  onDetails: (payment: PaymentRowType) => void;
+  onAddPayment: (payment: PaymentRowType) => void;
+}) {
+  const [refundOpen, setRefundOpen] = useState(false);
+  const refundAnchor = useRef<HTMLButtonElement>(null);
+  const refundable = Number(payment.gross_received) > 0;
+  const collect = canCollect(payment);
+  const details: TableAction = {
+    label: "View payment",
+    ariaLabel: `View payment for ${orderLabel(payment)}`,
+    icon: Eye,
+    onClick: () => onDetails(payment),
+  };
+
+  return (
+    <>
+      <TableActions
+        rowLabel={payment.payment_number}
+        primary={collect ? { label: "Add payment", icon: Plus, onClick: () => onAddPayment(payment) } : details}
+        secondary={[collect && details]}
+        additional={[refundable && {
+          label: "Refund / history",
+          icon: RotateCcw,
+          destructive: true,
+          onClick: () => setRefundOpen(true),
+        }]}
+        menuTriggerRef={refundAnchor}
+      />
+      {refundable && <RefundControl payment={payment} popover={{ open: refundOpen, onOpenChange: setRefundOpen, anchor: refundAnchor }} />}
+    </>
+  );
+}
+
 function GroupDetails({ group, onDetails, onAddPayment }: {
   group: GroupedPayment;
   onDetails: (payment: PaymentRowType) => void;
@@ -67,9 +104,7 @@ function GroupDetails({ group, onDetails, onAddPayment }: {
         {group.orders.map(payment => (
           <li key={payment.id} className="grid gap-x-5 gap-y-3 rounded-lg border bg-card px-4 py-3 lg:grid-cols-[minmax(9rem,1fr)_minmax(12rem,1fr)_auto] lg:items-center">
             <div>
-              <Button type="button" variant="link" className="h-auto whitespace-normal px-0 py-0 text-left font-semibold" onClick={() => onDetails(payment)}>
-                {orderLabel(payment)}
-              </Button>
+              <p className="font-semibold">{orderLabel(payment)}</p>
               <p className="mt-1 text-xs text-muted-foreground">{payment.payment_number}</p>
             </div>
             <dl className="grid grid-cols-2 gap-3 text-sm tabular-nums">
@@ -84,10 +119,7 @@ function GroupDetails({ group, onDetails, onAddPayment }: {
             </dl>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <OrderPaymentStatus payment={payment} />
-              {canCollect(payment) && (
-                <Button type="button" variant="outline" size="sm" onClick={() => onAddPayment(payment)}>Add payment</Button>
-              )}
-              {Number(payment.gross_received) > 0 && <RefundControl payment={payment} />}
+              <GroupPaymentActions payment={payment} onDetails={onDetails} onAddPayment={onAddPayment} />
             </div>
           </li>
         ))}
@@ -160,27 +192,18 @@ export default function DataTable() {
         header: () => sortHeader("payment_number", "Payment"),
         cell: ({ row: { original } }) => {
           if (original.entry_type === "GROUP") {
-            const expanded = expandedGroups.has(original.group_id);
             return (
               <div className="min-w-36 max-w-60">
-                <Button type="button" variant="link" aria-expanded={expanded}
-                  aria-controls={expanded ? `payment-orders-${original.group_id}` : undefined}
-                  className="h-auto gap-1.5 whitespace-normal px-0 py-0 text-left font-semibold"
-                  onClick={() => toggleGroup(original.group_id)}>
-                  <ChevronRight className={`size-4 shrink-0 ${expanded ? "rotate-90" : ""}`} aria-hidden="true" />
-                  <span className="break-all">{original.payment_number}</span>
-                </Button>
-                <p className="mt-1 pl-5 text-xs text-muted-foreground">
+                <span className="break-all font-semibold">{original.payment_number}</span>
+                <p className="mt-1 text-xs text-muted-foreground">
                   {original.orders.length} {original.orders.length === 1 ? "order" : "orders"}
                 </p>
               </div>
             );
           }
           return (
-            <div className="pl-5">
-              <Button type="button" variant="link" className="h-auto px-0 py-0 font-semibold" onClick={() => openOrderPayment(original.payment, DialogMode.VIEW)}>
-                {original.payment.payment_number}
-              </Button>
+            <div>
+              <span className="font-semibold">{original.payment.payment_number}</span>
               <p className="mt-1 text-xs text-muted-foreground">{orderLabel(original.payment)}</p>
             </div>
           );
@@ -220,6 +243,37 @@ export default function DataTable() {
         id: "received_at",
         header: () => sortHeader("received_at", "Received at"),
         cell: ({ row: { original } }) => formatReceivedAt(original.entry_type === "GROUP" ? original.received_at : original.payment.received_at),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        cell: ({ row: { original } }) => {
+          if (original.entry_type === "GROUP") {
+            const expanded = expandedGroups.has(original.group_id);
+            return (
+              <TableActions
+                rowLabel={original.payment_number}
+                primary={{
+                  label: expanded ? "Hide orders" : "Show orders",
+                  icon: expanded ? ListCollapse : ListOrdered,
+                  expanded,
+                  controls: expanded ? `payment-orders-${original.group_id}` : undefined,
+                  onClick: () => toggleGroup(original.group_id),
+                }}
+              />
+            );
+          }
+          return (
+            <TableActions
+              rowLabel={original.payment.payment_number}
+              primary={{
+                label: "View payment",
+                icon: Eye,
+                onClick: () => openOrderPayment(original.payment, DialogMode.VIEW),
+              }}
+            />
+          );
+        },
       },
     ];
   }, [expandedGroups, openOrderPayment, setPage, setSortBy, sortBy]);

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { AxeResults } from "axe-core";
-import { browserLogin, json, order } from "./helpers";
+import { browserLogin, json, order, openRowActions } from "./helpers";
 
 test.use({ timezoneId: "America/Los_Angeles", actionTimeout: 15_000 });
 test.setTimeout(120_000);
@@ -102,7 +102,14 @@ test("Overdue delivery blocks dispatch, reschedules through the browser and clea
   await page.goto("/panel/deliveries?overdue=true");
   const row = page.getByRole("row").filter({ hasText: created.product_number });
   await expect(row).toContainText("Overdue"); await expect(row).toContainText("Live Driver");
-  await row.getByRole("button", { name: "Delivery Event", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Dispatch", exact: true })).toBeDisabled();
+  const proofButton = row.getByRole("button", { name: `View proof of delivery for ${created.product_number}`, exact: true });
+  await proofButton.click();
+  const proof = page.getByRole("dialog", { name: `Proof of delivery - ${created.product_number}` });
+  await expect(proof).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(proof).toHaveCount(0);
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Delivery event", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Event Type").click(); await page.getByRole("option", { name: "Reschedule", exact: true }).click();
   await chooseDate(page, dialog);

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Check, Layers, Link2, Loader2, X, XCircle } from "lucide-react";
+import { Check, Layers, Link2, Loader2, Unlink, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatOrderGroupCode, type OrderDetail } from "@/schema/order";
+import { canSeparateOrder, formatOrderGroupCode, type OrderDetail } from "@/schema/order";
 import { formatCurrency, parseLocalDateTime } from "@/utils/date-util";
 
 export const ORDER_PROCESS_STEPS = [
@@ -236,6 +236,7 @@ export function OrderDetailsDrawer({
   isLoading,
   feedback,
   onSelectOrder,
+  onSeparateOrder,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -244,6 +245,7 @@ export function OrderDetailsDrawer({
   isLoading: boolean;
   feedback?: ReactNode;
   onSelectOrder?: (orderId: number) => void;
+  onSeparateOrder?: (order: { id: number; version: number; order_number: string }) => void;
 }) {
   const displayTitle = order?.order_number || title || "Order Details";
   const createdLabel = formatDateTime(order?.created_at);
@@ -254,7 +256,10 @@ export function OrderDetailsDrawer({
       onOpenChange={onOpenChange}
       swipeDirection="right"
     >
-      <DrawerContent className="bg-background data-[swipe-axis=x]:[--drawer-content-width:100vw] data-[swipe-axis=x]:sm:[--drawer-content-width:min(92vw,52rem)] data-[swipe-axis=x]:lg:[--drawer-content-width:min(85vw,58rem)]">
+      <DrawerContent
+        className="bg-background data-[swipe-axis=x]:[--drawer-content-width:100vw] data-[swipe-axis=x]:sm:[--drawer-content-width:min(92vw,52rem)] data-[swipe-axis=x]:lg:[--drawer-content-width:min(85vw,58rem)]"
+        backdropProps={{ forceRender: true, className: "bg-black/50 motion-reduce:transition-none" }}
+      >
         <DrawerHeader className="border-b px-5 py-4 text-left sm:px-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
@@ -339,6 +344,7 @@ export function OrderDetailsDrawer({
             isLoading={isLoading}
             hideTopStepper
             onSelectOrder={onSelectOrder}
+            onSeparateOrder={onSeparateOrder}
           />
         </div>
 
@@ -361,11 +367,13 @@ export function ViewOrderDetails({
   isLoading,
   hideTopStepper = false,
   onSelectOrder,
+  onSeparateOrder,
 }: {
   order: (OrderDetail & { status?: string }) | null;
   isLoading: boolean;
   hideTopStepper?: boolean;
   onSelectOrder?: (orderId: number) => void;
+  onSeparateOrder?: (order: { id: number; version: number; order_number: string }) => void;
 }) {
   if (isLoading) {
     return (
@@ -716,8 +724,8 @@ export function ViewOrderDetails({
 
       {/* Related Orders in Group */}
       {order.order_group_number &&
-        order.group_members &&
-        order.group_members.length > 1 && (
+        ((order.group_members && order.group_members.length > 1) ||
+          (order.order_group_size ?? 0) > 1) && (
           <section className="space-y-2.5 rounded-lg border p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -735,12 +743,33 @@ export function ViewOrderDetails({
                   {formatOrderGroupCode(order.order_group_number)}
                 </span>
               </div>
-              <span className="text-xs text-muted-foreground">
-                {order.group_members.length} linked orders
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {order.order_group_size ?? order.group_members?.length ?? 0} linked orders
+                </span>
+                {onSeparateOrder && canSeparateOrder(order) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
+                    aria-label={`Separate from group: ${order.order_number}`}
+                    onClick={() =>
+                      onSeparateOrder({
+                        id: order.id,
+                        version: order.version,
+                        order_number: order.order_number,
+                      })
+                    }
+                  >
+                    <Unlink className="size-3.5" aria-hidden="true" />
+                    Separate from group
+                  </Button>
+                )}
+              </div>
             </div>
             <ul className="divide-y rounded-md border">
-              {order.group_members.map((member) => {
+              {(order.group_members ?? []).map((member) => {
                 const isCurrent = member.id === order.id;
                 const rowContent = (
                   <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
@@ -750,9 +779,9 @@ export function ViewOrderDetails({
                           {member.order_number}
                         </span>
                         {member.order_group_position != null && (
-                          <span className="text-[11px] text-muted-foreground">
+                          <span className="text-[11px] text-muted-foreground tabular-nums">
                             #{member.order_group_position} of{" "}
-                            {order.group_members!.length}
+                            {order.order_group_size ?? order.group_members!.length}
                           </span>
                         )}
                         {isCurrent && (

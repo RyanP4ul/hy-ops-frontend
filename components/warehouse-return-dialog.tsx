@@ -60,6 +60,7 @@ export function WarehouseReturnDialog({
   onConfirm,
   error,
   label = "Confirm warehouse return",
+  showTrigger = true,
   warehouseName,
   deliveryId,
 }: {
@@ -69,6 +70,7 @@ export function WarehouseReturnDialog({
   onConfirm: (codCollections?: CodCollectionInput[]) => Promise<void>;
   error?: string | null;
   label?: string;
+  showTrigger?: boolean;
   warehouseName?: string;
   deliveryId?: number;
 }) {
@@ -118,11 +120,11 @@ export function WarehouseReturnDialog({
         }
       }}
     >
-      <DialogTrigger
-        render={<Button type="button" variant="outline" disabled={busy} />}
-      >
-        {label}
-      </DialogTrigger>
+      {showTrigger && (
+        <DialogTrigger render={<Button type="button" variant="outline" disabled={busy} />}>
+          {label}
+        </DialogTrigger>
+      )}
       <DialogContent showCloseButton={!busy} className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Confirm return to warehouse</DialogTitle>

@@ -245,6 +245,19 @@ button.fm-marker-target {
     0 1px 3px rgb(15 23 42 / 28%);
 }
 
+/* Lalamove external courier beacon */
+.fm-marker-face[data-tone="lalamove"] {
+  --fm-marker-size: 36px;
+  --fm-marker-icon: 16px;
+  --fm-marker-fill: #ea580c;
+  --fm-marker-ink: #ffffff;
+  --fm-marker-accent: #ea580c;
+  box-shadow:
+    inset 0 0 0 2px #fed7aa,
+    0 3px 10px rgb(234 88 12 / 45%),
+    0 1px 3px rgb(15 23 42 / 28%);
+}
+
 .fm-beacon-heading {
   position: absolute;
   inset: -11px;

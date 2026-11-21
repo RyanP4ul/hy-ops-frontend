@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { orderBatchFormSchema, toOrderBatchPayload, allocateCombinedPayment, draftForPaymentMode, previewCombinedOrders } from "../schema/order-batch";
+import { canAddOrdersToGroup, canGroupSingleOrder, canSeparateOrder, evaluateOrderGrouping, type OrderTableRow } from "../schema/order";
 
 const order = { warehouse_id: 1, customer_id: 7, delivery_type: "INTERNAL", payment_arrangement: "NET_30", payment_method: "CASH" as const, amount_paid: 0, is_custom_shipping: false, customer_address_id: 1, items: [{ inventory_id: 1, product_id: 1, product_variant_name: "Variant", product_variant_sku: "SKU", price: 12.34, quantity: 1, description: "" }] };
 
@@ -56,4 +57,75 @@ test("combined mode rejects card payments, incomplete details, excess amounts an
   for (const payment of [undefined, { payment_method: "CASH", amount_paid: 0 }, { payment_method: "CASH", amount_paid: 50 }, { payment_method: "BANK_TRANSFER", amount_paid: 5, payment_type: " " }, { payment_method: "CASH", amount_paid: 1.001 }, { payment_method: "CARD", payment_type: "Visa", amount_paid: 5 }]) {
     expect(orderBatchFormSchema.safeParse({ customer_id: 7, payment_mode: "COMBINED", combined_payment: payment, orders: [order, order] }).success).toBe(false);
   }
+});
+
+test("canSeparateOrder allows only pre-dispatch grouped orders", () => {
+  const groupId = "11111111-1111-1111-1111-111111111111";
+  for (const status of ["PENDING", "PROCESSING", "SCHEDULING"]) {
+    expect(canSeparateOrder({ order_group_id: groupId, status })).toBe(true);
+    expect(canSeparateOrder({ order_group_id: null, status })).toBe(false);
+  }
+  for (const status of ["SCHEDULED", "IN_TRANSIT", "COMPLETED", "CANCELLED"]) {
+    expect(canSeparateOrder({ order_group_id: groupId, status })).toBe(false);
+  }
+  expect(canSeparateOrder(null)).toBe(false);
+});
+
+test("evaluateOrderGrouping enforces same customer only and pre-dispatch independent orders", () => {
+  const makeRow = (overrides: Partial<OrderTableRow> = {}): OrderTableRow => ({
+    id: 1,
+    version: 1,
+    entry_type: "SINGLE",
+    product_number: "ORD-1",
+    customer_id: 10,
+    customer_name: "Alice",
+    email: "alice@example.test",
+    customer_company: "Alice Co",
+    delivery_type: "INTERNAL",
+    status: "PENDING",
+    item_count: 1,
+    total_quantity: 1,
+    total: 100,
+    order_group_id: null,
+    ...overrides,
+  });
+
+  const a1 = makeRow({ id: 1, status: "PENDING" });
+  const a2 = makeRow({ id: 2, status: "SCHEDULING" });
+  const b1 = makeRow({ id: 3, customer_id: 20, customer_name: "Bob", email: "bob@example.test" });
+  const guest = makeRow({ id: 4, customer_id: 99, email: "walkin@system.local" });
+  const grouped = makeRow({ id: 5, order_group_id: "11111111-1111-1111-1111-111111111111" });
+
+  expect(canGroupSingleOrder(a1)).toBe(true);
+  expect(canGroupSingleOrder(a2)).toBe(true);
+  expect(canGroupSingleOrder(guest)).toBe(false);
+  expect(canGroupSingleOrder(grouped)).toBe(false);
+
+  expect(evaluateOrderGrouping([a1])).toMatchObject({ canGroup: false, reason: null });
+  expect(evaluateOrderGrouping([a1, a2])).toMatchObject({
+    canGroup: true,
+    customerId: 10,
+    customerName: "Alice",
+    reason: null,
+  });
+  expect(evaluateOrderGrouping([a1, b1])).toMatchObject({
+    canGroup: false,
+    reason: "Only orders from the same customer can be grouped.",
+  });
+  expect(evaluateOrderGrouping([a1, grouped]).canGroup).toBe(false);
+  expect(evaluateOrderGrouping([a1, guest]).canGroup).toBe(false);
+
+  const groupRow = makeRow({
+    entry_type: "GROUP",
+    order_group_id: "11111111-1111-1111-1111-111111111111",
+    order_group_size: 2,
+    members: [makeRow({ id: 10, status: "PENDING" }), makeRow({ id: 11, status: "SCHEDULING" })],
+  });
+  expect(canAddOrdersToGroup(groupRow)).toBe(true);
+  expect(
+    canAddOrdersToGroup({
+      ...groupRow,
+      members: [makeRow({ id: 10, status: "SCHEDULED" })],
+    }),
+  ).toBe(false);
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import type { TableAction } from "@/components/table-actions";
+
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Building2, Package, Truck, Users } from "lucide-react";
@@ -13,7 +15,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 
 type WarehouseOverview = {
@@ -39,7 +40,7 @@ type WarehouseOverview = {
   deliveries: { scheduled: number; in_transit: number; returning: number };
 };
 
-export function WarehouseOverviewAction({
+export function useWarehouseOverview({
   warehouseId,
   warehouseName,
 }: {
@@ -58,21 +59,14 @@ export function WarehouseOverviewAction({
     },
   });
 
-  return (
+  const action: TableAction = {
+    label: "Operations hub",
+    icon: Building2,
+    ariaLabel: `Operations hub for ${warehouseName}`,
+    onClick: () => setOpen(true),
+  };
+  const dialog = (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Operations overview for ${warehouseName}`}
-            title="Operations hub"
-          />
-        }
-      >
-        <Building2 className="size-4" />
-      </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{warehouseName} · Operations Hub</DialogTitle>
@@ -142,4 +136,5 @@ export function WarehouseOverviewAction({
       </DialogContent>
     </Dialog>
   );
+  return { action, dialog };
 }

@@ -19,10 +19,14 @@ import type {
   VehicleSortKey,
   WarehouseLocation,
 } from "../types";
+import {
+  LalamoveCouriersList,
+  type LiveLalamoveCourier,
+} from "./lalamove-couriers";
 import { ReturnPickupsList, type ReturnPickup } from "./return-pickups";
 import { GpsLabel, StatusLabel } from "./status-pill";
 
-export type DirectoryTab = "vehicles" | "warehouses" | "returns";
+export type DirectoryTab = "vehicles" | "warehouses" | "returns" | "lalamove";
 
 const FILTERS: { value: VehicleFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -72,6 +76,13 @@ type DirectoryRailProps = {
   returnsLoading: boolean;
   returnsError: boolean;
   onRetryReturns: () => void;
+  lalamoveCouriers?: LiveLalamoveCourier[];
+  lalamoveLoading?: boolean;
+  lalamoveError?: boolean;
+  selectedLalamoveId?: number | null;
+  now?: number;
+  onRetryLalamove?: () => void;
+  onSelectLalamove?: (courier: LiveLalamoveCourier) => void;
   simulationOn: boolean;
   positions: Map<string, ResolvedPosition>;
   counts: FleetCounts;
@@ -102,6 +113,13 @@ export function DirectoryRail({
   returnsLoading,
   returnsError,
   onRetryReturns,
+  lalamoveCouriers = [],
+  lalamoveLoading = false,
+  lalamoveError = false,
+  selectedLalamoveId = null,
+  now = 0,
+  onRetryLalamove,
+  onSelectLalamove,
   simulationOn,
   positions,
   counts,
@@ -153,6 +171,11 @@ export function DirectoryRail({
                 id: "returns",
                 label: "Returns",
                 count: returnPickups.length,
+              },
+              {
+                id: "lalamove",
+                label: "Lalamove",
+                count: lalamoveCouriers.length,
               },
             ] as const
           ).map((item) => {
@@ -426,6 +449,39 @@ export function DirectoryRail({
                 );
               })}
             </ul>
+          )}
+        </div>
+      ) : tab === "lalamove" ? (
+        <div className="fm-scroller min-h-0 flex-1">
+          {simulationOn ? (
+            <p className="px-4 py-10 text-center text-xs text-muted-foreground">
+              Exit simulation to track live Lalamove couriers.
+            </p>
+          ) : lalamoveError ? (
+            <div role="alert" className="space-y-2 p-4 text-center text-xs">
+              <p className="text-muted-foreground">
+                Couldn&apos;t load Lalamove couriers.
+              </p>
+              {onRetryLalamove && (
+                <Button size="sm" variant="outline" onClick={onRetryLalamove}>
+                  Retry
+                </Button>
+              )}
+            </div>
+          ) : lalamoveLoading ? (
+            <p
+              role="status"
+              className="px-4 py-10 text-center text-xs text-muted-foreground"
+            >
+              Loading…
+            </p>
+          ) : (
+            <LalamoveCouriersList
+              couriers={lalamoveCouriers}
+              selectedId={selectedLalamoveId}
+              now={now}
+              onSelect={(courier) => onSelectLalamove?.(courier)}
+            />
           )}
         </div>
       ) : (

@@ -1,7 +1,7 @@
 import { mockGoogleMaps } from "./google-maps";
 import { expect, test, type Page } from "@playwright/test";
 import { createRequire } from "node:module";
-import { browserLogin, connectSocket, json, order, password } from "./helpers";
+import { browserLogin, connectSocket, json, order, password, openRowActions } from "./helpers";
 
 test.use({ timezoneId: "America/Los_Angeles", actionTimeout: 15_000 });
 test.setTimeout(100_000);
@@ -25,8 +25,10 @@ async function payRow(page: Page, paymentNumber: string) {
 
 test("HY Users forbids self-deactivation and preserves protected account actions", async ({ page }) => {
   await browserLogin(page); await page.goto("/panel/users");
-  await page.getByPlaceholder("Search users...").fill("admin@example.test");
-  await expect(page.getByRole("button", { name: "Deactivate user Live Admin", exact: true })).toBeDisabled();
+  await page.getByPlaceholder(/Search users/).fill("admin@example.test");
+  const row = page.getByRole("row").filter({ hasText: "admin@example.test" });
+  await expect((await openRowActions(page, row)).getByRole("menuitem", { name: "Deactivate", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
   const denied = await page.request.post("/api/users/1/archive?version=1");
   expect(denied.ok()).toBe(false);
   await expect(page.getByRole("button", { name: /Delete user/ })).toHaveCount(0);
@@ -50,7 +52,7 @@ test("HY Payments retains the amount draft and captured version when another col
   const payments = await json(page.request, "GET", "/payments?limit=100");
   const payment = payments.find((p: { order_id: number }) => p.order_id === created.id);
   const row = await payRow(page, payment.payment_number);
-  await row.getByRole("button", { name: payment.payment_number, exact: true }).click();
+  await row.getByRole("button", { name: "View payment", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Add payment", exact: true }).click();
   const amount = dialog.getByLabel("Amount received (PHP)", { exact: false });
@@ -69,7 +71,7 @@ test("HY receipt dates remain collection dates after full refunds and money disp
   let payments = await json(page.request, "GET", "/payments?limit=100"); let payment = payments.find((p: { order_id: number }) => p.order_id === created.id);
   const receivedAt = payment.received_at; expect(receivedAt).toBeTruthy();
   const row = await payRow(page, payment.payment_number);
-  await row.getByRole("button", { name: payment.payment_number, exact: true }).click();
+  await row.getByRole("button", { name: "View payment", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Refund / history", exact: true }).click();
   await page.getByLabel("Refund amount", { exact: true }).fill("12.34"); await page.getByLabel("Reason", { exact: true }).fill("HY complete refund acceptance");
@@ -102,21 +104,26 @@ test("HY Payments expands a combined receipt found through one order and collect
   await page.goto("/panel/payments");
   await page.getByPlaceholder(/Search payments/).fill(first.product_number);
   const table = page.getByRole("region", { name: "payments table" });
-  await expect(table.getByRole("columnheader")).toHaveCount(6);
+  await expect(table.getByRole("columnheader")).toHaveCount(7);
   const row = table.getByRole("row").filter({ hasText: receiptNumber });
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("2 orders");
   await expect(row).toContainText("₱10.00");
-  const receipt = row.getByRole("button", { name: receiptNumber, exact: true });
+  const receipt = row.getByRole("button", { name: /^(Show|Hide) orders$/ });
   await expect(receipt).toHaveAttribute("aria-expanded", "false");
   await receipt.click();
   await expect(receipt).toHaveAttribute("aria-expanded", "true");
   const allocations = table.getByRole("region", { name: `Orders for ${receiptNumber}` });
   await expect(allocations.getByRole("listitem")).toHaveCount(2);
   await expect(allocations).toContainText("GROUPED-PAYMENTS-BROWSER");
-  await expect(allocations.getByRole("button", { name: second.product_number, exact: true })).toBeVisible();
+  await expect(allocations.getByRole("button", { name: `View payment for ${second.product_number}`, exact: true })).toBeVisible();
   const firstAllocation = allocations.getByRole("listitem").filter({ hasText: first.product_number });
   await expect(firstAllocation).toContainText("₱5.00");
+  await (await openRowActions(page, firstAllocation)).getByRole("menuitem", { name: "Refund / history", exact: true }).click();
+  const refund = page.getByRole("dialog", { name: "Refund and history" });
+  await expect(refund.getByLabel("Refund amount", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(refund).toHaveCount(0);
   await firstAllocation.getByRole("button", { name: "Add payment", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText(first.product_number);
@@ -124,7 +131,7 @@ test("HY Payments expands a combined receipt found through one order and collect
   await dialog.getByRole("button", { name: "Record payment", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(row).toContainText("₱10.00");
-  await firstAllocation.getByRole("button", { name: first.product_number, exact: true }).click();
+  await firstAllocation.getByRole("button", { name: `View payment for ${first.product_number}`, exact: true }).click();
   await expect(dialog).toContainText("Original combined receipt");
   await expect(dialog).toContainText("₱6.25");
 });
@@ -229,9 +236,10 @@ test("HY deactivation revokes a real browser socket on a different backend and r
     await browserLogin(b, "hy-revoked@example.test");
     await expect(b.getByRole("status", { name: "Live update connection" })).toContainText("connected");
     const cookie = (await target.cookies()).map(c => `${c.name}=${c.value}`).join("; ");
-    await a.goto("/panel/users"); await a.getByPlaceholder("Search users...").fill("hy-revoked@example.test");
-    await a.getByRole("button", { name: "Deactivate user HY revoked staff", exact: true }).click();
-    await a.getByRole("dialog").getByRole("button", { name: "Deactivate User", exact: true }).click();
+    await a.goto("/panel/users"); await a.getByPlaceholder(/Search users/).fill("hy-revoked@example.test");
+    const row = a.getByRole("row").filter({ hasText: "hy-revoked@example.test" });
+    await (await openRowActions(a, row)).getByRole("menuitem", { name: "Deactivate", exact: true }).click();
+    await a.getByRole("dialog").getByRole("button", { name: "Deactivate", exact: true }).click();
     await expect(b).toHaveURL(/\/$/, { timeout: 20_000 }); expect(closes.length).toBeGreaterThan(0);
     expect((await target.request.get("http://127.0.0.1:5181/auth/me", { headers: { Cookie: cookie } })).status()).toBe(401);
     expect(JSON.stringify(await json(admin.request, "GET", "/archives?limit=100"))).toContain("HY revoked staff");

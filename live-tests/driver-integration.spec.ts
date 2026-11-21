@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { browserLogin, json, login, order } from "./helpers";
+import { browserLogin, json, login, order, openRowActions } from "./helpers";
 
 test.use({ timezoneId: "Asia/Manila", actionTimeout: 15_000 });
 test.setTimeout(150_000);
@@ -76,7 +76,7 @@ test("Staff schedules and dispatches through website; assigned driver confirms s
     await expect(row).toContainText("completed");
     expect((await json(driver, "GET", `/driver/trips/${run.id}`)).status).toBe("completed");
     // Staff requests retrieval of goods already received; payments stay separate.
-    await row.getByRole("button", { name: "Refunded", exact: true }).click();
+    await (await openRowActions(page, row)).getByRole("menuitem", { name: "Flag refund and request pickup", exact: true }).click();
     const refundDialog = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Flag refund and request pickup" }) });
     await expect(refundDialog.getByRole("button", { name: "Confirm pickup request" })).toBeDisabled();
     await refundDialog.getByLabel("Reason").fill("Customer return acceptance check");

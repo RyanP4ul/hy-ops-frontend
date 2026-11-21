@@ -25,16 +25,23 @@ import {
 import { DialogMode } from "@/types/dialog";
 import { useModal } from "@/components/providers/modal-provider";
 import { useOrders } from "../provider";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2,
+  Layers,
+  Link2,
   Plus,
   ArrowLeft,
   ArrowRight,
+  Unlink,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { request, requestWithErrorHandling } from "@/components/http";
+import { refreshRealtimeQueries } from "@/lib/realtime";
 import Form from "./form";
 import { useEffect, useState } from "react";
 import {
+  GroupCandidatesResponse,
   OrderDetail,
   OrderForm,
   OrderItemDetail,
@@ -50,6 +57,7 @@ import { EditOrderForm, type EditOrderPayload } from "./edit-order-form";
 import { orderBatchFormSchema, draftForPaymentMode } from "@/schema/order-batch";
 
 export default function OrderDialog() {
+  const queryClient = useQueryClient();
   const { state, dispatch } = useModal();
   const [actionPending, setActionPending] = useState(false);
   const [nextPending, setNextPending] = useState(false);
@@ -114,6 +122,10 @@ export default function OrderDialog() {
           if (selected.id > 0) {
             void orderDetailQuery.refetch();
           }
+          void refreshRealtimeQueries(queryClient, {
+            type: "RESOURCE_CHANGED",
+            payload: { resource: "orders" },
+          });
           dispatch({ type: "CLOSE" });
         },
       );
@@ -137,10 +149,81 @@ export default function OrderDialog() {
     if (!selectedGroup?.order_group_id) return;
     void performAction(`/api/orders/groups/${selectedGroup.order_group_id}/delivery`);
   };
+  const onSeparateOrder = () => {
+    if (selected.id <= 0) return;
+    const version = matchedOrderDetail?.version ?? selected.version;
+    void performAction(`/api/orders/${selected.id}/separate`, { version });
+  };
+  const isSeparatingOrder =
+    state.mode === DialogMode.CUSTOM &&
+    state.title === "Separate Order from Group";
+  const isAddingToGroup =
+    state.mode === DialogMode.CUSTOM &&
+    state.title === "Add Orders to Group";
   const isGroupAction =
     state.mode === DialogMode.CUSTOM &&
     (state.title === "Process Order Group" ||
-      state.title === "Ready Group for Scheduling");
+      state.title === "Ready Group for Scheduling" ||
+      isAddingToGroup);
+
+  const candidateScope = `${selectedGroup?.order_group_id ?? ""}:${isAddingToGroup && state.isOpen}`;
+  const [candidateSelection, setCandidateSelection] = useState<{
+    scope: string;
+    ids: number[];
+  }>({ scope: candidateScope, ids: [] });
+  const selectedCandidateIds =
+    candidateSelection.scope === candidateScope ? candidateSelection.ids : [];
+
+  const groupCandidatesQuery = useQuery({
+    queryKey: ["order_group_candidates", selectedGroup?.order_group_id],
+    queryFn: async () => {
+      if (!selectedGroup?.order_group_id) return null;
+      const response = await request(
+        "GET",
+        `/api/orders/groups/${selectedGroup.order_group_id}/candidates`,
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(
+          typeof body?.message === "string" && body.message
+            ? body.message
+            : "Unable to load eligible orders for this group.",
+        );
+      }
+      return (await response.json()) as GroupCandidatesResponse;
+    },
+    enabled: isAddingToGroup && state.isOpen && Boolean(selectedGroup?.order_group_id),
+  });
+
+  const toggleCandidate = (orderId: number, checked: boolean, maxSelectable: number) => {
+    setCandidateSelection((current) => {
+      const base = current.scope === candidateScope ? current.ids : [];
+      if (!checked) {
+        return {
+          scope: candidateScope,
+          ids: base.filter((id) => id !== orderId),
+        };
+      }
+      if (base.includes(orderId) || base.length >= maxSelectable) {
+        return { scope: candidateScope, ids: base };
+      }
+      return { scope: candidateScope, ids: [...base, orderId] };
+    });
+  };
+
+  const onAddOrdersToGroup = () => {
+    const groupId = selectedGroup?.order_group_id;
+    const candidates = groupCandidatesQuery.data?.candidates ?? [];
+    if (!groupId || selectedCandidateIds.length === 0) return;
+    const payloadOrders = candidates
+      .filter((candidate) => selectedCandidateIds.includes(candidate.id))
+      .map((candidate) => ({ id: candidate.id, version: candidate.version }));
+    if (payloadOrders.length === 0) return;
+    void performAction("/api/orders/groups", {
+      target_group_id: groupId,
+      orders: payloadOrders,
+    });
+  };
 
   async function handleNext() {
     if (nextPending) return;
@@ -393,6 +476,41 @@ export default function OrderDialog() {
               action="delivery"
             />
           </form>
+        ) : isAddingToGroup && state.isOpen ? (
+          <form
+            id="form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onAddOrdersToGroup();
+            }}
+          >
+            <AddOrdersToGroupDetails
+              group={selectedGroup}
+              data={groupCandidatesQuery.data ?? null}
+              isLoading={groupCandidatesQuery.isLoading}
+              isError={groupCandidatesQuery.isError}
+              errorMessage={
+                groupCandidatesQuery.error instanceof Error
+                  ? groupCandidatesQuery.error.message
+                  : undefined
+              }
+              selectedIds={selectedCandidateIds}
+              onToggle={toggleCandidate}
+            />
+          </form>
+        ) : isSeparatingOrder && state.isOpen ? (
+          <form
+            id="form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSeparateOrder();
+            }}
+          >
+            <SeparateOrderDetails
+              order={matchedOrderDetail}
+              isLoading={orderDetailQuery.isLoading}
+            />
+          </form>
         ) : state.mode === DialogMode.CUSTOM &&
           state.title === "Invoice" &&
           state.isOpen ? (
@@ -516,13 +634,23 @@ export default function OrderDialog() {
                   !state.isOpen ||
                   form.formState.isSubmitting ||
                   actionPending ||
-                  (isGroupAction
-                    ? !selectedGroup?.order_group_id
-                    : editing
-                      ? !matchedOrderDetail || orderDetailQuery.isError
-                      : orderDetailQuery.isFetching ||
-                        orderDetailQuery.isError ||
-                        !orderDetailQuery.data)
+                  (isAddingToGroup
+                    ? !selectedGroup?.order_group_id ||
+                      groupCandidatesQuery.isFetching ||
+                      groupCandidatesQuery.isError ||
+                      selectedCandidateIds.length === 0
+                    : isGroupAction
+                      ? !selectedGroup?.order_group_id
+                      : editing
+                        ? !matchedOrderDetail || orderDetailQuery.isError
+                        : isSeparatingOrder
+                          ? orderDetailQuery.isFetching ||
+                            orderDetailQuery.isError ||
+                            !matchedOrderDetail ||
+                            !matchedOrderDetail.order_group_id
+                          : orderDetailQuery.isFetching ||
+                            orderDetailQuery.isError ||
+                            !orderDetailQuery.data)
                 }
                 type="submit"
                 form="form"
@@ -530,7 +658,15 @@ export default function OrderDialog() {
                 {(form.formState.isSubmitting || actionPending) && (
                   <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
                 )}
-                {state.action}
+                {isAddingToGroup
+                  ? selectedCandidateIds.length > 0
+                    ? `Add ${selectedCandidateIds.length} ${selectedCandidateIds.length === 1 ? "Order" : "Orders"}`
+                    : state.action
+                  : isSeparatingOrder &&
+                      matchedOrderDetail?.order_group_size != null &&
+                      matchedOrderDetail.order_group_size <= 2
+                    ? "Separate & Dissolve Group"
+                    : state.action}
               </Button>
             </>
           )}
@@ -881,6 +1017,328 @@ function OrderGroupActionDetails({
           </Table>
         </div>
       </section>
+    </div>
+  );
+}
+
+function SeparateOrderDetails({
+  order,
+  isLoading,
+}: {
+  order: OrderDetail | null;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-10">
+        <Loader2
+          className="size-6 animate-spin text-muted-foreground"
+          aria-label="Loading order"
+        />
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Unable to load this order. Close the dialog and try again.
+      </p>
+    );
+  }
+
+  if (!order.order_group_id) {
+    return (
+      <p className="py-6 text-center text-sm text-muted-foreground">
+        This order is already an independent order and is no longer part of a group.
+      </p>
+    );
+  }
+
+  const { total } = getOrderPaymentSummary(order);
+  const groupCode = formatOrderGroupCode(order.order_group_number) || "Order Group";
+  const totalMembers = order.order_group_size ?? order.group_members?.length ?? 0;
+  const remainingCount = Math.max(totalMembers - 1, 0);
+  const willDissolve = remainingCount <= 1;
+  const siblings = (order.group_members ?? []).filter((member) => member.id !== order.id);
+  const lastRemaining = siblings.length === 1 ? siblings[0] : null;
+
+  return (
+    <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+      <div
+        className={`rounded-lg border p-3.5 ${
+          willDissolve
+            ? "border-amber-200/80 bg-amber-50/50 dark:border-amber-900/70 dark:bg-amber-950/25"
+            : "border-blue-200/80 bg-blue-50/50 dark:border-blue-900/70 dark:bg-blue-950/25"
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <Unlink
+            className={`size-3.5 shrink-0 ${
+              willDissolve
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-blue-700 dark:text-blue-400"
+            }`}
+            aria-hidden="true"
+          />
+          <span>
+            {willDissolve
+              ? "Group will be automatically dissolved"
+              : `${remainingCount} orders will remain in ${groupCode}`}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {willDissolve
+            ? lastRemaining
+              ? `Separating ${order.order_number} leaves only 1 order (${lastRemaining.order_number}) in group ${groupCode}. The group will be automatically dissolved and both orders will become independent orders.`
+              : `Separating ${order.order_number} leaves only 1 order in group ${groupCode}. The group will be automatically dissolved and the remaining order will become an independent order.`
+            : `${order.order_number} will become an independent order, while group ${groupCode} will continue with ${remainingCount} orders.`}
+        </p>
+        <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+          Order items, status, shipping details, invoices, and recorded or combined payment allocations will remain unchanged.
+        </p>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3.5 sm:grid-cols-4">
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Order No.</dt>
+          <dd className="mt-0.5 truncate text-sm font-semibold">
+            {order.order_number}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Current Group</dt>
+          <dd
+            className="mt-0.5 flex items-center gap-1 truncate font-mono text-sm font-medium"
+            title={order.order_group_number ?? undefined}
+          >
+            <Layers className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span>{groupCode}</span>
+          </dd>
+          <dd className="text-[11px] text-muted-foreground tabular-nums">
+            {order.order_group_position != null
+              ? `#${order.order_group_position} of ${totalMembers}`
+              : `${totalMembers} orders`}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Status</dt>
+          <dd className="mt-1">
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getOrderStatusBadgeClass(order.status)}`}
+            >
+              {formatOrderLabel(order.status)}
+            </span>
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Order Total</dt>
+          <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+            {total === null ? "Unverified" : formatCurrency(total)}
+          </dd>
+        </div>
+      </dl>
+
+      {siblings.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {willDissolve
+              ? "Remaining Order Becoming Independent"
+              : "Orders Remaining in Group"}
+          </h3>
+          <ul className="divide-y rounded-lg border">
+            {siblings.map((member) => (
+              <li
+                key={member.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs"
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-foreground">
+                      {member.order_number}
+                    </span>
+                    {member.shipping_address && (
+                      <span className="truncate text-muted-foreground">
+                        · {member.shipping_address}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getOrderStatusBadgeClass(member.status)}`}
+                  >
+                    {formatOrderLabel(member.status)}
+                  </span>
+                  <span className="min-w-16 text-right font-medium tabular-nums">
+                    {member.total === null
+                      ? "Unverified"
+                      : formatCurrency(member.total)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function AddOrdersToGroupDetails({
+  group,
+  data,
+  isLoading,
+  isError,
+  errorMessage,
+  selectedIds,
+  onToggle,
+}: {
+  group: OrderTableRow | null;
+  data: GroupCandidatesResponse | null;
+  isLoading: boolean;
+  isError: boolean;
+  errorMessage?: string;
+  selectedIds: number[];
+  onToggle: (orderId: number, checked: boolean, maxSelectable: number) => void;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-10">
+        <Loader2
+          className="size-6 animate-spin text-muted-foreground"
+          aria-label="Loading eligible orders"
+        />
+      </div>
+    );
+  }
+
+  if (isError || !data || !group) {
+    return (
+      <p role="alert" className="py-8 text-center text-sm text-destructive">
+        {errorMessage || "Unable to load eligible orders for this group. Close the dialog and try again."}
+      </p>
+    );
+  }
+
+  const groupCode = formatOrderGroupCode(data.group_number) || "Group";
+  const remainingSlots = Math.max(data.max_size - data.current_size, 0);
+
+  return (
+    <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+      <div className="rounded-lg border border-blue-200/80 bg-blue-50/50 p-3.5 dark:border-blue-900/70 dark:bg-blue-950/25">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <Link2 className="size-3.5 shrink-0 text-blue-700 dark:text-blue-400" aria-hidden="true" />
+          <span>Same-customer orders only</span>
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+          Showing eligible independent pre-dispatch orders for{" "}
+          <span className="font-medium text-foreground">{data.customer_name}</span>
+          {data.customer_company ? ` (${data.customer_company})` : ""}. All order items, statuses, invoices, and payment allocations will be preserved.
+        </p>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3.5 sm:grid-cols-3">
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Order Group</dt>
+          <dd
+            className="mt-0.5 truncate font-mono text-sm font-semibold"
+            title={data.group_number}
+          >
+            {groupCode}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Customer</dt>
+          <dd className="mt-0.5 truncate text-sm font-medium">
+            {data.customer_name}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Group Size</dt>
+          <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+            {data.current_size + selectedIds.length} of {data.max_size} max
+          </dd>
+        </div>
+      </dl>
+
+      {data.candidates.length === 0 ? (
+        <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+          No eligible independent orders found for {data.customer_name}.
+        </p>
+      ) : (
+        <section className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Eligible Independent Orders ({data.candidates.length})
+            </h3>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {selectedIds.length} selected · {remainingSlots} {remainingSlots === 1 ? "slot" : "slots"} left
+            </span>
+          </div>
+          <ul className="divide-y rounded-lg border">
+            {data.candidates.map((candidate) => {
+              const checked = selectedIds.includes(candidate.id);
+              const limitReached = !checked && selectedIds.length >= remainingSlots;
+              const checkboxId = `group-candidate-${candidate.id}`;
+              return (
+                <li
+                  key={candidate.id}
+                  className={`flex items-start gap-3 px-3 py-2.5 text-xs transition-colors ${
+                    checked ? "bg-primary/5" : "hover:bg-muted/30"
+                  }`}
+                >
+                  <Checkbox
+                    id={checkboxId}
+                    checked={checked}
+                    disabled={limitReached}
+                    onCheckedChange={(next) =>
+                      onToggle(candidate.id, Boolean(next), remainingSlots)
+                    }
+                    className="mt-0.5"
+                  />
+                  <label
+                    htmlFor={checkboxId}
+                    className={`flex min-w-0 flex-1 cursor-pointer flex-wrap items-center justify-between gap-2 ${
+                      limitReached ? "opacity-60" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-foreground">
+                          {candidate.order_number}
+                        </span>
+                        {candidate.warehouse_name && (
+                          <span className="text-muted-foreground">
+                            · {candidate.warehouse_name}
+                          </span>
+                        )}
+                      </div>
+                      {candidate.shipping_address && (
+                        <p className="truncate text-muted-foreground">
+                          {candidate.shipping_address}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getOrderStatusBadgeClass(candidate.status)}`}
+                      >
+                        {formatOrderLabel(candidate.status)}
+                      </span>
+                      <span className="min-w-16 text-right font-medium tabular-nums">
+                        {candidate.total === null
+                          ? "Unverified"
+                          : formatCurrency(candidate.total)}
+                      </span>
+                    </div>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

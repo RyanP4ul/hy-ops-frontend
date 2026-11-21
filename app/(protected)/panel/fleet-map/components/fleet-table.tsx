@@ -1,5 +1,6 @@
-import { Search, X } from "lucide-react";
+import { Crosshair, Eye, Search, X } from "lucide-react";
 import type { RefObject } from "react";
+import { TableActions } from "@/components/table-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,10 @@ import type {
   WarehouseLocation,
 } from "../types";
 import { getAssignmentLine, type DirectoryTab } from "./directory-rail";
+import {
+  LalamoveCouriersList,
+  type LiveLalamoveCourier,
+} from "./lalamove-couriers";
 import { ReturnPickupsList, type ReturnPickup } from "./return-pickups";
 import { GpsLabel, StatusLabel } from "./status-pill";
 
@@ -41,6 +46,13 @@ type FleetTableProps = {
   returnsLoading: boolean;
   returnsError: boolean;
   onRetryReturns: () => void;
+  lalamoveCouriers?: LiveLalamoveCourier[];
+  lalamoveLoading?: boolean;
+  lalamoveError?: boolean;
+  selectedLalamoveId?: number | null;
+  now?: number;
+  onRetryLalamove?: () => void;
+  onSelectLalamove?: (courier: LiveLalamoveCourier) => void;
   simulationOn: boolean;
   positions: Map<string, ResolvedPosition>;
   counts: FleetCounts;
@@ -70,6 +82,13 @@ export function FleetTable({
   returnsLoading,
   returnsError,
   onRetryReturns,
+  lalamoveCouriers = [],
+  lalamoveLoading = false,
+  lalamoveError = false,
+  selectedLalamoveId = null,
+  now = 0,
+  onRetryLalamove,
+  onSelectLalamove,
   simulationOn,
   positions,
   counts,
@@ -113,6 +132,7 @@ export function FleetTable({
               { id: "vehicles", label: "Vehicles", count: vehicles.length },
               { id: "warehouses", label: "Bases", count: warehouses.length },
               { id: "returns", label: "Returns", count: returnPickups.length },
+              { id: "lalamove", label: "Lalamove", count: lalamoveCouriers.length },
             ] as const
           ).map((item) => {
             const active = tab === item.id;
@@ -263,6 +283,7 @@ export function FleetTable({
                     <th className="border-b px-3 py-2.5 text-right font-medium">
                       Updated
                     </th>
+                    <th className="w-px border-b px-3.5 py-2.5 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -280,7 +301,9 @@ export function FleetTable({
                       <tr
                         key={vehicle.id}
                         data-selected={selected}
-                        onClick={() => onSelectVehicle(vehicle)}
+                        onClick={(event) => {
+                          if (event.target instanceof Element && !event.target.closest("button")) onSelectVehicle(vehicle);
+                        }}
                         className={cn(
                           "cursor-pointer transition-colors hover:bg-accent/40",
                           selected && "bg-primary/6",
@@ -351,6 +374,17 @@ export function FleetTable({
                             : position?.health === "simulated"
                               ? "Sim"
                               : "—"}
+                        </td>
+                        <td className="border-b border-border/60 px-3.5 py-2.5">
+                          <TableActions
+                            rowLabel={vehicle.plate}
+                            primary={{
+                              label: "View vehicle",
+                              ariaLabel: `View vehicle ${vehicle.plate}`,
+                              icon: Eye,
+                              onClick: () => onSelectVehicle(vehicle),
+                            }}
+                          />
                         </td>
                       </tr>
                     );
@@ -424,21 +458,56 @@ export function FleetTable({
                         {readyCount}
                       </td>
                       <td className="border-b border-border/60 px-3.5 py-2.5 text-right">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-6 px-2 text-[11px]"
-                          onClick={() => onFocusWarehouse(warehouse)}
-                        >
-                          Show on map
-                        </Button>
+                        <TableActions
+                          rowLabel={warehouse.name}
+                          primary={{
+                            label: "Show on map",
+                            ariaLabel: `Show on map: ${warehouse.name}`,
+                            icon: Crosshair,
+                            onClick: () => onFocusWarehouse(warehouse),
+                          }}
+                        />
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+          )}
+        </div>
+      ) : tab === "lalamove" ? (
+        <div className="fm-scroller min-h-0 flex-1">
+          {simulationOn ? (
+            <p className="p-8 text-center text-xs text-muted-foreground">
+              Exit simulation to track live Lalamove couriers.
+            </p>
+          ) : lalamoveError ? (
+            <div role="alert" className="space-y-2 p-8 text-center text-xs">
+              <p className="text-muted-foreground">
+                Couldn&apos;t load Lalamove couriers.
+              </p>
+              {onRetryLalamove && (
+                <Button size="sm" variant="outline" onClick={onRetryLalamove}>
+                  Retry
+                </Button>
+              )}
+            </div>
+          ) : lalamoveLoading ? (
+            <p
+              role="status"
+              className="p-8 text-center text-xs text-muted-foreground"
+            >
+              Loading…
+            </p>
+          ) : (
+            <div className="mx-auto max-w-2xl border-x">
+              <LalamoveCouriersList
+                couriers={lalamoveCouriers}
+                selectedId={selectedLalamoveId}
+                now={now}
+                onSelect={(courier) => onSelectLalamove?.(courier)}
+              />
+            </div>
           )}
         </div>
       ) : (

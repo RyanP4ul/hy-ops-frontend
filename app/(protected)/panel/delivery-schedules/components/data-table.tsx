@@ -1,5 +1,7 @@
 "use client";
 
+import { TableActions } from "@/components/table-actions";
+
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 import { DestinationEditor } from "./destination-editor";
@@ -13,9 +15,11 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
+import Link from "next/link";
 import {
   Calendar,
   Plus,
+  Route,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { debounce } from "@/utils/debounce";
@@ -25,11 +29,6 @@ import { REQUESTS } from "@/constant/request";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 export default function DataTable() {
   const { subscribe } = useWebSocket();
@@ -103,41 +102,53 @@ export default function DataTable() {
       {
         id: "actions",
         header: "Actions",
-        cell: ({ row }) => (
-          <div className="space-y-2"><div className="flex gap-2">
-            {row.original.order_group_id && <Button variant="outline" size="sm" disabled={groupPending || !row.original.can_schedule}
-              aria-label={`Schedule group ${row.original.order_group_number}`}
-              onClick={async () => {
-                startSchedule(row.original.warehouse_id);
-                if (await addReadyGroup(row.original.order_group_id!)) {
-                  setStep(0);
-                  openModal(DialogMode.INSERT, { title: "Schedule Delivery", description: "Schedule every order in this group together. Each order keeps its own destination.", action: "Schedule Delivery" });
-                }
-              }}>Schedule group</Button>}
-            {/* Schedule the selected order */}
-            {!row.original.order_group_id && <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label={`Schedule order ${row.original.order_number}`}
-                    disabled={row.original.shipping_latitude == null || row.original.shipping_longitude == null || (Number(row.original.shipping_latitude) === 0 && Number(row.original.shipping_longitude) === 0)}
-                    onClick={() => {
-                      startSchedule(row.original.warehouse_id, [row.original.id]);
-                      openModal(DialogMode.INSERT, { title: "Schedule Delivery", description: `Schedule ${row.original.order_number} for delivery.`, action: "Schedule Delivery" });
-                    }}
-                  >
-                    <Calendar className="size-4" />
-                  </Button>
-                }
+        cell: ({ row }) => {
+          const order = row.original;
+          const groupId = order.order_group_id;
+          const hasLocation = order.shipping_latitude != null && order.shipping_longitude != null
+            && (Number(order.shipping_latitude) !== 0 || Number(order.shipping_longitude) !== 0);
+          return (
+            <div className="space-y-2 text-right">
+              <TableActions
+                rowLabel={order.order_group_number || order.order_number}
+                primary={groupId ? {
+                  label: "Schedule group",
+                  ariaLabel: `Schedule group ${order.order_group_number}`,
+                  icon: Calendar,
+                  disabled: groupPending || !order.can_schedule,
+                  onClick: async () => {
+                    startSchedule(order.warehouse_id);
+                    if (await addReadyGroup(groupId)) {
+                      setStep(0);
+                      openModal(DialogMode.INSERT, {
+                        title: "Schedule Delivery",
+                        description: "Schedule every order in this group together. Each order keeps its own destination.",
+                        action: "Schedule Delivery",
+                      });
+                    }
+                  },
+                } : {
+                  label: "Schedule order",
+                  ariaLabel: `Schedule order ${order.order_number}`,
+                  icon: Calendar,
+                  disabled: !hasLocation,
+                  tooltip: "Schedule this order. Confirm its location first if unavailable.",
+                  onClick: () => {
+                    startSchedule(order.warehouse_id, [order.id]);
+                    openModal(DialogMode.INSERT, {
+                      title: "Schedule Delivery",
+                      description: `Schedule ${order.order_number} for delivery.`,
+                      action: "Schedule Delivery",
+                    });
+                  },
+                }}
               />
-              <TooltipContent>
-                <p>Schedule this order. Confirm its location first if unavailable.</p>
-              </TooltipContent>
-            </Tooltip>}
-          </div><p className={`max-w-64 whitespace-normal text-xs ${row.original.can_schedule ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"}`}>{row.original.blocked_reason || (row.original.order_group_id ? "All orders are ready to schedule together." : "Ready to schedule.")}</p></div>
-        ),
+              <p className={`ml-auto min-w-28 max-w-64 whitespace-normal text-xs ${order.can_schedule ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"}`}>
+                {order.blocked_reason || (groupId ? "All orders are ready to schedule together." : "Ready to schedule.")}
+              </p>
+            </div>
+          );
+        },
       },
     ],
     [openModal, form, setStep, warehouseCB, warehouseQuery.data, startSchedule, addReadyGroup, groupPending],
@@ -173,7 +184,41 @@ export default function DataTable() {
 
   return (
     <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      <ManagementListHeader title="Ready for scheduling" description="Check order readiness and destinations before assigning a delivery run." total={deliveryScheduleQuery.data?.total} isFetching={deliveryScheduleQuery.isFetching} onRefresh={() => void deliveryScheduleQuery.refetch()} actions={<Button size="sm" disabled={groupPending} onClick={() => { startSchedule(); openModal(DialogMode.INSERT, { title: "Schedule Delivery", description: "Create a delivery schedule for selected orders.", action: "Schedule Delivery" }); }}><Plus className="size-4" aria-hidden="true" />Schedule delivery</Button>} />
+      <ManagementListHeader
+        title="Ready for scheduling"
+        description="Check order readiness and destinations before assigning a delivery run."
+        total={deliveryScheduleQuery.data?.total}
+        isFetching={deliveryScheduleQuery.isFetching}
+        onRefresh={() => void deliveryScheduleQuery.refetch()}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              nativeButton={false}
+              render={<Link href="/panel/lalamove?mode=multi-stop" />}
+            >
+              <Route className="size-4" aria-hidden="true" />
+              Lalamove multi-stop
+            </Button>
+            <Button
+              size="sm"
+              disabled={groupPending}
+              onClick={() => {
+                startSchedule();
+                openModal(DialogMode.INSERT, {
+                  title: "Schedule Delivery",
+                  description: "Create a delivery schedule for selected orders.",
+                  action: "Schedule Delivery",
+                });
+              }}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Schedule delivery
+            </Button>
+          </div>
+        }
+      />
       <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 p-4 md:px-5">
         <ManagementSearch id="delivery-schedules-search" value={searchInput} placeholder="Search orders…" onChange={(value) => { setSearchInput(value); debouncedSearch(value); }} onClear={clearSearch} />
         {(search || searchInput) && <Button variant="ghost" size="sm" onClick={clearSearch}>Clear search</Button>}

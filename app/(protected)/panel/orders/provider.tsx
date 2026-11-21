@@ -39,7 +39,7 @@ type SubType = {
 };
 
 type InventoryItem = { inventory_id: number; quantity: number };
-type CustomerAddress = {
+export type CustomerAddress = {
   id: number;
   customer_id: number;
   address_line: string;
@@ -48,7 +48,7 @@ type CustomerAddress = {
   province: string;
   postal_code: string | null;
 };
-type CustomerOption = {
+export type CustomerOption = {
   id: number;
   name: string;
   company_name: string;
@@ -149,6 +149,8 @@ type OrdersContext = {
       total: number;
     }>
   >;
+  selectedCustomer: CustomerOption | undefined;
+  setCustomerSnapshot: (customer: CustomerOption | undefined) => void;
   customerOrderEligibility: UseQueryResult<CustomerOrderEligibility>;
   sub: SubType;
   setSub: React.Dispatch<React.SetStateAction<SubType>>;
@@ -208,6 +210,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const warehouseCB = useComboBoxPagination();
   const setWarehouseLabel = warehouseCB.setInputValue;
   const customerCB = useComboBoxPagination();
+  const [customerSnapshot, setCustomerSnapshot] = useState<CustomerOption>();
   const inventoryCB = useComboBoxPagination();
 
   const [inventoryItem, setInventoryItem] = useState<InventoryItem[]>([]);
@@ -444,6 +447,9 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     control: form.control,
     name: "customer_id",
   });
+  const selectedCustomer = customerQuery.data?.rows.find(
+    (customer) => customer.id === selectedCustomerId,
+  ) ?? (customerSnapshot?.id === selectedCustomerId ? customerSnapshot : undefined);
   const customerOrderEligibility = useQuery({
     queryKey: ["customer-order-eligibility", selectedCustomerId],
     queryFn: async () => {
@@ -473,12 +479,9 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
   const collectDrafts = (): OrderDraft[] => {
     const data = structuredClone(form.getValues());
-    const customer = customerQuery.data?.rows.find(
-      (row) => row.id === data.customer_id,
-    );
-    const address = customer?.addresses.find(
-      (row) => row.id === data.customer_address_id,
-    );
+    const address = selectedCustomer?.id === data.customer_id
+      ? selectedCustomer.addresses.find((row) => row.id === data.customer_address_id)
+      : undefined;
     const destination = address
       ? [
           address.address_line,
@@ -590,6 +593,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     });
     setStep(0);
     setSelected({ id: -1, version: 0 });
+    setCustomerSnapshot(undefined);
     setInventoryItem([]);
     setSub({ is_open: false, mode: DialogMode.DEFAULT });
     for (const combo of [warehouseCB, customerCB, inventoryCB]) {
@@ -646,6 +650,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         inventoryCB,
         warehouseQuery,
         customerQuery,
+        selectedCustomer,
+        setCustomerSnapshot,
         customerOrderEligibility,
         sub,
         setSub,

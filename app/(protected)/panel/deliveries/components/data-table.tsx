@@ -1,11 +1,13 @@
 "use client";
 
-import { OrderDetailsAction } from "./order-details-action";
-import { DeliveryExpensesAction } from "./delivery-expenses-action";
-import { ProofOfDeliveryAction } from "./proof-of-delivery-action";
-import { RefundPickupAction } from "./refund-pickup-action";
+import { TableActions } from "@/components/table-actions";
+
+import { useDeliveryOrderDetails } from "./order-details-action";
+import { useDeliveryExpenses } from "./delivery-expenses-action";
+import { ProofOfDeliveryDialog } from "./proof-of-delivery-action";
+import { useRefundPickup } from "./refund-pickup-action";
 import { ReturnDispositionAction } from "./return-disposition-action";
-import { RunActions } from "./run-actions";
+import { useRunAction } from "./run-actions";
 import { QueryFeedback } from "@/components/query-feedback";
 import { ManagementListHeader, ManagementListFooter, ManagementSearch, ManagementTableView } from "@/components/management-list";
 
@@ -20,6 +22,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import {
+  ImageIcon,
   PencilLine,
   Plus,
   Truck,
@@ -30,11 +33,6 @@ import { REQUESTS } from "@/constant/request";
 import { useWebSocket } from "@/components/providers/websocket-provider";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useDeliveries } from "../provider";
 import { DeliveriesRow } from "@/schema/deliveries";
 import { formatDate, formatTime } from "@/utils/time";
@@ -43,6 +41,78 @@ type DeliveriesQueryData = {
   rows: DeliveriesRow[];
   total: number;
 };
+
+function DeliveryOrderActions({ order }: { order: DeliveriesRow["orders"][number] }) {
+  const [proofOpen, setProofOpen] = useState(false);
+  const details = useDeliveryOrderDetails({ orderId: order.order_id, orderNumber: order.order_number });
+
+  return (
+    <>
+      <TableActions
+        rowLabel={order.order_number}
+        primary={details.action}
+        secondary={[order.stop_id != null && {
+          label: "View proof of delivery",
+          ariaLabel: `View proof of delivery for ${order.order_number}`,
+          icon: ImageIcon,
+          onClick: () => setProofOpen(true),
+        }]}
+      />
+      {details.dialog}
+      {order.stop_id != null && (
+        <ProofOfDeliveryDialog
+          stopId={order.stop_id}
+          orderNumber={order.order_number}
+          open={proofOpen}
+          onOpenChange={setProofOpen}
+        />
+      )}
+    </>
+  );
+}
+
+function DeliveryRowActions({ delivery, onEvent, onAssignment }: {
+  delivery: DeliveriesRow;
+  onEvent: () => void;
+  onAssignment: () => void;
+}) {
+  const scheduled = delivery.status?.toUpperCase?.() === "SCHEDULED";
+  const expenses = useDeliveryExpenses({ deliveryId: delivery.delivery_id });
+  const pickup = useRefundPickup(delivery.orders);
+  const run = useRunAction({
+    id: delivery.delivery_id,
+    status: delivery.status,
+    overdue: delivery.is_overdue,
+    warehouseName: delivery.warehouse?.name,
+  });
+
+  return (
+    <>
+      <TableActions
+        rowLabel={`delivery #${delivery.delivery_id}`}
+        primary={run?.action ?? expenses.action}
+        secondary={[
+          run ? expenses.action : undefined,
+          scheduled && { label: "Change driver and vehicle", icon: Truck, onClick: onAssignment },
+        ]}
+        additional={[
+          {
+            label: "Delivery event",
+            icon: PencilLine,
+            destructive: true,
+            disabled: !scheduled,
+            tooltip: "Cancel or reschedule a scheduled delivery",
+            onClick: onEvent,
+          },
+          pickup?.action,
+        ]}
+      />
+      {run?.dialog}
+      {expenses.dialog}
+      {pickup?.dialog}
+    </>
+  );
+}
 
 export default function DataTable() {
   const router = useRouter();
@@ -131,8 +201,7 @@ export default function DataTable() {
                   <Badge variant={"ghost"}>{order.status}</Badge>
                   {order.failure_reason && <span className="max-w-48 text-xs text-destructive">{order.failure_reason}</span>}
                 </div>
-                <OrderDetailsAction orderId={order.order_id} orderNumber={order.order_number} />
-                {order.stop_id != null && <ProofOfDeliveryAction stopId={order.stop_id} orderNumber={order.order_number} />}
+                <DeliveryOrderActions order={order} />
               </div>
             ))}
           </div>
@@ -173,90 +242,34 @@ export default function DataTable() {
       {
         id: "actions",
         header: "Actions",
-        cell: ({ row }) => {
-          const status = row.original.status?.toUpperCase?.() ?? "";
-
-          return (
-            <div className="flex flex-wrap gap-2">
-              <DeliveryExpensesAction deliveryId={row.original.delivery_id} />
-              <RefundPickupAction orders={row.original.orders} />
-              <RunActions
-                id={row.original.delivery_id}
-                status={row.original.status}
-                overdue={row.original.is_overdue}
-                warehouseName={row.original.warehouse?.name}
-              />
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Delivery Event"
-                      disabled={status !== "SCHEDULED"}
-                      onClick={() => {
-                        event_form.setValue(
-                          "delivery_id",
-                          row.original.delivery_id,
-                        );
-                        event_form.setValue(
-                          "delivery_version",
-                          row.original.version,
-                        );
-                        openModal(DialogMode.CUSTOM, {
-                          title: "Delivery Event",
-                          description:
-                            "Please provide the reason for cancelling or rescheduling the delivery.",
-                          action: "Submit",
-                        });
-                      }}
-                    >
-                      <PencilLine className="size-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>
-                  <p>Delivery Event</p>
-                </TooltipContent>
-              </Tooltip>
-              {status === "SCHEDULED" && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Change Driver and Vehicle"
-                        onClick={() => {
-                          assignment_form.reset({
-                            delivery_id: row.original.delivery_id,
-                            driver_id: -1,
-                            vehicle_id: -1,
-                            delivery_version: row.original.version,
-                          });
-                          setAssignmentWarehouseId(
-                            row.original.warehouse?.id ?? -1,
-                          );
-                          openModal(DialogMode.CHANGE_ASSIGNMENT, {
-                            title: "Change Driver and Vehicle",
-                            description:
-                              "Select a new driver and vehicle for this scheduled delivery.",
-                            action: "Save",
-                          });
-                        }}
-                      >
-                        <Truck className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent>
-                    <p>Change Driver and Vehicle</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <DeliveryRowActions
+            delivery={row.original}
+            onEvent={() => {
+              event_form.setValue("delivery_id", row.original.delivery_id);
+              event_form.setValue("delivery_version", row.original.version);
+              openModal(DialogMode.CUSTOM, {
+                title: "Delivery Event",
+                description: "Please provide the reason for cancelling or rescheduling the delivery.",
+                action: "Submit",
+              });
+            }}
+            onAssignment={() => {
+              assignment_form.reset({
+                delivery_id: row.original.delivery_id,
+                driver_id: -1,
+                vehicle_id: -1,
+                delivery_version: row.original.version,
+              });
+              setAssignmentWarehouseId(row.original.warehouse?.id ?? -1);
+              openModal(DialogMode.CHANGE_ASSIGNMENT, {
+                title: "Change Driver and Vehicle",
+                description: "Select a new driver and vehicle for this scheduled delivery.",
+                action: "Save",
+              });
+            }}
+          />
+        ),
       },
     ],
     [assignment_form, openModal, setAssignmentWarehouseId, event_form],

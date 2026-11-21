@@ -1,6 +1,8 @@
 "use client";
 
-import { ArchiveDeletionAction, ArchiveDeletionDate } from "@/components/archive-deletion-action";
+import { TableActions } from "@/components/table-actions";
+
+import { ArchiveDeletionDate, useArchiveDeletion } from "@/components/archive-deletion-action";
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -27,6 +29,26 @@ function recordName(record: ArchiveTable) {
   return typeof data?.name === "string" && data.name.trim() ? data.name : typeof data?.plate_number === "string" ? data.plate_number : `${recordType(record.entity_type)} #${record.entity_id}`;
 }
 
+function ArchiveRowActions({ record, onDetails, onRestore }: {
+  record: ArchiveTable;
+  onDetails: () => void;
+  onRestore: () => void;
+}) {
+  const deletion = useArchiveDeletion(record);
+  const name = recordName(record);
+  return (
+    <>
+      <TableActions
+        rowLabel={name}
+        primary={{ label: "Restore", ariaLabel: `Restore ${name}`, icon: ArchiveRestore, onClick: onRestore }}
+        secondary={[{ label: "View details", ariaLabel: `View details for ${name}`, icon: ArrowUpRight, onClick: onDetails }]}
+        additional={[deletion.action]}
+      />
+      {deletion.dialog}
+    </>
+  );
+}
+
 export default function DataTable() {
   const { subscribe } = useWebSocket();
   const { openModal } = useModal();
@@ -46,7 +68,7 @@ export default function DataTable() {
       && (!keyword || [recordName(record), record.entity_id, record.entity_type, record.user?.name].some((value) => String(value ?? "").toLowerCase().includes(keyword)));
   }), [archivesQuery.data?.rows, search, entityType]);
 
-  const columns: ColumnDef<ArchiveTable>[] = [
+  const columns = useMemo<ColumnDef<ArchiveTable>[]>(() => [
     {
       accessorKey: "entity_id",
       header: "Archived record",
@@ -83,23 +105,21 @@ export default function DataTable() {
     {
       id: "actions",
       header: "Actions",
-      cell: ({ row }) => <div className="flex items-center gap-2">
-        <ArchiveDeletionAction record={row.original} />
-        <Button variant="ghost" size="sm" aria-label={`View details for ${recordName(row.original)}`} onClick={() => {
-          setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
-          openModal(DialogMode.DEFAULT, { title: "Archive details", description: `Review the archived record for ${recordName(row.original)}.`, action: "none" });
-        }}>
-          <span className="hidden sm:inline">Details</span><ArrowUpRight className="size-4" aria-hidden="true" />
-        </Button>
-        <Button variant="outline" size="sm" aria-label={`Restore ${recordName(row.original)}`} onClick={() => {
-          setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
-          openModal(DialogMode.ARCHIVE, { title: "Restore record?", description: `Restore ${recordName(row.original)}? This record will return to its management list as inactive. Activate it there when ready. Restoring cancels any scheduled permanent deletion.`, action: "Restore record" });
-        }}>
-          <ArchiveRestore className="size-4" aria-hidden="true" /><span>Restore</span>
-        </Button>
-      </div>,
+      cell: ({ row }) => (
+        <ArchiveRowActions
+          record={row.original}
+          onDetails={() => {
+            setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
+            openModal(DialogMode.DEFAULT, { title: "Archive details", description: `Review the archived record for ${recordName(row.original)}.`, action: "none" });
+          }}
+          onRestore={() => {
+            setSelected({ archived_id: row.original.id, entity_id: row.original.entity_id, entity_table: row.original.entity_type });
+            openModal(DialogMode.ARCHIVE, { title: "Restore record?", description: `Restore ${recordName(row.original)}? This record will return to its management list as inactive. Activate it there when ready. Restoring cancels any scheduled permanent deletion.`, action: "Restore record" });
+          }}
+        />
+      ),
     },
-  ];
+  ], [openModal, setSelected]);
 
   const table = useReactTable({
     data: filteredRows,

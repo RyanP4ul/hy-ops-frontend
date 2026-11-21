@@ -2,23 +2,16 @@
 import { useModal } from "@/components/providers/modal-provider";
 import { DialogMode } from "@/types/dialog";
 
-import { useMutation, useQuery, UseQueryResult } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { createContext, useContext, useState } from "react";
-import {
-  WarehouseForm,
-  WarehouseRow,
-  warehouseSchema,
-} from "@/schema/warehouse";
-import { useForm, UseFormReturn } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { useSetting } from "@/components/providers/setting-provider";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { UserForm, UserRow, userSchema } from "@/schema/user";
+import { emptyCustomerProfile, userSchema, type UserForm, type UserRow } from "@/schema/user";
 import { useComboBoxPagination } from "@/components/base-pagination";
-import { GeocodeResult } from "@/types/geocode";
-import { request } from "@/components/http";
 
 type UserContext = {
-  form: UseFormReturn<UserForm, any>;
+  form: UseFormReturn<UserForm>;
   userQuery: ReturnType<
     typeof useQuery<{
       rows: (UserRow & { version: number })[];
@@ -41,9 +34,6 @@ type UserContext = {
     rows: { id: number; name: string }[];
     total: number;
   }>;
-  geocodeQuery: UseQueryResult<GeocodeResult[] | null, unknown>;
-  searchAddress: string;
-  setSearchAddress: React.Dispatch<React.SetStateAction<string>>;
 };
 
 const UserContext = createContext<UserContext | null>(null);
@@ -63,9 +53,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   });
   const [page, setPage] = useState({ pageIndex: 0, pageSize: 10 });
   const [search, setSearch] = useState("");
-  const { state, dispatch } = useModal();
+  const { state } = useModal();
   const warehouseCB = useComboBoxPagination();
-  const [searchAddress, setSearchAddress] = useState("");
 
   const form = useForm<UserForm>({
     resolver: zodResolver(userSchema),
@@ -73,18 +62,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       name: "",
       email: "",
       role: "customer",
-      profile: {
-        search_address: "",
-        company_name: "",
-        phone_number: "",
-        address_line: "",
-        barangay: "",
-        city_municipality: "",
-        province: "",
-        postal_code: "",
-        latitude: "0",
-        longitude: "0",
-      },
+      profile: emptyCustomerProfile,
     },
   });
 
@@ -133,23 +111,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const geocodeQuery = useQuery({
-    queryKey: ["geocode", searchAddress],
-    queryFn: async () => {
-      const response = await request(
-        "GET",
-        `/api/geocode/search?q=${encodeURIComponent(searchAddress)}`,
-      );
-
-      if (!response.ok) return null;
-
-      const result = (await response.json()) as GeocodeResult[];
-
-      return result;
-    },
-    enabled: searchAddress.trim().length > 0,
-  });
-
   return (
     <UserContext.Provider
       value={{
@@ -164,9 +125,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setSearch,
         warehouseCB,
         warehouseQuery,
-        geocodeQuery,
-        searchAddress,
-        setSearchAddress,
       }}
     >
       {children}

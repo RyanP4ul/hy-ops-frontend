@@ -128,6 +128,7 @@ export type OrderRow = Partial<OrderGroupFields> & {
   warehouse_names?: string[];
   shipping_address?: string | null;
   destinations?: string[];
+  customer_id?: number;
   customer_name: string;
   email: string;
   customer_company: string;
@@ -154,6 +155,147 @@ export function formatOrderGroupCode(groupNumber?: string | null): string {
   if (groupNumber.length <= 14) return groupNumber;
   return `${groupNumber.slice(0, 7)}…${groupNumber.slice(-4)}`;
 }
+
+export const SEPARABLE_ORDER_STATUSES = [
+  "PENDING",
+  "PROCESSING",
+  "SCHEDULING",
+] as const;
+
+export const WALK_IN_SYSTEM_EMAIL = "walkin@system.local";
+
+export function canSeparateOrder(
+  order?: { order_group_id?: string | null; status?: string | null } | null,
+): boolean {
+  if (!order?.order_group_id || !order.status) return false;
+  return SEPARABLE_ORDER_STATUSES.includes(
+    order.status as (typeof SEPARABLE_ORDER_STATUSES)[number],
+  );
+}
+
+export function canGroupSingleOrder(
+  order?: {
+    entry_type?: "SINGLE" | "GROUP";
+    order_group_id?: string | null;
+    status?: string | null;
+    delivery_type?: string | null;
+    email?: string | null;
+  } | null,
+): boolean {
+  if (!order || order.entry_type === "GROUP" || order.order_group_id) return false;
+  if (!order.status || order.delivery_type === "WALK_IN") return false;
+  if (order.email === WALK_IN_SYSTEM_EMAIL) return false;
+  return SEPARABLE_ORDER_STATUSES.includes(
+    order.status as (typeof SEPARABLE_ORDER_STATUSES)[number],
+  );
+}
+
+export function canAddOrdersToGroup(group?: OrderTableRow | null): boolean {
+  if (!group || group.entry_type !== "GROUP" || !group.order_group_id) return false;
+  if (group.email === WALK_IN_SYSTEM_EMAIL) return false;
+  const size = group.order_group_size ?? group.members?.length ?? 0;
+  if (size >= 25) return false;
+  const lockedStatuses = new Set(["SCHEDULED", "IN_TRANSIT", "COMPLETED"]);
+  if (group.members?.some((member) => lockedStatuses.has(member.status))) {
+    return false;
+  }
+  if (!group.members?.length && lockedStatuses.has(group.status)) {
+    return false;
+  }
+  return true;
+}
+
+export function evaluateOrderGrouping(orders: OrderTableRow[]): {
+  canGroup: boolean;
+  reason: string | null;
+  customerId: number | null;
+  customerName: string | null;
+} {
+  if (orders.length < 2) {
+    return { canGroup: false, reason: null, customerId: null, customerName: null };
+  }
+  if (orders.length > 25) {
+    return {
+      canGroup: false,
+      reason: "An order group can contain at most 25 orders.",
+      customerId: null,
+      customerName: null,
+    };
+  }
+  if (orders.some((order) => Boolean(order.order_group_id) || order.entry_type === "GROUP")) {
+    return {
+      canGroup: false,
+      reason: "Select independent (ungrouped) orders to create a new group.",
+      customerId: null,
+      customerName: null,
+    };
+  }
+  if (orders.some((order) => !canGroupSingleOrder(order))) {
+    return {
+      canGroup: false,
+      reason: "Only pre-dispatch customer orders can be grouped.",
+      customerId: null,
+      customerName: null,
+    };
+  }
+  const customerIds = new Set(
+    orders
+      .map((order) => order.customer_id)
+      .filter((id): id is number => typeof id === "number" && id > 0),
+  );
+  if (customerIds.size !== 1 || orders.some((order) => !order.customer_id)) {
+    return {
+      canGroup: false,
+      reason: "Only orders from the same customer can be grouped.",
+      customerId: null,
+      customerName: null,
+    };
+  }
+  const [customerId] = customerIds;
+  return {
+    canGroup: true,
+    reason: null,
+    customerId: customerId ?? null,
+    customerName: orders[0]?.customer_name ?? null,
+  };
+}
+
+export type GroupOrderCandidate = {
+  id: number;
+  order_number: string;
+  status: string;
+  version: number;
+  warehouse_id: number;
+  warehouse_name: string | null;
+  shipping_address: string | null;
+  delivery_type: string;
+  item_count: number;
+  total_quantity: number;
+  total: number | null;
+};
+
+export type GroupCandidatesResponse = {
+  group_id: string;
+  group_number: string;
+  customer_id: number;
+  customer_name: string;
+  customer_company: string | null;
+  current_size: number;
+  max_size: number;
+  candidates: GroupOrderCandidate[];
+};
+
+export type SeparateOrderResult = {
+  separated_order_id: number;
+  separated_order_number: string;
+  previous_group_id: string;
+  previous_group_number: string;
+  group_dissolved: boolean;
+  remaining_count: number;
+  dissolved_order_id: number | null;
+  dissolved_order_number: string | null;
+  message: string;
+};
 
 export type OrderForm = z.infer<typeof orderSchema>;
 

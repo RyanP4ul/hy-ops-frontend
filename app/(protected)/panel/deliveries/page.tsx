@@ -20,7 +20,6 @@ function PageContent() {
           <section className="space-y-5">
             <ManagementPageHeading title="Deliveries" description="Follow delivery progress, manage assignments, and review delivery outcomes." icon={<Truck className="size-5" />} />
             <DeliveriesDialog />
-            <Link href="/panel/lalamove" className="inline-flex rounded-md border px-4 py-2 text-sm font-medium">Lalamove deliveries and booking history</Link>
             <DeliveriesPage />
           </section>
         </ModalProvider>

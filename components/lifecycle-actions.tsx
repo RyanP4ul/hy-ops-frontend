@@ -5,8 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { request } from "@/components/http";
 import { useAuth } from "@/components/providers/auth-provider";
+import { TableActions, type TableActionsProps } from "@/components/table-actions";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -17,18 +17,17 @@ import {
 } from "@/components/ui/dialog";
 import { Archive, CircleCheck, CircleX } from "lucide-react";
 
-type Props = {
+type Props = TableActionsProps & {
   resource: "products" | "inventory" | "warehouses" | "vehicles" | "users";
   record: {
     id?: number;
     version?: number;
     is_active?: boolean;
-    is_operational?: boolean;
   };
   archive?: boolean;
 };
 
-export function LifecycleActions({ resource, record, archive = false }: Props) {
+export function LifecycleActions({ resource, record, archive = false, additional = [], ...props }: Props) {
   const { userQuery } = useAuth();
   const queryClient = useQueryClient();
   const [action, setAction] = useState<
@@ -63,55 +62,37 @@ export function LifecycleActions({ resource, record, archive = false }: Props) {
     onError: (error) => toast.error(error.message),
   });
   const label = action ? action[0].toUpperCase() + action.slice(1) : "Update";
+  const canManage = userQuery.data?.role === "admin";
+
+  function confirm(operation: NonNullable<typeof action>) {
+    mutation.reset();
+    setAction(operation);
+  }
 
   return (
     <>
-      {/* <Badge
-        title={
-          active && record.is_operational === false
-            ? "A related product or assigned warehouse is inactive or archived."
-            : undefined
-        }
-        variant={active ? "outline" : "secondary"}
-      >
-        {!active
-          ? "Inactive"
-          : record.is_operational === false
-            ? "Unavailable"
-            : "Active"}
-      </Badge> */}
-      {userQuery.data?.role === "admin" && (
-        <>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={self || mutation.isPending}
-            onClick={() => {
-              mutation.reset();
-              setAction(active ? "deactivate" : "activate");
-            }}
-          >
-            {active ? (
-              <CircleX className="size-4" />
-            ) : (
-              <CircleCheck className="size-4" />
-            )}
-            <span>{active ? "Deactivate" : "Activate"}</span>
-          </Button>
-          {archive && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={self || mutation.isPending}
-              onClick={() => {
-                mutation.reset();
-                setAction("archive");
-              }}
-            >
-              <Archive className="size-4" />
-              <span>Archive</span>
-            </Button>
-          )}
+      <TableActions
+        {...props}
+        additional={[
+          canManage && {
+            label: active ? "Deactivate" : "Activate",
+            icon: active ? CircleX : CircleCheck,
+            destructive: active,
+            disabled: self || mutation.isPending,
+            tooltip: self ? "You cannot deactivate your own account." : undefined,
+            onClick: () => confirm(active ? "deactivate" : "activate"),
+          },
+          canManage && archive && {
+            label: "Archive",
+            icon: Archive,
+            destructive: true,
+            disabled: self || mutation.isPending,
+            onClick: () => confirm("archive"),
+          },
+          ...additional,
+        ]}
+      />
+      {canManage && (
           <Dialog
             open={action !== null}
             onOpenChange={(open) => {
@@ -155,7 +136,6 @@ export function LifecycleActions({ resource, record, archive = false }: Props) {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </>
       )}
     </>
   );

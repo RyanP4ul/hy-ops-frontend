@@ -2,7 +2,7 @@ import { mockGoogleMaps } from "./google-maps";
 import { expect, test, type Page, type Locator } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import ExcelJS from "../../backend/node_modules/exceljs";
-import { browserLogin, json, order, password } from "./helpers";
+import { browserLogin, json, order, password, openRowActions } from "./helpers";
 
 test.use({ timezoneId: "America/Los_Angeles", actionTimeout: 15_000, navigationTimeout: 30_000 });
 test.setTimeout(90_000);
@@ -69,7 +69,7 @@ test("Users saves edits and role profiles, changes password and deactivates with
   const other = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3100" });
   try {
     expect((await other.post("/api/auth/login", { data: { email: "selected-staff@example.test", password: "Changed-fixture-password", is_mobile: true } })).status()).toBe(200);
-    await row.getByRole("button", { name: "Archive user Selected Staff Edited", exact: true }).click();
+    await (await openRowActions(page, row)).getByRole("menuitem", { name: "Archive user Selected Staff Edited", exact: true }).click();
     await dialog.getByRole("button", { name: "Archive User", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(row).toHaveCount(0);
@@ -93,7 +93,7 @@ test("Vehicles defaults to Truck, manages maintenance, edits and archives throug
   await expect(row).toBeVisible();
   await expect(row).toContainText("truck");
   await expect(row).toContainText("available");
-  await row.getByRole("button", { name: "Set maintenance", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Set maintenance", exact: true }).click();
   await expect(row.getByRole("cell", { name: "maintenance", exact: true })).toBeVisible();
   await row.getByRole("button", { name: "Edit vehicle", exact: true }).click();
   await expect(dialog.getByLabel("Plate number")).toHaveValue("SELECTED-001");
@@ -105,9 +105,9 @@ test("Vehicles defaults to Truck, manages maintenance, edits and archives throug
   await expect(row).toContainText("SELECTED-001-EDITED");
   await expect(row.getByRole("cell", { name: "maintenance", exact: true })).toBeVisible();
   await expect(row).toContainText("truck");
-  await row.getByRole("button", { name: "End maintenance", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "End maintenance", exact: true }).click();
   await expect(row.getByRole("cell", { name: "available", exact: true })).toBeVisible();
-  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Archive", exact: true }).click();
   await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toHaveCount(0);
@@ -130,9 +130,9 @@ test("Scheduled assignments protect driver and vehicle edits and preserve delive
   await navigate(page, "/panel/vehicles");
   await page.getByPlaceholder(/Search vehicles/).fill("ASSIGNED-001");
   const row = rowFor(page, "ASSIGNED-001");
-  await row.getByRole("button", { name: "Set maintenance", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Set maintenance", exact: true }).click();
   await expect(page.getByText(/Reassign or complete the vehicle's scheduled\/active deliveries/)).toBeVisible();
-  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Archive", exact: true }).click();
   await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText(/history|deliver/i);
   expect((await json(page.request, "GET", `/vehicles/${vehicle.id}`)).status).toBe("available");
@@ -159,7 +159,7 @@ test("Warehouses creates, clears coordinates, archives and protects linked recor
   await expect(dialog.getByLabel("Latitude", { exact: false })).toHaveValue("");
   await expect(dialog.getByText(/No coordinates selected/)).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await row.getByRole("button", { name: "Archive warehouse", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Archive warehouse", exact: true }).click();
   await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toHaveCount(0);
@@ -205,7 +205,7 @@ test("Warehouse stale edits retain drafts and an unused warehouse can be archive
   await row.getByRole("button", { name: "Edit warehouse", exact: true }).click();
   await expect(dialog.getByLabel("City", { exact: false })).toHaveValue("Saved by another editor");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await row.getByRole("button", { name: "Archive warehouse", exact: true }).click();
+  await (await openRowActions(page, row)).getByRole("menuitem", { name: "Archive warehouse", exact: true }).click();
   await dialog.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toHaveCount(0);
@@ -359,11 +359,11 @@ test("Reports apply filters, show no-data periods and download matching CSV and 
 
 test("Customer profile edits preserve saved coordinates and postal codes", async ({ page }) => {
   await navigate(page, "/panel/users");
-  await page.getByPlaceholder("Search users...").fill("customer@example.test");
+  await page.getByRole("textbox", { name: /^Search users/ }).fill("customer@example.test");
   await rowFor(page, "customer@example.test").getByRole("button", { name: "Edit user Live Customer", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Name", { exact: false }).first().fill("Live Customer Updated");
-  await dialog.getByLabel("Postal Code", { exact: false }).fill("0123");
+  await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Live Customer Updated");
+  await dialog.getByRole("textbox", { name: "Postal code", exact: true }).fill("0123");
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   const saved = await json(page.request, "GET", "/users/4");

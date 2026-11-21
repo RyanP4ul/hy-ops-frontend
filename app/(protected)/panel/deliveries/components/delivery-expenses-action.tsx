@@ -1,5 +1,7 @@
 "use client";
 
+import type { TableAction } from "@/components/table-actions";
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Receipt } from "lucide-react";
@@ -16,7 +18,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { resourceQueryRoots } from "@/lib/realtime";
 import type { DeliveryExpense } from "@/schema/deliveries";
@@ -226,7 +227,7 @@ function ExpenseCard({
   );
 }
 
-export function DeliveryExpensesAction({ deliveryId }: { deliveryId: number }) {
+export function useDeliveryExpenses({ deliveryId }: { deliveryId: number }) {
   const [open, setOpen] = useState(false);
   const cache = useQueryClient();
   const expenses = useQuery({
@@ -255,20 +256,14 @@ export function DeliveryExpensesAction({ deliveryId }: { deliveryId: number }) {
     );
   }
 
-  return (
+  const action: TableAction = {
+    label: "View expenses",
+    icon: Receipt,
+    ariaLabel: `View expenses for delivery ${deliveryId}`,
+    onClick: () => setOpen(true),
+  };
+  const dialog = (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label={`View expenses for delivery ${deliveryId}`}
-          />
-        }
-      >
-        <Receipt className="size-4" /> View expenses
-      </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Delivery #{deliveryId} expenses</DialogTitle>
@@ -321,4 +316,5 @@ export function DeliveryExpensesAction({ deliveryId }: { deliveryId: number }) {
       </DialogContent>
     </Dialog>
   );
+  return { action, dialog };
 }

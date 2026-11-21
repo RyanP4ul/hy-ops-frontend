@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupTextarea } from "@/components/ui/input-group";
 import { Edit, Layers, Plus, Trash2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { TableActions } from "@/components/table-actions";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "motion/react";
 import { ProductType } from "@/schema/product";
@@ -173,7 +174,7 @@ export default function Form() {
                   <TableHead>Unit</TableHead>
                   <TableHead className="min-w-40">Dimensions</TableHead>
                   <TableHead>Weight</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="w-px text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -210,36 +211,25 @@ export default function Form() {
                       {variant.weight_kg ? `${variant.weight_kg} kg` : "—"}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          form.setValue("variants", [
-                            ...form.getValues("variants"),
-                          ]);
-
-                          setVariant({
-                            id: index,
-                            is_open: true,
-                            mode: DialogMode.EDIT,
-                          });
+                      <TableActions
+                        rowLabel={variant.sku || variant.name}
+                        primary={{
+                          label: "Edit variant",
+                          ariaLabel: `Edit variant ${variant.sku}`,
+                          icon: Edit,
+                          onClick: () => {
+                            form.setValue("variants", [...form.getValues("variants")]);
+                            setVariant({ id: index, is_open: true, mode: DialogMode.EDIT });
+                          },
                         }}
-                      >
-                        <Edit className="size-4" /><span className="sr-only">Edit variant {variant.sku}</span>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setVariant({
-                            id: index,
-                            is_open: true,
-                            mode: DialogMode.DELETE,
-                          });
-                        }}
-                      >
-                        <Trash2 className="size-4" /><span className="sr-only">Remove variant {variant.sku}</span>
-                      </Button>
+                        additional={[{
+                          label: "Remove variant",
+                          ariaLabel: `Remove variant ${variant.sku}`,
+                          icon: Trash2,
+                          destructive: true,
+                          onClick: () => setVariant({ id: index, is_open: true, mode: DialogMode.DELETE }),
+                        }]}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

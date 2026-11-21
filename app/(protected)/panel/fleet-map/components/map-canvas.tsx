@@ -3,6 +3,7 @@ import {
   Crosshair,
   Layers,
   Maximize2,
+  Navigation,
   PackageMinus,
   TriangleAlert,
   Truck,
@@ -60,6 +61,7 @@ import type {
   WorkspaceMode,
 } from "../types";
 import { FleetMarker, MarkerGlyph, type MarkerTone } from "./fleet-marker";
+import type { LiveLalamoveCourier } from "./lalamove-couriers";
 import type { ReturnPickup } from "./return-pickups";
 import { GpsLabel, StatusLabel } from "./status-pill";
 
@@ -76,6 +78,7 @@ const STOP_LABELS = {
 
 const MARKER_KEY = [
   { tone: "vehicle", label: "Vehicle", glyph: <Truck />, heading: 45 },
+  { tone: "lalamove", label: "Lalamove courier", glyph: <Navigation /> },
   {
     tone: "cluster",
     label: "Vehicle group",
@@ -153,6 +156,9 @@ function FollowInteractionGuard({
 type FleetMapCanvasProps = {
   returnPickups?: ReturnPickup[];
   onSelectReturn?: (taskId: number) => void;
+  lalamoveCouriers?: LiveLalamoveCourier[];
+  selectedLalamoveId?: number | null;
+  onSelectLalamove?: (courier: LiveLalamoveCourier) => void;
   mapRef: RefObject<MapRef | null>;
   mode: WorkspaceMode;
   fullscreen: boolean;
@@ -182,6 +188,9 @@ type FleetMapCanvasProps = {
 export function FleetMapCanvas({
   returnPickups = [],
   onSelectReturn,
+  lalamoveCouriers = [],
+  selectedLalamoveId = null,
+  onSelectLalamove,
   mapRef,
   mode,
   fullscreen,
@@ -598,6 +607,82 @@ export function FleetMapCanvas({
                   <span className="fm-cluster-count">
                     {cluster.vehicles.length}
                   </span>
+                </MarkerGlyph>
+              </FleetMarker>
+            </MapMarker>
+          );
+        })}
+
+        {/* Selected Lalamove Courier Drop-off Stops */}
+        {layers.stops &&
+          selectedLalamoveId !== null &&
+          lalamoveCouriers
+            .find((item) => item.booking_id === selectedLalamoveId)
+            ?.stops.map((stop) => {
+              if (!stop.coordinates) return null;
+              const delivered =
+                Boolean(stop.delivered_at) ||
+                stop.pod_status === "DELIVERED" ||
+                stop.pod_status === "SIGNED" ||
+                stop.order_status === "COMPLETED";
+              return (
+                <MapMarker
+                  key={`lalamove-stop-${stop.id}`}
+                  longitude={stop.coordinates[0]}
+                  latitude={stop.coordinates[1]}
+                  anchor="bottom"
+                >
+                  <FleetMarker
+                    name={`Lalamove stop ${stop.stop_index}: ${stop.order_number}`}
+                    title={`Lalamove #${stop.stop_index} · ${stop.order_number}`}
+                    details={`${stop.recipient_name} · ${delivered ? "Delivered" : "Pending"}`}
+                    pinned
+                    priority="location"
+                  >
+                    <MarkerGlyph tone={delivered ? "delivered" : "next"}>
+                      {delivered ? <Check /> : stop.stop_index}
+                    </MarkerGlyph>
+                  </FleetMarker>
+                </MapMarker>
+              );
+            })}
+
+        {/* Active Lalamove External Courier Live Pins */}
+        {lalamoveCouriers.map((courier) => {
+          const coords = courier.driver.coordinates;
+          if (!coords) return null;
+          const selected = courier.booking_id === selectedLalamoveId;
+          const orderSummary =
+            courier.stop_count > 1
+              ? `${courier.order_number || `#${courier.booking_id}`} +${courier.stop_count - 1}`
+              : courier.order_number || `Booking #${courier.booking_id}`;
+          return (
+            <MapMarker
+              key={`lalamove-${courier.booking_id}`}
+              longitude={coords.lng}
+              latitude={coords.lat}
+              onClick={(event) => {
+                event.stopPropagation();
+                setActiveClusterKey(null);
+                onSelectLalamove?.(courier);
+              }}
+            >
+              <FleetMarker
+                name={`Lalamove courier ${courier.driver.name || courier.booking_id}, ${orderSummary}`}
+                title={`Lalamove · ${courier.driver.name || "Courier"}`}
+                details={`${orderSummary}${courier.driver.plate_number ? ` · ${courier.driver.plate_number}` : ""}`}
+                label={selected ? `Lalamove · ${orderSummary}` : undefined}
+                accentColor="#ea580c"
+                interactive
+                selected={selected}
+                priority={selected ? "selected" : "vehicle"}
+              >
+                <MarkerGlyph
+                  tone="lalamove"
+                  color="#ea580c"
+                  pulse={selected ? "selected" : "live"}
+                >
+                  <Navigation />
                 </MarkerGlyph>
               </FleetMarker>
             </MapMarker>

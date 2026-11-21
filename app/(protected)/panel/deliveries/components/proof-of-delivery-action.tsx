@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ImageIcon } from "lucide-react";
 import { request } from "@/components/http";
 import { QueryFeedback } from "@/components/query-feedback";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type DeliveryProof = {
   id: string;
@@ -59,8 +58,12 @@ function ProofImage({ stopId, proof, orderNumber }: { stopId: number; proof: Del
   </figure>;
 }
 
-export function ProofOfDeliveryAction({ stopId, orderNumber }: { stopId: number; orderNumber: string }) {
-  const [open, setOpen] = useState(false);
+export function ProofOfDeliveryDialog({ stopId, orderNumber, open, onOpenChange }: {
+  stopId: number;
+  orderNumber: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const proofs = useQuery({
     queryKey: ["delivery_proofs", stopId],
     enabled: open,
@@ -75,10 +78,7 @@ export function ProofOfDeliveryAction({ stopId, orderNumber }: { stopId: number;
     },
   });
 
-  return <Dialog open={open} onOpenChange={setOpen}>
-    <DialogTrigger render={<Button type="button" variant="outline" size="sm" aria-label={`View proof of delivery for ${orderNumber}`} />}>
-      <ImageIcon className="size-4" /> View proof
-    </DialogTrigger>
+  return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>Proof of delivery - {orderNumber}</DialogTitle>
@@ -92,7 +92,7 @@ export function ProofOfDeliveryAction({ stopId, orderNumber }: { stopId: number;
       </div>}
       <DialogFooter>
         <Button type="button" variant="outline" disabled={proofs.isFetching} onClick={() => void proofs.refetch()}>Refresh proofs</Button>
-        <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

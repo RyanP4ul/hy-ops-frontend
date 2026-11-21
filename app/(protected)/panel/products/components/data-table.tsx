@@ -110,12 +110,16 @@ export default function DataTable() {
       accessorKey: "actions",
       header: "Actions",
       cell: ({ row }) => (
-        <div className="flex space-x-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Edit ${row.original.name}`}
-            onClick={() => {
+        <LifecycleActions
+          resource="products"
+          record={row.original}
+          rowLabel={row.original.name}
+          archive
+          primary={{
+            label: "Edit",
+            ariaLabel: `Edit ${row.original.name}`,
+            icon: Edit,
+            onClick: () => {
               setSelected({
                 id: row.original.id || -1,
                 version: row.original.version || 0,
@@ -125,13 +129,9 @@ export default function DataTable() {
                 description: "Update this product.",
                 action: "Save changes",
               });
-            }}
-          >
-            <Edit className="size-4" />{" "}
-            <span className="hidden sm:inline">Edit</span>
-          </Button>
-          <LifecycleActions resource="products" record={row.original} archive />
-        </div>
+            },
+          }}
+        />
       ),
     },
   ];
@@ -250,7 +250,7 @@ export default function DataTable() {
             {table.getHeaderGroups().map((group) => (
               <TableRow key={group.id}>
                 {group.headers.map((header) => (
-                  <TableHead key={header.id} className="px-5">
+                  <TableHead key={header.id} className={header.column.id === "actions" ? "w-px px-5 text-right" : "px-5"}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table as TableRoot, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 export function ManagementPageHeading({ title, description, icon }: {
   title: string;
@@ -130,7 +131,7 @@ export function ManagementTableView<TData>({
                     key={header.id}
                     scope="col"
                     aria-sort={ariaSort}
-                    className="px-5"
+                    className={cn("px-5", header.column.id === "actions" && "w-px text-right")}
                   >
                     {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                   </TableHead>

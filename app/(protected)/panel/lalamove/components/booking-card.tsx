@@ -116,10 +116,15 @@ export function BookingCard({
     >
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold tracking-tight">
             {booking.active ? "Active booking" : "Booking"} #{booking.id}
           </h2>
+          {(booking.stop_count ?? 1) > 1 && (
+            <span className="rounded-md bg-orange-500/10 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-orange-700 dark:text-orange-400">
+              {booking.stop_count} stops
+            </span>
+          )}
           <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] capitalize text-muted-foreground">
             {booking.environment}
           </span>
@@ -217,9 +222,14 @@ export function BookingCard({
                 key={proof.stop_id}
                 className="flex items-center justify-between gap-2 text-muted-foreground"
               >
-                <span>{words(proof.status)}</span>
+                <span className="truncate">
+                  {proof.order_number
+                    ? `Stop ${proof.stop_index ?? ""} · ${proof.order_number}: `
+                    : ""}
+                  {words(proof.status)}
+                </span>
                 {proof.delivered_at && (
-                  <span className="tabular-nums">
+                  <span className="shrink-0 tabular-nums">
                     {dateLabel(proof.delivered_at)}
                   </span>
                 )}
